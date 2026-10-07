@@ -4,7 +4,7 @@ La idea de esta rama es que podamos descargar el proyecto y probarlo en otro equ
 
 El proyecto permite registrar pacientes, subir documentos, solicitar su extracción, revisar los datos como profesional y hacer preguntas sobre el examen revisado. Las respuestas de IA no son diagnósticos, recetas ni aprobación profesional. Para las pruebas usemos documentos ficticios.
 
-Docker prepara el backend, PostgreSQL y Ollama en contenedores. No instala Android Studio ni crea un emulador. Tampoco incluye las credenciales de AWS: S3 sigue siendo un servicio externo. Cada equipo tiene su propia base de datos; descargar el proyecto no copia las cuentas que creó José.
+Docker prepara el backend, PostgreSQL y Ollama en contenedores. No instala Android Studio ni crea un emulador. Tampoco incluye las credenciales de AWS: S3 sigue siendo un servicio externo. Cada equipo tiene su propia base de datos; descargar el proyecto no copia las cuentas que cree otros Desarrolladores.
 
 ## 1. Qué necesitamos instalar
 
@@ -48,8 +48,6 @@ git clone https://github.com/JoseArgz8658/vitalia-health-capstone.git
 cd vitalia-health-capstone
 git switch develop
 ```
-
-Estos comandos de `develop` se usan después de que José haya copiado y publicado la aplicación en esa rama del repositorio oficial. Mientras tanto, descarga la rama `distribucion/equipo-docker` del repositorio de pruebas.
 
 Abre la carpeta donde están `compose.yaml`, `README.md`, `backend` y `apps`. Esa es la raíz del proyecto. Todos los comandos siguientes parten desde ahí, salvo cuando se indica `cd backend` o `cd apps\vitalia`.
 
@@ -295,15 +293,3 @@ Los volúmenes conservan datos al detener los servicios. No ejecutes `docker com
 - **Credenciales temporales caducadas:** renueva los datos del `.env` local y recrea API y worker con `docker compose up -d --force-recreate api worker`.
 - **Puerto ocupado:** detén la ejecución anterior que usa 3000 o 5173. No cambies el puerto web al azar, porque el backend restringe el origen.
 - **Cambiaste contraseña de la base en .env:** modificar el archivo no cambia la contraseña de un volumen PostgreSQL existente. Usa la configuración original o administra el cambio desde PostgreSQL; no borres volúmenes para resolverlo sin respaldar los datos.
-
-## 11. Llevar esta rama al repositorio oficial
-
-Esta rama limpia se descarga del repositorio de pruebas: selecciona `distribucion/equipo-docker` → Code → Download ZIP. No incluye archivos `.env` reales, node_modules, build ni documentos de avance.
-
-En GitHub Desktop abre el repositorio oficial, crea o selecciona `develop` y copia el **contenido** del ZIP extraído a la raíz de esa rama. No copies una carpeta `.git` de otro repositorio. Antes de confirmar, revisa los archivos seleccionados: no agregues tu configuración local, credenciales, dependencias descargadas ni resultados de compilación. El ZIP de GitHub no incluye `.git` ni los secretos que generaste en tu equipo.
-
-Después realiza el commit y Push origin desde `develop`. Tus compañeros podrán seleccionar esa rama y seguir esta guía. Los recursos de AWS, las cuentas locales y la configuración privada se preparan por separado en cada equipo.
-
-## Estado de comprobación
-
-La compilación TypeScript, las pruebas automatizadas backend y el análisis de referencias de la rama limpia se verifican antes de entregar la rama. Docker, PowerShell y Flutter/Android deben comprobarse en un equipo con esas herramientas: no se declara validado su arranque real solo por escribir los archivos. Esta es una distribución de desarrollo para pruebas del equipo, no un despliegue médico de producción.
