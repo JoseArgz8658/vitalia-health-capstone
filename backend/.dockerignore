@@ -1,0 +1,11 @@
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!src/
+!src/**
+!database/
+!database/**
+!jest.config.cjs
+!test/
+!test/**

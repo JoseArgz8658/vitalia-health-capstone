@@ -1,0 +1,77 @@
+name: vitalia
+x-backend: &backend
+  image: vitalia-backend:local
+  build:
+    context: ./backend
+  env_file: .env
+  environment:
+    VITALIA_RUNTIME: container
+    VITALIA_OLLAMA_SERVICE: ollama
+    PGHOST: postgres
+    PGPORT: "5432"
+    HOST: 0.0.0.0
+    PORT: "3000"
+  depends_on:
+    postgres:
+      condition: service_healthy
+  init: true
+services:
+  postgres:
+    image: postgres:16.15-bookworm
+    environment:
+      POSTGRES_DB: ${PGDATABASE:?Ejecuta deploy/configurar.ps1}
+      POSTGRES_USER: ${PGUSER:?Configura PGUSER}
+      POSTGRES_PASSWORD: ${PGPASSWORD:?Configura PGPASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  ollama:
+    image: ollama/ollama:0.40.0
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+  migrate:
+    <<: *backend
+    command: [node, dist/database/migrate-all.js]
+    restart: "no"
+  api:
+    <<: *backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - 127.0.0.1:3000:3000
+    restart: unless-stopped
+  worker:
+    <<: *backend
+    command: [node, dist/database/run-processing.js]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      ollama:
+        condition: service_started
+    stop_grace_period: 4m
+    restart: unless-stopped
+  web:
+    image: nginx:1.28-alpine
+    profiles: [web]
+    ports:
+      - 127.0.0.1:5173:80
+    volumes:
+      - ./apps/vitalia/build/web:/usr/share/nginx/html:ro
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+volumes:
+  postgres_data:
+  ollama_data:
