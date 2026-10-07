@@ -4,7 +4,7 @@ La idea de esta rama es que podamos descargar el proyecto y probarlo en otro equ
 
 El proyecto permite registrar pacientes, subir documentos, solicitar su extracción, revisar los datos como profesional y hacer preguntas sobre el examen revisado. Las respuestas de IA no son diagnósticos, recetas ni aprobación profesional. Para las pruebas usemos documentos ficticios.
 
-Docker prepara el backend, PostgreSQL y Ollama en contenedores. No instala Android Studio ni crea un emulador. Tampoco incluye las credenciales de AWS: S3 sigue siendo un servicio externo. Cada equipo tiene su propia base de datos; descargar el proyecto no copia las cuentas que cree otros Desarrolladores.
+Docker prepara el backend, PostgreSQL y Ollama en contenedores. No instala Android Studio ni crea un emulador. Tampoco incluye las credenciales de AWS: S3 sigue siendo un servicio externo. Cada equipo tiene su propia base de datos; Descargar el proyecto no copia las cuentas que hayan creado otros desarrolladores
 
 ## 1. Qué necesitamos instalar
 
