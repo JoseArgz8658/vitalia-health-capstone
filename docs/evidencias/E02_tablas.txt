@@ -1,0 +1,20 @@
+            table_name
+-----------------------------------
+ vitalia_accounts
+ vitalia_assignment_audit
+ vitalia_document_audit
+ vitalia_document_cleanup
+ vitalia_document_processing
+ vitalia_documents
+ vitalia_exam_assistant_audit
+ vitalia_exam_assistant_threads
+ vitalia_exam_assistant_turns
+ vitalia_exam_explanations
+ vitalia_explanation_audit
+ vitalia_patient_assignments
+ vitalia_professional_access_audit
+ vitalia_professional_reviews
+ vitalia_roles
+ vitalia_schema_migrations
+ vitalia_sessions
+(17 rows)

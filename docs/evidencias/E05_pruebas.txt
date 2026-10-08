@@ -1,0 +1,57 @@
+
+> vitalia-backend@0.1.0 test
+> npm run build && jest --runInBand
+
+
+> vitalia-backend@0.1.0 build
+> tsc
+
+docker : PASS test/privileged-accounts.test.cjs
+En línea: 1 Carácter: 1
++ docker run --rm vitalia-backend-test npm test 2>&1 | Tee-Object -File ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (PASS test/privileged-accounts.test.cjs:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+PASS test/registration.test.cjs
+PASS test/password.test.cjs
+PASS test/ocr.test.cjs
+PASS test/credentials.test.cjs
+PASS test/document-extraction.test.cjs
+PASS test/exam-assistant.test.cjs
+PASS test/pdf-reader.test.cjs
+PASS test/pdf-extraction.test.cjs
+PASS test/server-startup.test.cjs
+PASS test/database.test.cjs
+PASS test/explanations.test.cjs
+PASS test/document-api.test.cjs
+PASS test/professional-access.test.cjs
+PASS test/processing-api.test.cjs
+PASS test/auth-router.test.cjs
+PASS test/professional-reviews.test.cjs
+PASS test/assignments.test.cjs
+PASS test/registration-router.test.cjs
+PASS test/storage.test.cjs
+PASS test/patient-review.test.cjs
+PASS test/processing-worker.test.cjs
+PASS test/app.test.cjs
+PASS test/local-web-cors.test.cjs
+PASS test/login-limit.test.cjs
+PASS test/document-processing.test.cjs
+PASS test/document-service.test.cjs
+PASS test/documents.test.cjs
+PASS test/ai-extraction.test.cjs
+PASS test/accounts.test.cjs
+PASS test/local-services.test.cjs
+PASS test/document-recovery.test.cjs
+PASS test/secret-input.test.cjs
+PASS test/accounts-migration.test.cjs
+PASS test/queue-processor.test.cjs
+PASS test/additional-migration.test.cjs
+PASS test/sessions.test.cjs
+
+Test Suites: 37 passed, 37 total
+Tests:       373 passed, 373 total
+Snapshots:   0 total
+Time:        17.573 s, estimated 18 s
+Ran all test suites.

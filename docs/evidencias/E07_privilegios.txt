@@ -1,0 +1,4 @@
+ rolname | rolsuper | rolcreatedb | rolcreaterole | rolreplication | rolcanlogin
+---------+----------+-------------+---------------+----------------+-------------
+ vitalia | t        | t           | t             | t              | t
+(1 row)
