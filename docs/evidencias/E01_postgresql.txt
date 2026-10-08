@@ -1,0 +1,2 @@
+NAME                 IMAGE                     COMMAND                  SERVICE    CREATED       STATUS                 PORTS
+vitalia-postgres-1   postgres:16.15-bookworm   "docker-entrypoint.sÔÇª"   postgres   2 hours ago   Up 2 hours (healthy)   5432/tcp
