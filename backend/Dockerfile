@@ -9,6 +9,7 @@ RUN npm run build
 FROM build AS test
 COPY jest.config.cjs ./
 COPY test ./test
+COPY database ./database
 RUN npm test
 
 FROM build AS runtime-dependencies
