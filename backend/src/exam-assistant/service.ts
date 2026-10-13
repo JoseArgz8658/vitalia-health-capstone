@@ -5,9 +5,9 @@ import {type Pool} from 'pg';
 import {type AccountSummary} from '../accounts/repository';
 import {type DocumentDatabase} from '../documents/service';
 import {type Extraction,extractionSchema} from '../ai/contract';
-import {type ExamAssistant} from './local-model';
+import {AssistantModelError,type ExamAssistant} from './local-model';
 import {type Mode,type Reply,gate,synthetic,fixed,ASSISTANT_VERSION,validateReply,explanationView,notice} from './contract';
-export class AssistantAccessError extends Error {constructor(public status:401|403|404|409|400|503){super();}}
+export class AssistantAccessError extends Error {constructor(public status:401|403|404|409|400|503,public code:string='ASSISTANT_UNAVAILABLE'){super();}}
 type DB=Pick<Pool,'query'>;
 interface Review{id:string;reviewed_extraction:Extraction}
 interface Thread{id:string;review_snapshot:Extraction}
@@ -54,7 +54,7 @@ export function createExamAssistantService(db:DocumentDatabase,model:ExamAssista
   if(preview.turn&&(preview.turn.status==='ready'||(preview.turn.status==='pending'&&Date.now()-preview.turn.started_at.getTime()<180000)||mode==='chat'&&preview.turn.status==='failed')){
    return mode==='chat'?{turn:publicTurn(preview.turn,preview.review.reviewed_extraction)}:explanationState(preview.turn,preview.review);
   }
-  if(busy)throw new AssistantAccessError(503);busy=true;const attempt=randomUUID();let claimed:Turn|null=null;let threadId:string|null=null;
+  if(busy)throw new AssistantAccessError(503,'ASSISTANT_BUSY');busy=true;const attemptStarted=Date.now();const attempt=randomUUID();let claimed:Turn|null=null;let threadId:string|null=null;
   try{
    const reserved=await db.transaction(async tx=>{
     const review=await authorize(tx,account,doc);if(!review||review.id!==preview.review.id)throw new AssistantAccessError(409);
@@ -68,11 +68,11 @@ export function createExamAssistantService(db:DocumentDatabase,model:ExamAssista
     const id=requestedId??thread.id;const existing=await turnFor(tx,thread.id,id);
     if(existing&&(existing.mode!==mode||existing.question!==question))throw new AssistantAccessError(409);
     if(existing&&(mode==='chat'||existing.status!=='failed'))return {turn:existing,review,execute:false,history:[]};
-    const pending=await tx.query(`SELECT id FROM public.vitalia_exam_assistant_turns WHERE thread_id=$1 AND status='pending'`,[thread.id]);if(pending.rows.length)throw new AssistantAccessError(503);
+    const pending=await tx.query(`SELECT id FROM public.vitalia_exam_assistant_turns WHERE thread_id=$1 AND status='pending'`,[thread.id]);if(pending.rows.length)throw new AssistantAccessError(503,'ASSISTANT_BUSY');
     const count=await tx.query<{n:string}>(`SELECT count(*)::text AS n FROM public.vitalia_exam_assistant_turns WHERE thread_id=$1 AND mode='chat'`,[thread.id]);
     if(mode==='chat'&&Number(count.rows[0]?.n??0)>=30)throw new AssistantAccessError(409);
     if(existing){
-     if(existing.finished_at&&Date.now()-existing.finished_at.getTime()<30000)throw new AssistantAccessError(503);
+     if(existing.finished_at&&Date.now()-existing.finished_at.getTime()<30000)throw new AssistantAccessError(503,'ASSISTANT_COOLDOWN');
      await tx.query(`UPDATE public.vitalia_exam_assistant_turns SET status='pending',response=NULL,attempt_id=$1,started_at=CURRENT_TIMESTAMP,finished_at=NULL WHERE id=$2 AND thread_id=$3 AND status='failed'`,[attempt,id,thread.id]);
     }else{
      const inserted=await tx.query(`INSERT INTO public.vitalia_exam_assistant_turns (id,thread_id,mode,question,status,attempt_id)
@@ -106,7 +106,16 @@ export function createExamAssistantService(db:DocumentDatabase,model:ExamAssista
      WHERE id=$1 AND thread_id=$2 AND attempt_id=$3 AND status='pending' RETURNING id`,[claimed!.id,threadId,attempt]);
     if(changed.rows.length)await audit(tx,account,doc,'failed');
    });
-   if(error instanceof AssistantAccessError)throw error;throw new AssistantAccessError(503);
+   if(error instanceof AssistantAccessError)throw error;
+   const reason=error instanceof AssistantModelError?error.reason:'internal';
+   // No registra preguntas, documentos, respuestas, credenciales ni mensajes de excepción.
+   const details=['numeric_text','external_link','classification_term','clinical_or_instruction_term'];
+   const detail=error instanceof AssistantModelError&&error.detail&&details.includes(error.detail)?error.detail:undefined;
+   console.warn(JSON.stringify({event:'exam_assistant_failure',mode,reason,...(detail?{detail}:{}),elapsedMs:Date.now()-attemptStarted}));
+   const rejected=error instanceof AssistantModelError&&!['configuration','http','transport','timeout'].includes(error.reason);
+   const code=reason==='timeout'?'ASSISTANT_TIMEOUT':reason==='transport'||reason==='http'?'ASSISTANT_MODEL_UNAVAILABLE':
+    reason==='configuration'?'ASSISTANT_CONFIGURATION':rejected?'ASSISTANT_RESPONSE_REJECTED':'ASSISTANT_UNAVAILABLE';
+   throw new AssistantAccessError(503,code);
   }finally{busy=false;}
  }
  return {

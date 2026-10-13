@@ -2,7 +2,7 @@ import {ollamaUrl} from '../runtime/local-services';
 import {educationalEvidence,applyEducationalNotes,questionIndices,KNOWLEDGE_VERSION} from './knowledge';
 import {extractionSchema,type Extraction} from '../ai/contract';
 import {type Mode,type Reply,type History,ContentPolicyError,gate,synthetic,fixed,validateReply,ASSISTANT_VERSION} from './contract';
-export const ASSISTANT_PROMPT_REVISION=7;
+export const ASSISTANT_PROMPT_REVISION=10;
 export type AssistantFailure='configuration'|'input'|'http'|'transport'|'timeout'|'response_limit'|'invalid_json'|'incomplete'|'invalid_reply'|'invalid_references'|'unsafe_content'|'chat_format'|'partial_explanation'|'invalid_definition';
 export class AssistantModelError extends Error {
  constructor(public readonly reason:AssistantFailure='transport',public readonly detail?:ContentPolicyError['category']){super('El asistente local no produjo una respuesta aceptable.');}
@@ -29,18 +29,18 @@ export function createExamAssistant(options:{model?:string;fetchImpl?:typeof fet
   const started=performance.now();
   const blocked=input.mode==='chat'?gate(input.question,extraction,input.history):extraction.resultados.every(row=>synthetic(row.nombre))?fixed('insufficient',extraction.resultados.map((_,i)=>i)):null;
   if(blocked)return {reply:blocked,model:'backend-policy',promptVersion:ASSISTANT_VERSION,elapsedMs:0};
-  const history=input.history.map(x=>({question:x.question,answer:x.response.answer,indices:x.response.indices}));
+  const history=input.history.filter(x=>x.response.indices.length>0).map(x=>({question:x.question,answer:x.response.answer,indices:x.response.indices}));
   while(history.length&&Buffer.byteLength(JSON.stringify({review:extraction,history}))>20000)history.shift();
   const remaining=deadline-performance.now();if(remaining<=0)throw new AssistantModelError('timeout');
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),remaining);
   try{
-   const body={model,stream:false,options:{temperature:0,seed:42,num_ctx:8192,num_predict:2200},
+   const body={model,stream:false,options:{temperature:0,seed:42,num_ctx:8192,num_predict:input.mode==='explanation'&&extraction.resultados.length<=3?800:2200},
     format:{type:'object',additionalProperties:false,required:['kind','answer','indices','definitions'],properties:{
      kind:{type:'string',enum:['education','insufficient','out_of_scope','restricted']},answer:{type:'string'},
      indices:{type:'array',items:{type:'integer',minimum:0,maximum:extraction.resultados.length-1,...(targetIndices?{enum:targetIndices}:{})}},
      definitions:{type:'array',...(input.mode==='chat'?{maxItems:0}:{minItems:extraction.resultados.length,maxItems:extraction.resultados.length}),items:{type:'object',additionalProperties:false,required:['index','text','known'],properties:{index:{type:'integer'},text:{type:'string'},known:{type:'boolean'}}}}}},
     messages:[{role:'system',content:prompt+'\n'+educationalGuidance+'\nLas notas educationalEvidence son definiciones generales verificadas, no datos clínicos del paciente. Úsalas como fundamento cuando correspondan. No contradigas su contenido ni declares desconocido un concepto que esas notas definen. Su cobertura es limitada: otros conceptos no están verificados. Si targetIndices está presente, responde solo sobre esas filas; en seguimiento conserva ese contexto. No copies las URLs a la prosa. Si preguntan para qué se mide, explica la finalidad de la medición según purpose; no repitas solo la definición. Responde con el concepto solicitado, incluso si falta la cifra; evita comentar qué diagnósticos se podrían o no hacer.'+(repair?'\nReformulación única: la respuesta anterior fue rechazada. Redacta una respuesta educativa breve, basada en las notas pertinentes, sin cifras, consejos, interpretaciones clínicas ni avisos. No se te entrega la respuesta anterior. Conserva el formato y los índices objetivo.':'')},{role:'user',content:JSON.stringify({mode:input.mode,
-     review:extraction,history,question:input.question,targetIndices,targetRows:targetIndices?.map(index=>({index,...extraction.resultados[index]}))??null,educationalEvidence:evidence,knowledgeVersion:KNOWLEDGE_VERSION})}]};
+     review:{examen:extraction.examen,fecha:extraction.fecha,resultados:extraction.resultados},history,question:input.question,targetIndices,targetRows:targetIndices?.map(index=>({index,...extraction.resultados[index]}))??null,educationalEvidence:evidence,knowledgeVersion:KNOWLEDGE_VERSION})}]};
    const response=await fetchImpl(ollamaUrl('chat'),{method:'POST',redirect:'error',signal:controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
    if(!response.ok||!response.body)throw new AssistantModelError('http');
    const reader=response.body.getReader(),chunks:Uint8Array[]=[];let size=0;
@@ -60,12 +60,47 @@ export function createExamAssistant(options:{model?:string;fetchImpl?:typeof fet
  };
  return async(input:Input):Promise<{reply:Reply;model:string;promptVersion:number;elapsedMs:number;generationAttempts?:number;verifiedNoteIndices?:number[];knowledgeVersion?:number}>=>{
   const started=performance.now(),deadline=started+120000;
-  try{return {...await generate(input,deadline),generationAttempts:1};}
-  catch(error){
-   if(!(error instanceof AssistantModelError)||error.reason!=='unsafe_content')throw error;
-   const result=await generate(input,deadline,true);
-   return {...result,elapsedMs:Math.round(performance.now()-started),generationAttempts:2};
+  const run=async(part:Input,partDeadline=deadline)=>{
+   try{return {...await generate(part,partDeadline),generationAttempts:1};}
+   catch(error){
+    if(!(error instanceof AssistantModelError)||error.reason!=='unsafe_content')throw error;
+    const result=await generate(part,partDeadline,true);
+    return {...result,generationAttempts:2};
+   }
+  };
+  if(input.mode!=='explanation'||input.extraction.resultados.length<=4)return run(input);
+  let extraction:Extraction;try{extraction=extractionSchema.parse(input.extraction);}catch{throw new AssistantModelError('input');}
+  if(extraction.resultados.length>20||Buffer.byteLength(JSON.stringify(extraction))>12000)throw new AssistantModelError('input');
+  const evidence=educationalEvidence(extraction);
+  const definitions:Reply['definitions']=[];
+  const noteIndices:number[]=[];
+  const unresolved:number[]=[];
+  for(let index=0;index<extraction.resultados.length;index++){
+   const note=evidence.find(item=>item.index===index);
+   if(note){definitions[index]={index,text:note.definition,known:true};noteIndices.push(index);}
+   else if(synthetic(extraction.resultados[index].nombre))definitions[index]={index,text:'No hay información suficiente para explicar este indicador sin inventar su significado.',known:false};
+   else unresolved.push(index);
   }
+  let attempts=0;
+  for(let offset=0;offset<unresolved.length;offset+=3){
+   const indices=unresolved.slice(offset,offset+3);
+   let part;
+   try {
+    part=await run({mode:'explanation',question:input.question,history:[],extraction:{examen:extraction.examen,fecha:extraction.fecha,resultados:indices.map(index=>extraction.resultados[index])}},Math.min(deadline,performance.now()+10000));
+   } catch(error) {
+    // Un bloque rechazado no elimina definiciones aceptadas de otras filas.
+    // Transporte, tiempo, formato y referencias siguen siendo fallos completos.
+    if(!(error instanceof AssistantModelError)||!['unsafe_content','timeout'].includes(error.reason))throw error;
+    attempts+=error.reason==='timeout'?1:2;
+    for(const index of indices)definitions[index]={index,text:error.reason==='timeout'?'No se pudo generar la explicación de este indicador dentro del tiempo disponible.':'El modelo no identifica con suficiente certeza el significado de este indicador.',known:false};
+    continue;
+   }
+   attempts+=part.generationAttempts;
+   if(part.reply.kind!=='education'||part.reply.definitions.length!==indices.length)throw new AssistantModelError('partial_explanation');
+   for(let local=0;local<indices.length;local++)definitions[indices[local]]={...part.reply.definitions[local],index:indices[local]};
+  }
+  const reply=validateReply({kind:'education',answer:'Estos son los conceptos presentes en el examen.',indices:definitions.map(item=>item.index),definitions},extraction,'explanation');
+  return {reply,model:attempts?model:'backend-policy',promptVersion:ASSISTANT_VERSION,elapsedMs:Math.round(performance.now()-started),generationAttempts:attempts,verifiedNoteIndices:noteIndices,knowledgeVersion:KNOWLEDGE_VERSION};
  };
 }
 export type ExamAssistant=ReturnType<typeof createExamAssistant>;

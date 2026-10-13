@@ -5,7 +5,7 @@ La configuración actual acepta solo 127.0.0.1, localhost o ::1. La conexión re
 Las pruebas de Jest usan dobles de conexión y no necesitan una base instalada; la prueba real se ejecuta por separado.
 
 ## 1. Descargar el código
-Abre PowerShell en la raíz de vitalia-health-capstone-prueba.
+Abre PowerShell en la raíz de vitalia-health-capstone.
 Ejecuta git status; si muestra cambios propios, guárdalos antes de cambiar de rama. Luego:
 ```powershell
 git fetch origin

@@ -13,5 +13,5 @@ flutter analyze
 flutter test test/portal_demo_test.dart
 flutter run -d edge -t lib/main_vitalia.dart
 Verificar portal, acceso, 3 roles, volver, historial inicial, registrar documento, vista estrecha.
-No hay SDK Flutter en entorno asistente: analyze/tests/ejecución pendientes en equipo usuario.
+No hay SDK Flutter en entorno de comprobación: analyze/tests/ejecución pendientes en equipo usuario.
 Próximo: acordar formatos/límite y consolidar flujo antes de backend. Para sustituir main.dart o modificar pantallas existentes se necesita autorización.

@@ -1,3 +1,4 @@
+import {reviewedDateReply,reviewedFactReply,isReviewedFactReply} from './reviewed-facts';
 import {questionIndices,educationalEvidence} from './knowledge';
 import {z} from 'zod';
 import {type Extraction} from '../ai/contract';
@@ -24,6 +25,12 @@ export function gate(question:string,extraction:Extraction,history:History):Repl
  if(restricted.test(q)||injected.test(q))return fixed('restricted');
  if(/futbol|clima|pelicula|politica|videojuego|bolsa de valores|criptomoneda/.test(q))return fixed('out_of_scope');
  if(otherExam.test(q))return fixed('out_of_scope');
+ const fact=reviewedFactReply(question,extraction,history);if(fact)return fact;
+ if(/fecha|cuando|que dia/.test(q)&&/examen|estudio|reporte|muestra|emision|fecha/.test(q)){
+  if(/muestra|emision|nacimiento|hora/.test(q))return fixed('insufficient');
+  if(/^(?:cual (?:es|fue|era) (?:la )?fecha|que fecha|cuando (?:fue|es|se hizo|se realizo)|(?:en )?que dia|fecha (?:del|de este|de mi))/.test(q))return reviewedDateReply(extraction)??fixed('insufficient');
+ }
+
  const relevant=extraction.resultados.map((row,index)=>({row,index})).filter(({row})=>row.nombre&&q.includes(normalize(row.nombre).trim()));
  if(relevant.length&&relevant.every(({row})=>synthetic(row.nombre))&&!/unidad|rango|referencia|valor|fecha/.test(q))return fixed('insufficient',relevant.map(x=>x.index));
  const exam=normalize(extraction.examen??'').trim();
@@ -50,6 +57,7 @@ export function validateReply(value:unknown,extraction:Extraction,mode:Mode):Rep
   const category=/\p{N}/u.test(value)?'numeric_text':/https?:|www\./.test(value)?'external_link':/normal|anormal|elevado|bajo|alto|fuera del rango/.test(value)?'classification_term':'clinical_or_instruction_term';
   throw new ContentPolicyError(category);
  };
+ if(mode==='chat'&&isReviewedFactReply(reply,extraction))return reply;
  if(!reply.indices.length)throw new Error('Referencias inválidas.');
  checkText(reply.answer);
  if(mode==='chat'&&reply.definitions.length)throw new Error('Formato de conversación inválido.');
@@ -59,7 +67,7 @@ export function validateReply(value:unknown,extraction:Extraction,mode:Mode):Rep
    if(item.index!==index||reply.indices[index]!==index)throw new Error('Definición inválida.');
    checkText(item.text);
    if(synthetic(extraction.resultados[index].nombre)){item.known=false;item.text='No hay información suficiente para explicar este indicador sin inventar su significado.';}
-   else if(!item.known)item.text='El modelo no identifica con suficiente certeza el significado de este indicador.';
+   else if(!item.known&&item.text!=='No se pudo generar la explicación de este indicador dentro del tiempo disponible.')item.text='El modelo no identifica con suficiente certeza el significado de este indicador.';
   });
  }
  return reply;
@@ -67,7 +75,8 @@ export function validateReply(value:unknown,extraction:Extraction,mode:Mode):Rep
 export function explanationView(extraction:Extraction,reply:Reply){
  return {exam:extraction.examen,date:extraction.fecha,approved:false,notice,
   items:extraction.resultados.map((row,index)=>{
-   const item=reply.definitions[index];
+   const currentNote=educationalEvidence(extraction).find(entry=>entry.index===index);
+   const item=currentNote?{index,text:currentNote.definition,known:true}:reply.definitions[index];
    const note=educationalEvidence(extraction).find(entry=>entry.index===index&&entry.definition===item?.text&&item.known);return {index,name:row.nombre,value:row.valor,unit:row.unidad,reference:row.rango_referencia,
     concept:item?.known?'medical_general':'desconocido',explanation:item?.text??'No hay información suficiente para explicar este indicador sin inventar su significado.',source:note?.source??null};
   })};

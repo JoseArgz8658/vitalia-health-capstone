@@ -1,3 +1,4 @@
+import '../documentos_reales/informe_fields.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
@@ -19,6 +20,7 @@ class ExtraccionPendiente {
     final extraction = data['extraction'] as Map<String, dynamic>?;
     bool textOrNull(dynamic value) => value == null || value is String;
     if (extraction != null) {
+      if (!informeValido(extraction['informe'])) throw const FormatException();
       if (!textOrNull(extraction['examen']) || !textOrNull(extraction['fecha']) ||
           extraction['resultados'] is! List) throw const FormatException();
       for (final item in extraction['resultados'] as List) {

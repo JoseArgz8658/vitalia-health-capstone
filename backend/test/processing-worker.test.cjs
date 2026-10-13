@@ -8,9 +8,9 @@ const job={id,document_id:documentId,model:'qwen3:4b-instruct',prompt_version:3,
 const row={storage_key:`patients/${patientId}/documents/${documentId}`,original_name:'ficticio.pdf',content_type:'application/pdf',size_bytes:body.length,patient_id:patientId};
 const text='Texto ficticio';
 const result={status:'requires_review',source:'pdf',method:'direct',reading:{status:'text_ready',text,pageCount:1,incidents:[]},ocr:null,inputText:text,ai:{status:'requires_review',raw:'{"examen":"Ficticio","fecha":null,"resultados":[]}',extraction:{examen:'Ficticio',fecha:null,resultados:[]},incidents:[],approved:false,model:job.model,promptVersion:3,elapsedMs:1},approved:false};
-function dbMock({claim=true,document=row,complete=true,failure=true}={}){
+function dbMock({claim=true,document=row,complete=true,failure=true,promptVersion=3}={}){
  return {query:jest.fn(async(sql)=>{
-  if(sql.includes("SET status='processing'"))return {rows:claim?[job]:[]};
+  if(sql.includes("SET status='processing'"))return {rows:claim?[{...job,prompt_version:promptVersion}]:[]};
   if(sql.includes('SELECT storage_key'))return {rows:document?[document]:[]};
   if(sql.includes('result=$3::jsonb'))return {rows:complete?[{id}]:[]};
   if(sql.includes('failure_code=$2'))return {rows:failure?[{id}]:[]};
@@ -76,4 +76,21 @@ test('reserva manual reutiliza solo un queued; nunca repite trabajo terminado',a
  const inspection={documentId,account:{id:patientId,role:'paciente'}};
  const db={query:jest.fn(async(sql)=>({rows:sql.startsWith('INSERT')?[]:[{id,status:'requires_review'}]}))};
  expect(await reserveManualProcessing(db,inspection)).toBeNull();
+});
+
+test('worker ejecuta extracción ampliada para trabajos v4 y conserva versión al guardar',async()=>{
+ const {REPORT_FIELDS}=require('../dist/ai/report-fields');
+ const informe=Object.fromEntries(REPORT_FIELDS.map(key=>[key,null]));informe.nombre_paciente='Paciente ficticio';
+ const extraction={examen:'Informe de prueba',fecha:null,informe,resultados:[{nombre:'Hemoglobina',valor:'14,2',unidad:'g/dL',rango_referencia:null,estado_documento:null}]};
+ const fetchSpy=jest.spyOn(global,'fetch').mockImplementation(async(_url,options)=>{
+  const request=JSON.parse(options.body);
+  const content=request.format.required.includes('informe') ? {examen:extraction.examen,fecha:extraction.fecha,informe} : {resultados:extraction.resultados};
+  return new Response(JSON.stringify({done:true,message:{content:JSON.stringify(content)}}));
+ });
+ try {
+  const db=dbMock({promptVersion:4});const outcome=await createProcessingWorker(db,{read:async()=>body})(id);
+  expect(outcome.outcome).toBe('requires_review');
+  const saved=JSON.parse(db.query.mock.calls.find(([sql])=>sql.includes('result=$3::jsonb'))[1][2]);
+  expect(saved.ai.promptVersion).toBe(4);expect(saved.ai.extraction.informe.nombre_paciente).toBe('Paciente ficticio');
+ } finally {fetchSpy.mockRestore();}
 });

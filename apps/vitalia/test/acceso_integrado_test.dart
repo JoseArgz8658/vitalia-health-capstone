@@ -13,10 +13,14 @@ void main() {
     expect(find.text('Sesión iniciada'), findsNothing);
     await tester.enterText(find.byType(TextFormField).at(0), 'test@example.com');
     await tester.enterText(find.byType(TextFormField).at(1), 'incorrecta');
+    await tester.ensureVisible(find.text('Iniciar sesión'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Iniciar sesión'));
     await tester.pumpAndSettle();
     expect(find.text('Correo o contraseña incorrectos.'), findsOneWidget);
     expect(find.text('Sesión iniciada'), findsNothing);
+    await tester.ensureVisible(find.text('Crear cuenta de paciente'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Crear cuenta de paciente'));
     await tester.pumpAndSettle();
     expect(find.text('Confirmar contraseña'), findsOneWidget);
@@ -24,3 +28,4 @@ void main() {
     api.close();
   });
 }
+

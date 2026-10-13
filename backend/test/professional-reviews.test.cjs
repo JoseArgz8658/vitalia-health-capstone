@@ -89,3 +89,24 @@ test('HTTP requiere sesión, devuelve 201, conflicto 409 y no-store',async()=>{
  const first=await request(app).post(path).set('Authorization','Bearer '+'a'.repeat(64)).send(input());expect(first.status).toBe(201);expect(first.headers['cache-control']).toBe('no-store');
  expect((await request(app).post(path).set('Authorization','Bearer '+'a'.repeat(64)).send(input())).status).toBe(409);
 });
+test('informe ampliado se corrige sin perder la extracción original ni reescribir revisión',async()=>{
+ const {REPORT_FIELDS}=require('../dist/ai/report-fields');const x=setup();
+ const original={...structuredClone(extraction),informe:{...Object.fromEntries(REPORT_FIELDS.map(key=>[key,null])),nombre_paciente:'Nombre ficticio original',medico_solicitante:'Solicitante ficticio',fecha_muestra:'28-09-2026'}};
+ original.resultados[0].estado_documento=null;
+ x.result.ai.extraction=original;x.result.ai.raw=JSON.stringify(original);x.result.ai.promptVersion=4;
+ const corrected=structuredClone(original);corrected.informe.nombre_paciente='Nombre ficticio cotejado';
+ const before=JSON.stringify(x.result);
+ await expect(x.service.approve(account,patientId,docId,input({extraction:corrected}))).rejects.toBeInstanceOf(ReviewInputError);
+ const result=await x.service.approve(account,patientId,docId,input({extraction:corrected,observations:'Nombre cotejado en el original.'}));
+ expect(result.extraction.informe.nombre_paciente).toBe('Nombre ficticio cotejado');expect(x.saved().original_extraction.informe.nombre_paciente).toBe('Nombre ficticio original');
+ expect(JSON.stringify(x.result)).toBe(before);
+ await expect(x.service.approve(account,patientId,docId,input({extraction:corrected,observations:'Otro intento.'}))).rejects.toBeInstanceOf(ReviewConflictError);
+});
+test('no permite quitar informe ampliado ni aprobar fechas imposibles del estudio',async()=>{
+ const {REPORT_FIELDS}=require('../dist/ai/report-fields');const x=setup();const original={...structuredClone(extraction),informe:Object.fromEntries(REPORT_FIELDS.map(key=>[key,null]))};
+ original.resultados[0].estado_documento=null;
+ x.result.ai.extraction=original;
+ await expect(x.service.approve(account,patientId,docId,input({observations:'Quitar datos.'}))).rejects.toBeInstanceOf(ReviewInputError);
+ const invalid=structuredClone(original);invalid.informe.fecha_muestra='31-11-2026';
+ await expect(x.service.approve(account,patientId,docId,input({extraction:invalid,observations:'Fecha imposible.'}))).rejects.toBeInstanceOf(ReviewInputError);
+});

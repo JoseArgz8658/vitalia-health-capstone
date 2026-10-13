@@ -279,3 +279,33 @@ test('finalidad procede de nota correspondiente y no reemplaza respuestas restri
  expect(applyEducationalNotes(extraction,fixed('restricted'),'chat','¿Para qué se mide?',[]).reply.kind).toBe('restricted');
  expect(applyEducationalNotes(extraction,educational(),'chat','¿Qué es hemoglobina?',[]).noteIndices).toEqual([]);
 });
+test.each([['unsafe_content','ASSISTANT_RESPONSE_REJECTED'],['http','ASSISTANT_MODEL_UNAVAILABLE'],['timeout','ASSISTANT_TIMEOUT']])('error del modelo %s usa código acotado',async(reason,code)=>{
+ const x=setup({model:async()=>{throw new AssistantModelError(reason);}});
+ await expect(x.service.request(account,doc,question())).rejects.toMatchObject({status:503,code});
+ expect((await x.service.get(account,doc)).turns[0].response).toBeNull();
+});
+test('consulta de valor persiste y puede volver a consultarse sin modelo',async()=>{
+ const x=setup(),input=question(randomUUID(),'¿Cuál es el valor de Hemoglobina?');
+ const result=await x.service.request(account,doc,input);expect(result.turn.response.answer).toContain('14,2');
+ expect((await x.service.get(account,doc)).turns[0].response).toEqual(result.turn.response);expect(x.generator).not.toHaveBeenCalled();
+});
+
+test('diagnóstico de fallo solo registra categoría y duración, sin datos del examen',async()=>{
+ const warn=jest.spyOn(console,'warn').mockImplementation(()=>{});
+ try {
+  const x=setup({model:async()=>{throw new AssistantModelError('timeout');}});
+  await expect(x.service.request(account,doc,question())).rejects.toMatchObject({code:'ASSISTANT_TIMEOUT'});
+  const diagnostic=JSON.parse(warn.mock.calls[0][0]);expect(Object.keys(diagnostic).sort()).toEqual(['elapsedMs','event','mode','reason']);
+  expect(diagnostic.reason).toBe('timeout');expect(diagnostic.elapsedMs).toBeGreaterThanOrEqual(0);
+ } finally {warn.mockRestore();}
+});
+test('registro de rechazo expone solo categoría permitida, sin pregunta ni respuesta',async()=>{
+ const warn=jest.spyOn(console,'warn').mockImplementation(()=>{});
+ try{
+  const x=setup({model:async()=>{throw new AssistantModelError('unsafe_content','classification_term');}});
+  await expect(x.service.request(account,doc,question())).rejects.toMatchObject({status:503});
+  const log=JSON.parse(warn.mock.calls.at(-1)[0]);
+  expect(Object.keys(log).sort()).toEqual(['detail','elapsedMs','event','mode','reason']);
+  expect(log.detail).toBe('classification_term');
+ }finally{warn.mockRestore();}
+});

@@ -73,7 +73,7 @@ La descarga usa ACTION_CREATE_DOCUMENT; no necesita permiso general de almacenam
 
 ## Evidencia y límites
 Verificación local de sintaxis Dart/Kotlin y XML válida. Flutter, Android SDK, compilador Kotlin
-y PowerShell no disponibles en el entorno del asistente: ejecución del script, análisis,
+y PowerShell no disponibles en el entorno de comprobación: ejecución del script, análisis,
 pruebas y compilación Android pendientes en tu computador.
 iOS y teléfono físico no se configuran en este paso. La descarga web conserva su implementación.
 No subir local.properties, claves ni .env. Los archivos Android generados deberán revisarse

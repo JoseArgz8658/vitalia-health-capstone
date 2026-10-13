@@ -19,7 +19,7 @@ export function createQueueProcessor(db:Database,processOne:(id:string)=>Promise
   if(!models.length)return {state:'model_unavailable' as const};
   const pending=await db.query<{id:string}>(`SELECT p.id FROM public.vitalia_document_processing p
  JOIN public.vitalia_documents d ON d.id=p.document_id
- WHERE p.status='queued' AND p.prompt_version=3 AND p.model=ANY($1::text[]) AND d.status='stored'
+ WHERE p.status='queued' AND p.prompt_version IN (3,4) AND p.model=ANY($1::text[]) AND d.status='stored'
  ORDER BY p.created_at,p.id LIMIT 1`,[models]);
   if(!pending.rows[0])return {state:'idle' as const};
   const result=await processOne(pending.rows[0].id);

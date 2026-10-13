@@ -25,5 +25,25 @@ ThemeData temaVitalia() => ThemeData(
     backgroundColor: ColoresVitalia.blanco,
     foregroundColor: ColoresVitalia.texto,
   ),
+  inputDecorationTheme: const InputDecorationTheme(
+    filled: true,
+    fillColor: ColoresVitalia.blanco,
+    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.all(Radius.circular(12)),
+      borderSide: BorderSide(color: ColoresVitalia.borde),
+    ),
+  ),
+  filledButtonTheme: FilledButtonThemeData(
+    style: FilledButton.styleFrom(
+      minimumSize: const Size(48, 48),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+  ),
+  textButtonTheme: TextButtonThemeData(
+    style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+  ),
   dividerColor: ColoresVitalia.borde,
 );
+

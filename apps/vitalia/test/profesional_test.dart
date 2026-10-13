@@ -33,6 +33,39 @@ Future<AuthApi> session(Future<http.Response> Function(http.Request) work) async
   return auth;
 }
 void main() {
+  testWidgets('actualiza procesamiento, habilita revisión al finalizar y deja de consultar', (tester) async {
+    var extractionCalls = 0;
+    final auth = await session((req) async {
+      if (req.url.path.endsWith('/review')) {
+        return jsonResponse(jsonEncode({'processingId': docId,
+          'originalExtraction': extractionCalls >= 2 ? processing()['extraction'] : null,
+          'canReview': extractionCalls >= 2, 'review': null}), 200);
+      }
+      if (req.url.path.endsWith('/extraction')) {
+        extractionCalls++;
+        return jsonResponse(jsonEncode({'processing': extractionCalls >= 2
+          ? processing() : {...processing(), 'status': 'processing', 'extraction': null}}), 200);
+      }
+      return jsonResponse(jsonEncode({'documents': [doc()]}), 200);
+    });
+    await tester.pumpWidget(MaterialApp(home: ProfesionalDocumentosPage(auth: auth,
+      patientId: patientId, patientEmail: 'p@example.com', onExpired: () {}, onBack: () {}, onLogout: () {})));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Consultar extracción'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(find.text('Extracción pendiente de revisión profesional'), findsOneWidget);
+    expect(find.text('Aprobar y guardar revisión'), findsOneWidget);
+    expect(extractionCalls, 2);
+    await tester.pump(const Duration(seconds: 15));
+    expect(extractionCalls, 2);
+    await tester.pumpWidget(const SizedBox.shrink());
+    auth.close();
+  });
+
   test('API consulta historial, extracción y archivo con sesión', () async {
     final auth = await session((req) async {
       expect(req.method, 'GET');
@@ -93,6 +126,11 @@ void main() {
     var active = true;
     final auth = await session((req) async {
       if (!active) return jsonResponse('', 404);
+      if (req.url.path.endsWith('/review')) {
+        return jsonResponse(jsonEncode({'processingId': docId,
+          'originalExtraction': processing()['extraction'],
+          'canReview': true, 'review': null}), 200);
+      }
       return jsonResponse(jsonEncode(req.url.path.endsWith('/extraction')
         ? {'processing': processing()} : {'documents': [doc()]}), 200);
     });
@@ -101,11 +139,18 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Consultar extracción'));
     await tester.pumpAndSettle();
+    expect(find.text('Valor: 15,2'), findsOneWidget);
+    expect(find.text('Consulta y revisión del examen'), findsOneWidget);
     active = false;
-    await tester.tap(find.text('Actualizar historial'));
+    await tester.ensureVisible(find.text('Actualizar extracción'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Actualizar extracción'));
     await tester.pumpAndSettle();
     expect(find.text('Valor: 15,2'), findsNothing);
     expect(find.text('Consultar extracción'), findsNothing);
+    expect(find.text('Texto ficticio original'), findsNothing);
+    expect(find.text('Aprobar y guardar revisión'), findsNothing);
+    expect(find.text('Consulta y revisión del examen'), findsNothing);
     expect(find.textContaining('Paciente o documento no disponible'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     auth.close();

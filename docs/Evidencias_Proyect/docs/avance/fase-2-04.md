@@ -14,4 +14,4 @@ flutter pub get
 flutter analyze
 flutter run -d edge -t lib/main_acceso.dart
 Verificar: vacío muestra errores, correo inválido rechazado, correo ficticio válido informa backend pendiente, mostrar/ocultar clave, recuperación explica limitación, explorar abre roles previos; volver y comprobar campos vacíos. Revisar ancho móvil.
-Análisis y ejecución pendientes en equipo usuario; no hay Flutter en entorno del asistente.
+Análisis y ejecución pendientes en equipo usuario; no hay Flutter en entorno de comprobación.

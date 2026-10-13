@@ -1,3 +1,4 @@
+import '../../core/mensaje_vista.dart';
 import 'package:flutter/material.dart';
 import '../../core/auth_api.dart';
 import 'explicacion_api.dart';
@@ -49,11 +50,17 @@ class _ExplicacionPanelState extends State<ExplicacionPanel> {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const SizedBox(height: 12),
       Text('Explicación educativa con asistencia de IA', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
       const Text('Esta explicación no está aprobada por un profesional. No diagnostica ni recomienda tratamientos.'),
+      const SizedBox(height: 12),
       TextButton(onPressed: _busy ? null : () => _load(false),
         child: const Text('Consultar explicación')),
-      if (_busy) const Text('Consultando o generando explicación. Puede tardar hasta dos minutos.'),
-      if (_error != null) Text(_error!),
+      if (_busy) ...[
+        const LinearProgressIndicator(),
+        const SizedBox(height: 12),
+        const MensajeVista(text: 'Consultando o generando explicación. Puede tardar hasta dos minutos.', icon: Icons.hourglass_top),
+      ],
+      if (_error != null) MensajeVista(text: _error!, icon: Icons.error_outline, error: true),
       if (status == 'not_available') const Text('Se requiere una revisión profesional aprobada.'),
       if (status == 'not_requested') const Text('Todavía no se ha generado una explicación.'),
       if (status == 'generating') const Text('La explicación está en generación. Actualiza la consulta más adelante.'),
@@ -61,13 +68,27 @@ class _ExplicacionPanelState extends State<ExplicacionPanel> {
       if (!_busy && ['not_requested', 'failed'].contains(status))
         OutlinedButton(onPressed: () => _load(true), child: const Text('Generar explicación')),
       if (explanation != null) ...[
-        Text(explanation['notice'] as String),
-        for (final row in explanation['items'] as List) Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8), child: Column(
+        const SizedBox(height: 16),
+        MensajeVista(text: explanation['notice'] as String, icon: Icons.auto_awesome_outlined),
+        if ((explanation['items'] as List).any((row) => row['concept'] == 'desconocido'))
+          const Text('Algunos indicadores no tienen una explicación disponible. Esto no significa que sus datos sean incorrectos.'),
+        for (final row in explanation['items'] as List) Container(
+          width: double.infinity,
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+            borderRadius: BorderRadius.circular(16)), child: Column(
             crossAxisAlignment: CrossAxisAlignment.start, children: [
-              SelectableText(row['name'] as String? ?? 'Indicador sin nombre disponible'),
+              SelectableText(row['name'] as String? ?? 'Indicador sin nombre disponible',
+                style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
               SelectableText(row['explanation'] as String),
-              if (row['source'] != null) SelectableText('Fuente: ${row['source']}'),
+              if (row['source'] != null) ...[
+                const SizedBox(height: 12),
+                SelectableText('Fuente: ${row['source']}',
+                  style: Theme.of(context).textTheme.bodySmall),
+              ],
             ])),
       ],
     ]);

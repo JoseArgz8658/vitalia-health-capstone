@@ -1,5 +1,6 @@
 .env
 .env.*
+!.env.example
 **/.dart_tool/
 **/build/
 **/.flutter-plugins*
@@ -13,6 +14,7 @@
 *.pem
 *.key
 *.log
+
 **/dist/
 **/coverage/
 *.iml

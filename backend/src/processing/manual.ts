@@ -17,10 +17,10 @@ export async function inspectManualDocument(db:Database,documentId:string){
  const account:AccountSummary={id:row.patient_id,email:'',role:'paciente',createdAt:row.created_at};
  const existing=await findPatientProcessingStatus(db,account,documentId);
  const job=existing?await findProcessingForWorker(db,existing.id):null;
- return {documentId,contentType:row.content_type,sizeBytes:row.size_bytes,existing,account,model:job?.model??'qwen3:4b-instruct',promptVersion:job?.prompt_version??3};
+ return {documentId,contentType:row.content_type,sizeBytes:row.size_bytes,existing,account,model:job?.model??'qwen3:4b-instruct',promptVersion:job?.prompt_version??4};
 }
 export async function reserveManualProcessing(db:Database,inspection:NonNullable<Awaited<ReturnType<typeof inspectManualDocument>>>){
- const id=await queueDocumentProcessing(db,inspection.account,inspection.documentId);
+ const id=await queueDocumentProcessing(db,inspection.account,inspection.documentId,inspection.model,inspection.promptVersion as 3|4);
  if(id)return id;
  const existing=await findPatientProcessingStatus(db,inspection.account,inspection.documentId);
  return existing?.status==='queued'?existing.id:null;

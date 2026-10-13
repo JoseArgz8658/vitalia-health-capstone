@@ -22,6 +22,44 @@ Future<AuthApi> session(Future<http.Response> Function(http.Request) work)async{
 Widget panel(AuthApi auth,{VoidCallback? expired})=>MaterialApp(home:Scaffold(body:SingleChildScrollView(child:ChatExamenPanel(auth:auth,documentId:id,reviewedExtraction:reviewed,onExpired:expired??(){}))));
 Future<void> tap(WidgetTester tester,String text)async{final finder=find.text(text);await tester.ensureVisible(finder);await tester.pumpAndSettle();await tester.tap(finder);await tester.pumpAndSettle();}
 void main(){
+ testWidgets('rechazo del modelo mantiene historial, consulta fallo y permite nueva pregunta sin reenviar', (tester) async {
+  final turns=<Map<String,dynamic>>[turn(nuevaSolicitudChat())];
+  var posts=0;
+  final auth=await session((req)async{
+   if(req.method=='GET')return response(history(turns));
+   posts++;
+   final body=jsonDecode(req.body) as Map<String,dynamic>;
+   if(posts==1){
+    turns.add({'id':body['requestId'],'mode':'chat','question':body['question'],'status':'failed','approved':false,'response':null});
+    return response({'error':{'code':'ASSISTANT_RESPONSE_REJECTED'}},503);
+   }
+   final value=turn(body['requestId']);value['question']=body['question'];
+   turns.add(value);return response({'turn':value});
+  });
+  await tester.pumpWidget(panel(auth));await tap(tester,'Abrir conversación');
+  await tester.enterText(find.byType(TextField),'y el profesional que validó?');
+  await tap(tester,'Enviar pregunta');
+  expect(posts,1);
+  expect(find.text('La hemoglobina transporta oxígeno.'),findsOneWidget);
+  expect(find.text('No se obtuvo una respuesta aceptable. Puedes enviar una nueva solicitud.'),findsOneWidget);
+  expect(find.byType(TextField),findsOneWidget);
+  await tester.enterText(find.byType(TextField),'¿Qué significa hemoglobina?');
+  await tap(tester,'Enviar pregunta');
+  expect(posts,2);
+  await tester.pumpWidget(const SizedBox());auth.close();
+ });
+ testWidgets('recuperación tras rechazo respeta revocación y retira historial', (tester) async {
+  var revoked=false;
+  final auth=await session((req)async{
+   if(req.method=='POST'){revoked=true;return response({'error':{'code':'ASSISTANT_RESPONSE_REJECTED'}},503);}
+   return revoked?response({},404):response(history([turn(nuevaSolicitudChat())]));
+  });
+  await tester.pumpWidget(panel(auth));await tap(tester,'Abrir conversación');
+  await tester.enterText(find.byType(TextField),'Pregunta ficticia');await tap(tester,'Enviar pregunta');
+  expect(find.text('La hemoglobina transporta oxígeno.'),findsNothing);expect(find.byType(TextField),findsNothing);
+  await tester.pumpWidget(const SizedBox());auth.close();
+ });
+
  test('UUIDs distintos y API solo envía pregunta y requestId al documento fijado',()async{
   expect(nuevaSolicitudChat(),isNot(nuevaSolicitudChat()));final requestId=nuevaSolicitudChat();
   final auth=await session((req)async{

@@ -64,7 +64,10 @@ void main() {
     ))));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Solicitar procesamiento'));
-    await tester.pumpAndSettle();
+    // La espera permanece animada mientras queued; no se espera quietud.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
     expect(posts, 1);
     expect(find.text('Procesamiento pendiente'), findsOneWidget);
     expect(find.text('Solicitar procesamiento'), findsNothing);

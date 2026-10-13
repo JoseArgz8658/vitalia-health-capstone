@@ -49,3 +49,10 @@ test('fallo DB no expone detalles',async()=>{
  const services=createProcessingService({query:async()=>{throw new Error('password secreto');}});
  const r=await api(createApp({find:async()=>account},undefined,undefined,services));expect(r.status).toBe(500);expect(JSON.stringify(r.body)).not.toContain('secreto');
 });
+
+test('solicitud nueva de la aplicación reserva versión ampliada sin aceptar versión del cliente',async()=>{
+ const x=setup();await api(x.app,'post').send({}).expect(202);
+ const insert=x.query.mock.calls.find(([sql])=>sql.startsWith('INSERT INTO'));
+ expect(insert[1][4]).toBe(4);
+ await api(x.app,'post').send({promptVersion:3}).expect(400);
+});

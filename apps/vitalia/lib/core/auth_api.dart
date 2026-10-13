@@ -1,3 +1,4 @@
+import 'assistant_failure_message.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -64,7 +65,7 @@ class AuthApi {
           404 => 'Documento no disponible.',
           409 => request.url.path.contains('/assistant') ? 'Comprueba la revisión aprobada y el límite de treinta preguntas. Actualiza antes de repetir.' : 'Primero se requiere una revisión profesional aprobada.',
           413 => 'El archivo supera 10 MiB.',
-          503 => request.url.path.contains('/assistant') ? 'El asistente está ocupado o la respuesta no fue aceptada. Actualiza antes de repetir.' : 'El servicio está ocupado. Intenta nuevamente.',
+          503 => request.url.path.contains('/assistant') ? assistantFailureMessage(response.body) : 'El servicio está ocupado. Intenta nuevamente.',
           _ => 'No se pudo completar la solicitud.',
         };
         throw AuthFailure(message, response.statusCode);
