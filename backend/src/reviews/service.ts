@@ -73,6 +73,10 @@ export function createReviewService(db:DocumentDatabase){
    if(!parsed.success)throw new ReviewInputError();
    const reviewed=parsed.data.extraction;
    if(!reviewed.resultados.length||(reviewed.fecha!==null&&!isCalendarDate(reviewed.fecha))||Buffer.byteLength(JSON.stringify(parsed.data),'utf8')>24*1024)throw new ReviewInputError();
+   if(reviewed.informe){
+    if(reviewed.resultados.some(row=>row.estado_documento===undefined))throw new ReviewInputError();
+    for(const key of ['fecha_nacimiento','fecha_muestra','fecha_emision'] as const){const date=reviewed.informe[key];if(date!==null&&!isCalendarDate(date))throw new ReviewInputError();}
+   }
    return db.transaction(async tx=>{
     const assignmentId=await assigned(tx,account,patientId,documentId);
     const found=await tx.query<{id:string;status:string;result:unknown}>(`SELECT id,status,result FROM public.vitalia_document_processing WHERE document_id=$1 FOR UPDATE`,[documentId]);
@@ -80,7 +84,8 @@ export function createReviewService(db:DocumentDatabase){
     if(await findReview(tx,documentId))throw new ReviewConflictError();
     const value=processingResultSchema.parse(job.result);const original=value.ai?.extraction;
     if(!original)throw new ReviewConflictError();
-    const missing=reviewed.examen===null||reviewed.fecha===null||reviewed.resultados.some(row=>Object.values(row).some(field=>field===null));
+    if(original.informe&&!reviewed.informe)throw new ReviewInputError();
+    const missing=reviewed.examen===null||reviewed.fecha===null||(reviewed.informe&&Object.values(reviewed.informe).some(field=>field===null))||reviewed.resultados.some(row=>Object.values(row).some(field=>field===null));
     if((missing||!isDeepStrictEqual(original,reviewed))&&!parsed.data.observations)throw new ReviewInputError();
     await tx.query(`INSERT INTO public.vitalia_professional_reviews
      (id,processing_id,document_id,patient_id,assignment_id,reviewer_id,original_extraction,reviewed_extraction,observations,confirmed_original)

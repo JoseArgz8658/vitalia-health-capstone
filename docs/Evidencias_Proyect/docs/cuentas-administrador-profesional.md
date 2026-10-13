@@ -44,7 +44,7 @@ En Flutter, cierra la sesión de paciente e inicia sesión con el correo y contr
 Si necesitas reiniciar Flutter web:
 
 ```powershell
-cd C:\Users\josem\Documents\GitHub\vitalia-health-capstone-prueba\apps\vitalia
+cd C:\Users\josem\Documents\GitHub\vitalia-health-capstone\apps\vitalia
 flutter run -d edge --web-hostname localhost --web-port 5173 --dart-define=VITALIA_API_URL=http://127.0.0.1:3000
 ```
 

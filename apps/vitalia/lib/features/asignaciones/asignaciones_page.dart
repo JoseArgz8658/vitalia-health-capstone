@@ -1,3 +1,4 @@
+import '../../core/mensaje_vista.dart';
 import '../profesional/profesional_documentos_page.dart';
 import 'package:flutter/material.dart';
 import '../../core/auth_api.dart';
@@ -78,30 +79,50 @@ class _AsignacionesPageState extends State<AsignacionesPage> {
       TextButton(onPressed: widget.sessionBusy || _busy ? null : widget.onLogout,
         child: const Text('Cerrar sesión')),
     ]),
-    body: SafeArea(child: SingleChildScrollView(padding: const EdgeInsets.all(24),
+    body: SafeArea(child: SingleChildScrollView(padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 16 : 24),
       child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(widget.email),
-          Text('Cuenta: ${widget.role}'),
+          Container(padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 16 : 24),
+            decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(24)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Image.asset('assets/branding/vitalia-simbolo.png', height: 48,
+                  semanticLabel: 'Vitalia Health'),
+                const SizedBox(width: 12),
+                Expanded(child: Text(_admin ? 'Gestión de asignaciones' : 'Tu espacio profesional',
+                  style: Theme.of(context).textTheme.headlineSmall)),
+              ]),
+              const SizedBox(height: 12),
+              Text(widget.email),
+              const SizedBox(height: 4),
+              Text('Cuenta: ${widget.role}'),
+            ]),
+          ),
           if (widget.notice != null) Text(widget.notice!,
             style: TextStyle(color: Theme.of(context).colorScheme.error)),
           const SizedBox(height: 16),
           if (_admin) ...[
             const Text('Usa los correos de cuentas existentes. Asignar no cambia sus roles.'),
+            const SizedBox(height: 16),
             TextField(controller: _patient, enabled: !_busy,
               keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Correo del paciente')),
+            const SizedBox(height: 20),
             TextField(controller: _professional, enabled: !_busy,
               keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Correo del profesional')),
             const SizedBox(height: 12),
             FilledButton(onPressed: _busy ? null : () => _change(() => _api.asignar(_patient.text, _professional.text)),
               child: const Text('Asignar paciente')),
           ] else
-            const Text('Solo se muestran tus pacientes con asignación activa. Puedes consultar documentos y extracciones pendientes; la aprobación estará disponible en una etapa posterior.'),
+            const Text('Solo se muestran tus pacientes con asignación activa. Abre sus exámenes para cotejar la extracción con el original y registrar la revisión profesional.'),
           TextButton(onPressed: _busy ? null : () => _load(_offset), child: const Text('Actualizar lista')),
-          if (_busy) const Center(child: CircularProgressIndicator()),
-          if (_error != null) Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          if (_busy) const Padding(padding: EdgeInsets.symmetric(vertical: 16),
+            child: Column(children: [LinearProgressIndicator(), SizedBox(height: 8),
+              Text('Cargando la información…')])),
+          if (_error != null) MensajeVista(text: _error!, icon: Icons.error_outline, error: true),
           if (!_busy && _error == null && _count == 0)
-            Text(_admin ? 'No hay asignaciones en esta página.' : 'No tienes pacientes asignados en esta página.'),
+            MensajeVista(text: _admin ? 'No hay asignaciones en esta página.' : 'No tienes pacientes asignados en esta página.',
+              icon: Icons.people_outline),
           if (_admin)
             ..._assignments.map((item) => Card(child: Padding(padding: const EdgeInsets.all(16),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -113,13 +134,19 @@ class _AsignacionesPageState extends State<AsignacionesPage> {
                   child: Text(item.active ? 'Desactivar asignación' : 'Reactivar asignación')),
               ]))))
           else
-            ..._patients.map((item) => Card(child: Padding(padding: const EdgeInsets.all(16),
+            ..._patients.map((item) => Card(
+              margin: const EdgeInsets.only(bottom: 16), elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              child: Padding(padding: const EdgeInsets.all(20),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(item.email),
+                const Icon(Icons.person_outline),
+                const SizedBox(height: 12),
+                Text(item.email, style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
                 TextButton(onPressed: _busy ? null : () => setState(() => _selectedPatient = item),
                   child: const Text('Ver exámenes')),
               ])))),
-          Wrap(spacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
             Text('Página ${_offset ~/ 20 + 1}'),
             TextButton(onPressed: _busy || _offset == 0 ? null : () => _load(_offset - 20), child: const Text('Anterior')),
             TextButton(onPressed: _busy || _count < 20 || _offset >= 10000 ? null : () => _load(_offset + 20), child: const Text('Siguiente')),

@@ -9,13 +9,13 @@ const identifier=z.uuid();
 const modelSchema=z.string().min(1).max(100).regex(/^[a-zA-Z0-9_.:-]+$/).refine(v=>!v.toLowerCase().includes('cloud'));
 function patient(account:AccountSummary){if(account.role!=='paciente')throw new Error('Identidad de paciente requerida.');identifier.parse(account.id);}
 // Identidad ya autenticada. Nunca aceptar account desde un cuerpo HTTP.
-export async function queueDocumentProcessing(db:Database,account:AccountSummary,documentId:string,model='qwen3:4b-instruct'){
- patient(account);identifier.parse(documentId);modelSchema.parse(model);
+export async function queueDocumentProcessing(db:Database,account:AccountSummary,documentId:string,model='qwen3:4b-instruct',promptVersion:3|4=3){
+ patient(account);identifier.parse(documentId);modelSchema.parse(model);z.union([z.literal(3),z.literal(4)]).parse(promptVersion);
  const id=randomUUID();
  const result=await db.query<{id:string}>(`INSERT INTO public.vitalia_document_processing(id,document_id,model,prompt_version)
- SELECT $1,d.id,$4,3 FROM public.vitalia_documents d
+ SELECT $1,d.id,$4,$5 FROM public.vitalia_documents d
  WHERE d.id=$2 AND d.patient_id=$3 AND d.status='stored'
- ON CONFLICT(document_id) DO NOTHING RETURNING id`,[id,documentId,account.id,model]);
+ ON CONFLICT(document_id) DO NOTHING RETURNING id`,[id,documentId,account.id,model,promptVersion]);
  return result.rows[0]?.id??null;
 }
 // Uso interno del futuro procesador; no es una ruta pública ni concede permisos clínicos.

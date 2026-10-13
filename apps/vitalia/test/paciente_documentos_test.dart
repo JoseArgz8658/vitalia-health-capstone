@@ -20,10 +20,14 @@ void main() {
     await tester.pumpWidget(VitaliaMvpApp(api: auth));
     await tester.enterText(find.byType(TextFormField).at(0), 'test@example.com');
     await tester.enterText(find.byType(TextFormField).at(1), 'contraseña ficticia');
+    await tester.ensureVisible(find.text('Iniciar sesión'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Iniciar sesión'));
     await tester.pumpAndSettle();
     expect(find.text('Mis exámenes'), findsOneWidget);
     expect(find.textContaining('No hay exámenes'), findsOneWidget);
+    await tester.ensureVisible(find.text('Subir examen'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Subir examen'));
     await tester.pumpAndSettle();
     expect(find.text('Guardar examen'), findsOneWidget);
@@ -47,3 +51,4 @@ void main() {
     auth.close();
   });
 }
+

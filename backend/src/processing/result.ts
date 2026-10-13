@@ -5,7 +5,7 @@ const incident=z.object({code:z.string().min(1).max(100),path:z.string().max(200
 const incidents=z.array(incident).max(1000);
 const reading=z.object({status:z.enum(['text_ready','needs_ocr','rejected']),text:text.nullable(),pageCount:z.number().int().min(1).max(10000).nullable(),incidents}).strict();
 const ocr=z.object({status:z.enum(['requires_review','rejected']),source:z.enum(['pdf','png','jpeg']),text:text.nullable(),pages:z.array(z.object({page:z.number().int().min(1).max(3),text,confidence:z.number().finite().min(0).max(100)}).strict()).max(3),incidents,approved:z.literal(false)}).strict();
-const ai=z.object({status:z.enum(['requires_review','rejected']),raw:z.string().max(131072),extraction:extractionSchema.nullable(),incidents,approved:z.literal(false),model:z.string().min(1).max(100),promptVersion:z.literal(3),elapsedMs:z.number().int().min(0)}).strict();
+const ai=z.object({status:z.enum(['requires_review','rejected']),raw:z.string().max(131072),extraction:extractionSchema.nullable(),incidents,approved:z.literal(false),model:z.string().min(1).max(100),promptVersion:z.union([z.literal(3),z.literal(4)]),elapsedMs:z.number().int().min(0)}).strict();
 export const processingResultSchema=z.object({
  status:z.enum(['requires_review','rejected','service_error']),source:z.enum(['pdf','png','jpeg']),method:z.enum(['direct','ocr']).nullable(),
  reading:reading.nullable(),ocr:ocr.nullable(),inputText:text.nullable(),ai:ai.nullable(),approved:z.literal(false),
@@ -13,6 +13,7 @@ export const processingResultSchema=z.object({
 }).strict().superRefine((v,ctx)=>{
  if(v.status==='requires_review'&&(!v.ai||v.ai.status!=='requires_review'||!v.ai.extraction||!v.inputText?.trim()))ctx.addIssue({code:'custom',message:'Extracción pendiente de revisión incompleta.'});
  if(v.ai&&v.method==='ocr'&&(v.ocr?.status!=='requires_review'||v.inputText!==v.ocr.text))ctx.addIssue({code:'custom',message:'Texto OCR inconsistente.'});
+ if(v.ai?.promptVersion===4&&v.ai.extraction&&(!v.ai.extraction.informe||v.ai.extraction.resultados.some(row=>row.estado_documento===undefined)))ctx.addIssue({code:'custom',message:'Informe ampliado incompleto.'});
  if(v.ai&&v.ai.status!==v.status)ctx.addIssue({code:'custom',message:'Estado IA incompatible.'});
  if(v.source!=='pdf'&&(v.reading!==null||v.method!=='ocr'))ctx.addIssue({code:'custom',message:'Lectura incompatible con imagen.'});
  if(v.method==='direct'&&(v.source!=='pdf'||v.reading?.status!=='text_ready'||v.ocr!==null||v.inputText!==v.reading.text))ctx.addIssue({code:'custom',message:'Texto directo inconsistente.'});

@@ -12,13 +12,13 @@ export type ProcessingOutcome =
 export function createProcessingWorker(db:Database,storage:Pick<DocumentStorage,'read'>,options:{
  process?:(data:Uint8Array,source:DocumentExtractionResult['source'],model:string)=>Promise<DocumentExtractionResult>;
 }={}){
- const process=options.process??((data,source,model)=>createDocumentExtraction({model})(data,source));
+
  return async function processOne(id:string):Promise<ProcessingOutcome>{
   z.uuid().parse(id);
   const job=await claimDocumentProcessing(db,id);
   if(!job)return {outcome:'not_claimed',processingId:id};
   try{
-   if(job.prompt_version!==3)throw new Error('Versión de prompt no compatible.');
+   if(![3,4].includes(job.prompt_version))throw new Error('Versión de prompt no compatible.');
    const document=await db.query<{storage_key:string;original_name:string;content_type:string;size_bytes:number;patient_id:string}>(`SELECT storage_key,original_name,content_type,size_bytes,patient_id
     FROM public.vitalia_documents WHERE id=$1 AND status='stored'`,[job.document_id]);
    const row=document.rows[0];if(!row||row.content_type!==job.content_type)throw new Error('Documento no disponible.');
@@ -29,7 +29,7 @@ export function createProcessingWorker(db:Database,storage:Pick<DocumentStorage,
    if(body.length!==row.size_bytes||body.length>MAX_FILE_BYTES)throw new Error('Contenido inconsistente.');
    const mime=identifyDocument(body,row.content_type,row.original_name);
    const source=({'application/pdf':'pdf','image/png':'png','image/jpeg':'jpeg'} as const)[mime as 'application/pdf'|'image/png'|'image/jpeg'];
-   const result=await process(body,source,job.model);
+   const result=await (options.process?options.process(body,source,job.model):createDocumentExtraction({model:job.model,promptVersion:job.prompt_version as 3|4})(body,source));
    if(!await completeDocumentProcessing(db,id,result))throw new Error('No se pudo guardar resultado.');
    return {outcome:result.status==='service_error'?'failed':result.status,processingId:id,approved:false};
   }catch{

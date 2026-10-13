@@ -8,7 +8,7 @@ const database=rows=>({query:jest.fn(async()=>({rows}))});
 test('cola limita a documento guardado de paciente autenticado y parametriza',async()=>{
  const db=database([{id}]);expect(await queueDocumentProcessing(db,account,doc)).toBe(id);
  const [sql,params]=db.query.mock.calls[0];
- expect(params.slice(1)).toEqual([doc,account.id,'qwen3:4b-instruct']);
+ expect(params.slice(1)).toEqual([doc,account.id,'qwen3:4b-instruct',3]);
  expect(sql).toContain("d.status='stored'");expect(sql).toContain('d.patient_id=$3');expect(sql).toContain('ON CONFLICT(document_id) DO NOTHING');
  expect(sql).not.toContain(account.id);
 });

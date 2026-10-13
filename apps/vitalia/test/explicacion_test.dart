@@ -42,6 +42,7 @@ void main(){
   await tester.pumpWidget(panel(auth));expect(posts,0);
   await tap(tester,'Consultar explicación');await tap(tester,'Generar explicación');
   expect(posts,1);expect(find.text('No hay información suficiente para explicar este indicador.'),findsOneWidget);
+  expect(find.text('Algunos indicadores no tienen una explicación disponible. Esto no significa que sus datos sean incorrectos.'),findsOneWidget);
   expect(find.text('Generar explicación'),findsNothing);expect(find.textContaining('no está aprobada por un profesional'),findsOneWidget);
   await tester.binding.setSurfaceSize(const Size(360,800));await tester.pumpAndSettle();expect(tester.takeException(),isNull);
   await tester.binding.setSurfaceSize(null);await tester.pumpWidget(const SizedBox());auth.close();

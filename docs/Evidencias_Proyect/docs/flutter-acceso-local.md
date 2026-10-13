@@ -23,7 +23,7 @@ flutter run -d edge --web-hostname localhost --web-port 5173 --dart-define=VITAL
 
 Usa exactamente localhost:5173; otro origen será rechazado. Si el puerto está ocupado, detén la instancia anterior.
 Se mantienen las pruebas históricas de la maqueta sin cambios: algunas comprobaban mensajes del formulario antiguo. Ejecuta las nuevas pruebas indicadas para este flujo; la actualización de esos archivos históricos queda pendiente.
-No se ejecutó Flutter en el entorno de desarrollo del asistente.
+No se ejecutó Flutter en el entorno de comprobación.
 
 ## Comprobación manual
 1. Acceso inicial sin selector de rol.

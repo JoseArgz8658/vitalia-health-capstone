@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import {reportSchema} from './report-fields';
 const nullableText = z.string().min(1).max(500).refine(value => value.trim().length > 0).nullable();
 export const extractionSchema = z.object({
-  examen: nullableText, fecha: nullableText,
+  examen: nullableText, fecha: nullableText, informe: reportSchema.optional(),
   resultados: z.array(z.object({
-    nombre: nullableText, valor: nullableText, unidad: nullableText, rango_referencia: nullableText,
+    nombre: nullableText, valor: nullableText, unidad: nullableText, rango_referencia: nullableText, estado_documento: nullableText.optional(),
   }).strict()).max(100),
 }).strict();
 export type Extraction = z.infer<typeof extractionSchema>;
@@ -21,7 +22,7 @@ export function isCalendarDate(value: string): boolean {
   date.setUTCHours(0, 0, 0, 0);
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
-export function reviewExtraction(raw: string): ExtractionReview {
+export function reviewExtraction(raw: string, requireReport=false): ExtractionReview {
   let value: unknown;
   try { value = JSON.parse(raw); } catch {
     return { status: 'rejected', raw, extraction: null, approved: false,
@@ -33,12 +34,20 @@ export function reviewExtraction(raw: string): ExtractionReview {
       incidents: parsed.error.issues.map(issue => ({ code: 'invalid_structure', path: issue.path.join('.'), message: issue.message })) };
   }
   const extraction = parsed.data;
+  if(requireReport&&(!extraction.informe||extraction.resultados.some(row=>row.estado_documento===undefined)))return {status:'rejected',raw,extraction:null,incidents:[{code:'invalid_structure',path:'informe',message:'Faltan los campos del informe ampliado.'}],approved:false};
+
   const incidents: Incident[] = [];
   for (const key of ['examen', 'fecha'] as const) {
     if (extraction[key] === null) incidents.push({ code: 'not_extracted', path: key, message: 'Campo no extraído; comprobar el documento original.' });
   }
   if (extraction.fecha !== null && !isCalendarDate(extraction.fecha)) {
     incidents.push({ code: 'invalid_date', path: 'fecha', message: 'Fecha inválida; no se corrige ni se acepta automáticamente.' });
+  }
+  if(extraction.informe){
+    for(const key of ['fecha_nacimiento','fecha_muestra','fecha_emision'] as const){
+      const date=extraction.informe[key];
+      if(date!==null&&!isCalendarDate(date))incidents.push({code:'invalid_date',path:`informe.${key}`,message:'Fecha inválida; comprobar el documento original.'});
+    }
   }
   extraction.resultados.forEach((row, index) => {
     for (const key of ['nombre', 'valor', 'unidad', 'rango_referencia'] as const) {

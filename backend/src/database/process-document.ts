@@ -24,7 +24,7 @@ async function main(){
   const config=readStorageConfig(process.env);storage=createStorageClient(config);await checkPrivateBucket(storage,config);
   // Comprobar disponibilidad local antes de reservar un trabajo nuevo.
   const model=inspection.model;
-  if(inspection.promptVersion!==3)throw new Error('Versión de prompt no compatible.');
+  if(![3,4].includes(inspection.promptVersion))throw new Error('Versión de prompt no compatible.');
   const response=await fetch(ollamaUrl('tags'),{redirect:'error',signal:AbortSignal.timeout(5000)});
   if(!response.ok)throw new Error('Ollama no disponible.');
   const list=await response.json() as {models?:{name?:string}[]};

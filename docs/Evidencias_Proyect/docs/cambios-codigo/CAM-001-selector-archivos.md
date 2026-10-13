@@ -8,6 +8,6 @@ Efecto: pub get descarga plugin y dependencias transitivas, actualiza pubspec.lo
 Riesgos: requisitos de SDK/platformas y fallas de acceso/cancelación. Se controla excepción y ciclo de vida.
 La pantalla nueva solo consulta nombre/tamaño, no guarda ni transmite archivos.
 Comprobado: documentación oficial del plugin y soporte Android/web; lectura de pubspec anterior.
-Pendiente: pub get, analyze y pruebas Edge/Android en equipo usuario. No hay Flutter en entorno asistente.
+Pendiente: pub get, analyze y pruebas Edge/Android en equipo usuario. No hay Flutter en entorno de comprobación.
 Reversión: restaurar pubspec anterior y regenerar lock con pub get, previa autorización para nuevas modificaciones. Usar entradas previas.
 Fuente: https://pub.dev/packages/file_selector

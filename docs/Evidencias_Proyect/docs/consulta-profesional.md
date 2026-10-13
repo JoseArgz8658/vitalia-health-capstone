@@ -28,7 +28,7 @@ La verificación usa PostgreSQL real con cuentas, asignación, metadatos y extra
 En otra terminal:
 
 ```powershell
-cd C:\Users\josem\Documents\GitHub\vitalia-health-capstone-prueba\apps\vitalia
+cd C:\Users\josem\Documents\GitHub\vitalia-health-capstone\apps\vitalia
 flutter pub get
 flutter analyze
 flutter test test/auth_api_test.dart test/acceso_integrado_test.dart test/documentos_api_test.dart test/paciente_documentos_test.dart test/procesamiento_test.dart test/asignaciones_test.dart test/profesional_test.dart

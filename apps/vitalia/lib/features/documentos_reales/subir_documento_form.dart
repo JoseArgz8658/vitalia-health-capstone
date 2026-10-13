@@ -19,6 +19,7 @@ class _SubirDocumentoFormState extends State<SubirDocumentoForm> {
   String? _tipo;
   DateTime? _fecha;
   XFile? _archivo;
+  int? _archivoBytes;
   bool _busy = false;
   String? _error;
   @override
@@ -38,7 +39,7 @@ class _SubirDocumentoFormState extends State<SubirDocumentoForm> {
         setState(() => _error = 'Elige un archivo no vacío de hasta 10 MiB.');
         return;
       }
-      setState(() => _archivo = file);
+      setState(() { _archivo = file; _archivoBytes = size; });
     } catch (_) {
       if (mounted) setState(() => _error = 'No se pudo seleccionar el archivo.');
     }
@@ -85,15 +86,31 @@ class _SubirDocumentoFormState extends State<SubirDocumentoForm> {
       if (mounted) setState(() => _busy = false);
     }
   }
+  Widget _section(String number, String title, String description) => Padding(
+    padding: const EdgeInsets.only(bottom: 16),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      CircleAvatar(radius: 16, child: Text(number)),
+      const SizedBox(width: 12),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text(description),
+      ])),
+    ]),
+  );
   @override
   Widget build(BuildContext context) => Form(key: _form, child: Column(
     crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Text('Subir examen', style: Theme.of(context).textTheme.headlineSmall),
       const SizedBox(height: 12),
       const Text('Usa documentos ficticios o correctamente anonimizados durante las pruebas.'),
-      const SizedBox(height: 20),
+      const SizedBox(height: 24),
+      _section('1', 'Identifica tu examen', 'Estos datos te ayudan a encontrarlo en tu historial.'),
       TextFormField(controller: _nombre, enabled: !_busy, maxLength: 100,
+        textInputAction: TextInputAction.next,
         decoration: const InputDecoration(labelText: 'Nombre del examen',
+          hintText: 'Por ejemplo: Hemograma de octubre',
+          prefixIcon: Icon(Icons.description_outlined),
           border: OutlineInputBorder()),
         validator: (v) => (v ?? '').trim().isEmpty ? 'Escribe el nombre del examen.' : null),
       const SizedBox(height: 16),
@@ -104,19 +121,45 @@ class _SubirDocumentoFormState extends State<SubirDocumentoForm> {
         onChanged: _busy ? null : (value) => setState(() => _tipo = value),
         validator: (v) => v == null ? 'Selecciona un tipo.' : null),
       const SizedBox(height: 16),
+      _section('2', 'Indica la fecha', 'Selecciona la fecha que corresponde a este examen.'),
       OutlinedButton.icon(onPressed: _busy ? null : _date,
         icon: const Icon(Icons.calendar_today_outlined),
         label: Text(_fecha == null ? 'Seleccionar fecha'
           : '${_fecha!.day}/${_fecha!.month}/${_fecha!.year}')),
+      const SizedBox(height: 24),
+      _section('3', 'Adjunta el documento', 'Elige un PDF o una imagen legible del examen completo.'),
       OutlinedButton.icon(onPressed: _busy ? null : _pick,
         icon: const Icon(Icons.attach_file),
-        label: Text(_archivo?.name ?? 'Seleccionar PDF, JPEG o PNG')),
+        label: const Text('Seleccionar PDF, JPEG o PNG')),
+      if (_archivo != null) Container(
+        margin: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12)),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Icon(Icons.attach_file),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Archivo seleccionado', style: Theme.of(context).textTheme.labelLarge),
+            const SizedBox(height: 4),
+            Text(_archivo!.name),
+            if (_archivoBytes != null) Text('${(_archivoBytes! / 1024).toStringAsFixed(1)} KB'),
+          ])),
+        ])),
+      const SizedBox(height: 8),
       const Text('Tamaño máximo: 10 MiB.'),
       if (_error != null) Padding(padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+        child: Semantics(liveRegion: true,
+          child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)))),
       const SizedBox(height: 20),
-      FilledButton(onPressed: _busy ? null : _upload,
-        child: Text(_busy ? 'Subiendo…' : 'Guardar examen')),
+      if (_busy) const Padding(padding: EdgeInsets.only(bottom: 16),
+        child: Column(children: [LinearProgressIndicator(), SizedBox(height: 8),
+          Text('Estamos guardando tu documento. Espera a que finalice la carga.') ])),
+      FilledButton.icon(onPressed: _busy ? null : _upload,
+        icon: Icon(_busy ? Icons.hourglass_top : Icons.cloud_upload_outlined),
+        label: Text(_busy ? 'Subiendo…' : 'Guardar examen')),
+      const SizedBox(height: 12),
       TextButton(onPressed: _busy ? null : widget.onCancel, child: const Text('Volver al historial')),
     ],
   ));

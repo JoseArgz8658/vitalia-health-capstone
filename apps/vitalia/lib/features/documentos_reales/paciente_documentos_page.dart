@@ -1,3 +1,4 @@
+import '../../core/mensaje_vista.dart';
 import 'procesamiento_panel.dart';
 import 'package:flutter/material.dart';
 import '../../core/auth_api.dart';
@@ -79,13 +80,30 @@ class _PacienteDocumentosPageState extends State<PacienteDocumentosPage> {
         child: const Text('Cerrar sesión')),
     ]),
     body: SafeArea(child: SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 16 : 24),
       child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 900),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(widget.email, style: Theme.of(context).textTheme.bodyMedium),
+          Container(
+            padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 16 : 24),
+            decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(24)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Image.asset('assets/branding/vitalia-simbolo.png', height: 48,
+                  semanticLabel: 'Vitalia Health'),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Tu espacio de salud',
+                  style: Theme.of(context).textTheme.headlineSmall)),
+              ]),
+              const SizedBox(height: 12),
+              const Text('Reúne tus exámenes y consulta los datos revisados por tu profesional.'),
+              const SizedBox(height: 8),
+              Text(widget.email, style: Theme.of(context).textTheme.bodyMedium),
+            ]),
+          ),
           const SizedBox(height: 20),
           if (_upload)
-            Card(child: Padding(padding: const EdgeInsets.all(24),
+            Card(child: Padding(padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 600 ? 16 : 24),
               child: SubirDocumentoForm(api: _documents, onSaved: _saved,
                 onCancel: () => setState(() => _upload = false), onExpired: widget.onExpired)))
           else ...[
@@ -96,19 +114,38 @@ class _PacienteDocumentosPageState extends State<PacienteDocumentosPage> {
               OutlinedButton.icon(onPressed: _loading || _downloading != null ? null : () => _load(_offset),
                 icon: const Icon(Icons.refresh), label: const Text('Actualizar historial')),
             ]),
-            const SizedBox(height: 20),
-            if (_loading) const Center(child: CircularProgressIndicator()),
+            const SizedBox(height: 24),
+            Text('Tu historial', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            const Text('Cada examen muestra su archivo y el estado de su revisión.'),
+            const SizedBox(height: 16),
+            if (_loading) const Column(children: [LinearProgressIndicator(), SizedBox(height: 8), Text('Cargando tus exámenes…')]),
             if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 16),
-              child: Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
+              child: MensajeVista(text: _error!, icon: Icons.error_outline, error: true)),
             if (!_loading && _items.isEmpty && _error == null)
-              const Card(child: Padding(padding: EdgeInsets.all(24),
-                child: Text('No hay exámenes en esta página. Puedes subir un documento.'))),
+              const Card(child: Padding(padding: EdgeInsets.all(32),
+                child: Column(children: [Icon(Icons.folder_open_outlined, size: 48),
+                  SizedBox(height: 16),
+                  Text('No hay exámenes en esta página. Puedes subir un documento.'),
+                  SizedBox(height: 8), Text('Usa el botón Subir examen para comenzar.'),
+                ]))),
             if (!_loading)
-              ..._items.map((item) => Card(child: Padding(padding: const EdgeInsets.all(20),
+              ..._items.map((item) => Card(
+                margin: const EdgeInsets.only(bottom: 20),
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                child: Padding(padding: const EdgeInsets.all(20),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(item.nombre, style: Theme.of(context).textTheme.titleMedium),
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Icon(Icons.description_outlined, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 12),
+                    Expanded(child: Text(item.nombre, style: Theme.of(context).textTheme.titleLarge)),
+                  ]),
                   const SizedBox(height: 8),
                   Text('${item.tipo} · ${item.fechaVisible}'),
+                  const SizedBox(height: 12),
+                  Text('Archivo original', style: Theme.of(context).textTheme.labelLarge),
+                  const SizedBox(height: 4),
                   Text(item.archivo),
                   Text('${(item.bytes / 1024).toStringAsFixed(1)} KB'),
                   const SizedBox(height: 12),
@@ -116,6 +153,8 @@ class _PacienteDocumentosPageState extends State<PacienteDocumentosPage> {
                     onPressed: _downloading != null || !descargaDisponible ? null : () => _download(item),
                     icon: const Icon(Icons.download_outlined),
                     label: Text(_downloading == item.id ? 'Descargando…' : 'Descargar')),
+                  const SizedBox(height: 12),
+                  const Divider(),
                   ProcesamientoPanel(key: ValueKey('processing-${item.id}'),
                     auth: widget.api, documentId: item.id, onExpired: widget.onExpired),
                   if (!descargaDisponible)

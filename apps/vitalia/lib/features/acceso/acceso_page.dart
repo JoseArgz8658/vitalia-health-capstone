@@ -38,32 +38,43 @@ class _AccesoPageState extends State<AccesoPage> {
   }
   @override
   Widget build(BuildContext context) => Scaffold(
-    body: SafeArea(child: Center(child: SingleChildScrollView(
+    body: Stack(fit: StackFit.expand, children: [
+      Positioned.fill(child: ExcludeSemantics(child: Image.asset(
+        'assets/branding/vitalia-fondo-acceso.png', fit: BoxFit.cover,
+      ))),
+      const Positioned.fill(child: ColoredBox(color: Color(0x33FFFFFF))),
+      SafeArea(child: Center(child: SingleChildScrollView(
       padding: const EdgeInsets.all(24),
-      child: SizedBox(width: 500, child: Card(child: Padding(
-        padding: const EdgeInsets.all(32), child: Form(key: _form,
+      child: SizedBox(width: 500, child: Card(
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+        padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 420 ? 20 : 32), child: Form(key: _form,
           child: Column(mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Icon(Icons.health_and_safety_outlined, size: 64,
-                color: Theme.of(context).colorScheme.primary),
+              Image.asset('assets/branding/vitalia-simbolo.png',
+                height: 112, semanticLabel: 'Símbolo de Vitalia Health'),
               const SizedBox(height: 16),
               Text('Vitalia Health', textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.headlineMedium),
               const SizedBox(height: 8),
-              const Text('Accede a tu cuenta', textAlign: TextAlign.center),
+              const Text('Tus exámenes, en un solo lugar', textAlign: TextAlign.center),
+              const SizedBox(height: 8),
+              const Text('Inicia sesión para consultar tus documentos y su revisión profesional.',
+                textAlign: TextAlign.center),
               const SizedBox(height: 24),
               if (widget.notice != null) Text(widget.notice!),
               TextFormField(controller: _correo, enabled: !_busy,
                 keyboardType: TextInputType.emailAddress, autocorrect: false,
                 decoration: const InputDecoration(labelText: 'Correo electrónico',
-                  border: OutlineInputBorder()),
+                  prefixIcon: Icon(Icons.mail_outline)),
                 validator: (v) => RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
                   .hasMatch((v ?? '').trim()) ? null : 'Escribe un correo válido.'),
               const SizedBox(height: 16),
               TextFormField(controller: _clave, enabled: !_busy, obscureText: _ocultar,
                 autocorrect: false, enableSuggestions: false,
                 decoration: InputDecoration(labelText: 'Contraseña',
-                  border: const OutlineInputBorder(), suffixIcon: IconButton(
+                  prefixIcon: const Icon(Icons.lock_outline), suffixIcon: IconButton(
                     onPressed: () => setState(() => _ocultar = !_ocultar),
                     tooltip: _ocultar ? 'Mostrar contraseña' : 'Ocultar contraseña',
                     icon: Icon(_ocultar ? Icons.visibility_outlined : Icons.visibility_off_outlined))),
@@ -73,7 +84,13 @@ class _AccesoPageState extends State<AccesoPage> {
               if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 16),
                 child: Text(_error!, style: roleStyle(context))),
               FilledButton(onPressed: _busy ? null : _login,
-                child: Text(_busy ? 'Ingresando…' : 'Iniciar sesión')),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  if (_busy) const SizedBox(width: 18, height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                  else const Icon(Icons.login),
+                  const SizedBox(width: 10),
+                  Text(_busy ? 'Ingresando…' : 'Iniciar sesión'),
+                ])),
               TextButton(onPressed: _busy || widget.api == null ? null : () =>
                 Navigator.of(context).push(MaterialPageRoute<void>(
                   builder: (_) => RegistroPage(api: widget.api!))),
@@ -87,7 +104,9 @@ class _AccesoPageState extends State<AccesoPage> {
           ])),
       ))),
     ))),
+    ]),
   );
   TextStyle roleStyle(BuildContext context) =>
     TextStyle(color: Theme.of(context).colorScheme.error);
 }
+

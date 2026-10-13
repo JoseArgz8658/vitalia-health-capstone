@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:vitalia_health/core/auth_api.dart';
 import 'package:vitalia_health/features/profesional/revision_panel.dart';
+import 'package:vitalia_health/features/documentos_reales/informe_fields.dart';
 import 'package:vitalia_health/features/profesional/revision_api.dart';
 import 'package:vitalia_health/features/documentos_reales/procesamiento_panel.dart';
 
@@ -37,10 +38,15 @@ Widget panel(AuthApi auth, {void Function(AuthFailure)? failure, void Function(b
     child: RevisionPanel(auth: auth, patientId: patientId, documentId: docId,
       onFailure: failure ?? (_) {}, onSaving: saving ?? (_) {})))));
 Future<void> tap(WidgetTester tester, String label) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  tester.testTextInput.hide();
+  await tester.pumpAndSettle();
   final finder = find.text(label);
+  await Scrollable.ensureVisible(tester.element(finder), alignment: 0.5);
+  await tester.pumpAndSettle();
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
-  await tester.tap(finder);
+  await tester.tap(finder.hitTestable());
   await tester.pumpAndSettle();
 }
 void main() {
@@ -134,4 +140,38 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     auth.close();
   });
+  testWidgets('revisión conserva y corrige datos del informe y estado transcrito', (tester) async {
+    final original = extraction();
+    original['informe'] = <String, dynamic>{for (final key in informeLabels.keys) key: null};
+    original['informe']['nombre_paciente'] = 'Paciente ficticio';
+    original['informe']['medico_solicitante'] = 'Solicitante ficticio';
+    original['resultados'][0]['estado_documento'] = 'Etiqueta del original';
+    Map<String, dynamic>? posted;
+    final auth = await session((req) async {
+      if (req.method == 'GET') return jsonResponse(jsonEncode({'processingId': processingId,
+        'originalExtraction': original, 'canReview': true, 'review': null}), 200);
+      posted = jsonDecode(req.body) as Map<String, dynamic>;
+      return jsonResponse(jsonEncode({'review': saved(posted!['extraction'] as Map<String, dynamic>)}), 201);
+    });
+    await tester.pumpWidget(panel(auth));
+    await tester.pumpAndSettle();
+    final name = find.byWidgetPredicate((widget) => widget is TextField &&
+      widget.decoration?.labelText == 'Nombre completo del paciente');
+    await tester.ensureVisible(name);
+    await tester.enterText(name, 'Paciente cotejado');
+    final observation = find.byWidgetPredicate((widget) => widget is TextField &&
+      widget.decoration?.labelText == 'Motivo de correcciones o datos ausentes');
+    await tester.ensureVisible(observation);
+    await tester.enterText(observation, 'Nombre cotejado.');
+    await tap(tester, 'Confirmo que cotejé estos datos con el documento original.');
+    await tap(tester, 'Aprobar y guardar revisión');
+    expect(posted, isNotNull, reason: 'La confirmación debe habilitar el envío de la revisión.');
+    expect(posted!['extraction']['informe']['nombre_paciente'], 'Paciente cotejado');
+    expect(posted!['extraction']['informe']['medico_solicitante'], 'Solicitante ficticio');
+    expect(posted!['extraction']['resultados'][0]['estado_documento'], 'Etiqueta del original');
+    expect(original['informe']['nombre_paciente'], 'Paciente ficticio');
+    await tester.pumpWidget(const SizedBox());
+    auth.close();
+  });
+
 }

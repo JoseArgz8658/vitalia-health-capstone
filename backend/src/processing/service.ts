@@ -23,7 +23,7 @@ export function createProcessingService(db:Pick<Pool,'query'>){
   async get(account:AccountSummary,id:string){await owned(account,id);return state(account,id);},
   async request(account:AccountSummary,id:string){
    await owned(account,id);
-   const created=await queueDocumentProcessing(db,account,id);
+   const created=await queueDocumentProcessing(db,account,id,'qwen3:4b-instruct',4);
    return {created:created!==null,processing:await state(account,id)};
   },
  };

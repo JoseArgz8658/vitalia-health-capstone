@@ -2,8 +2,8 @@
 Requisitos: Git, Flutter en PATH y Edge. Android Studio solo para Android. No se necesita Docker.
 Abre PowerShell en la carpeta de proyectos:
 ```powershell
-git clone --branch fase-1/interfaz-base https://github.com/JoseArgz8658/vitalia-health-capstone-prueba.git
-cd vitalia-health-capstone-prueba
+git clone --branch fase-1/interfaz-base https://github.com/JoseArgz8658/vitalia-health-capstone.git
+cd vitalia-health-capstone
 flutter --version
 flutter doctor
 cd apps\vitalia

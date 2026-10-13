@@ -15,8 +15,8 @@ export function createExamAssistantRouter(auth:Pick<AuthServices,'find'>,service
  router.get('/:id/assistant/explanation',guard,async(req,res)=>res.json(await service.getExplanation(res.locals.account,req.params.id as string)));
  router.post('/:id/assistant/explanation',guard,async(req,res)=>res.json(await service.explain(res.locals.account,req.params.id as string,req.body)));
  const errors:ErrorRequestHandler=(error,_req,res,next)=>{
-  if(error instanceof AssistantAccessError){res.status(error.status).json({error:{code:'ASSISTANT_UNAVAILABLE',message:
+  if(error instanceof AssistantAccessError){res.status(error.status).json({error:{code:error.code,message:
    error.status===401?'Sesión no válida.':error.status===409?'Se requiere revisión aprobada, no reutilices una solicitud para otra pregunta y comprueba el límite de conversación.':
-   error.status===503?'Asistente ocupado o respuesta no aceptada. Actualiza la conversación antes de repetir.':'Solicitud o documento no disponible para esta cuenta.'}});return;}next(error);
+   error.status===503?'Asistente no disponible. Actualiza la consulta para comprobar su estado.':'Solicitud o documento no disponible para esta cuenta.'}});return;}next(error);
  };router.use(errors);return router;
 }

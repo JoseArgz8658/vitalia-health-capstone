@@ -12,4 +12,4 @@ flutter test
 flutter run -d edge
 Esperado: solo formulario, sin Explorar demostración ni elección de roles. Datos ficticios válidos informan servicio pendiente; no navega.
 Para compilar entrega usar flutter build web (main.dart por defecto), sin -t apuntando a entradas demo.
-El asistente no tiene Flutter: pruebas pendientes de ejecución local. Backend/auth será siguiente etapa.
+Flutter no está instalado en el entorno de comprobación: pruebas pendientes de ejecución local. Backend/auth será siguiente etapa.

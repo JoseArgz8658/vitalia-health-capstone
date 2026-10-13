@@ -4,4 +4,4 @@ El usuario confirmó 47 pruebas y ejecución real de la conexión unificada en W
 
 Autorizó migración, módulo y componentes asociados el 1 de octubre de 2026. Se agrega migración 006, repositorio de trabajos/resultados, validación de snapshots, comando de migración y comprobación real reversible con datos ficticios.
 
-Compilación y 17 pruebas de repositorio/migraciones aprobadas con dobles de base. PostgreSQL no está disponible en el entorno del agente; aplicación y comprobación real quedan pendientes en Windows. Sin ejecución de cola, integración S3, pantallas o revisión profesional.
+Compilación y 17 pruebas de repositorio/migraciones aprobadas con dobles de base. PostgreSQL no está disponible en el entorno de comprobación; aplicación y comprobación real quedan pendientes en Windows. Sin ejecución de cola, integración S3, pantallas o revisión profesional.
