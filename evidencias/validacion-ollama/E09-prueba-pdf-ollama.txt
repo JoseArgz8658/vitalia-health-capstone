@@ -1,0 +1,63 @@
+{
+  "status": "requires_review",
+  "source": "pdf",
+  "method": "direct",
+  "reading": {
+    "status": "text_ready",
+    "text": "VITALIA HEALTH - EXAMEN FICTICIO\nPaciente: Usuario de prueba\nFecha: 14-10-2026\nExamen: Hemograma\nHemoglobina: 14.2 g/dL\nLeucocitos: 7200 /uL\nPlaquetas: 250000 /uL\nDocumento sintetico para pruebas.",
+    "pageCount": 1,
+    "incidents": []
+  },
+  "ocr": null,
+  "inputText": "VITALIA HEALTH - EXAMEN FICTICIO\nPaciente: Usuario de prueba\nFecha: 14-10-2026\nExamen: Hemograma\nHemoglobina: 14.2 g/dL\nLeucocitos: 7200 /uL\nPlaquetas: 250000 /uL\nDocumento sintetico para pruebas.",
+  "ai": {
+    "status": "requires_review",
+    "raw": "{\n  \"examen\": \"Hemograma\",\n  \"fecha\": \"14-10-2026\",\n  \"resultados\": [\n    {\n      \"nombre\": \"Hemoglobina\",\n      \"rango_referencia\": null,\n      \"unidad\": \"g/dL\",\n      \"valor\": \"14.2\"\n    },\n    {\n      \"nombre\": \"Leucocitos\",\n      \"rango_referencia\": null,\n      \"unidad\": \"/uL\",\n      \"valor\": \"7200\"\n    },\n    {\n      \"nombre\": \"Plaquetas\",\n      \"rango_referencia\": null,\n      \"unidad\": \"/uL\",\n      \"valor\": \"250000\"\n    }\n  ]\n}",
+    "extraction": {
+      "examen": "Hemograma",
+      "fecha": "14-10-2026",
+      "resultados": [
+        {
+          "nombre": "Hemoglobina",
+          "valor": "14.2",
+          "unidad": "g/dL",
+          "rango_referencia": null
+        },
+        {
+          "nombre": "Leucocitos",
+          "valor": "7200",
+          "unidad": "/uL",
+          "rango_referencia": null
+        },
+        {
+          "nombre": "Plaquetas",
+          "valor": "250000",
+          "unidad": "/uL",
+          "rango_referencia": null
+        }
+      ]
+    },
+    "incidents": [
+      {
+        "code": "not_extracted",
+        "path": "resultados[0].rango_referencia",
+        "message": "Campo no extraÔö£┬ído; podrÔö£┬ía estar presente en el original."
+      },
+      {
+        "code": "not_extracted",
+        "path": "resultados[1].rango_referencia",
+        "message": "Campo no extraÔö£┬ído; podrÔö£┬ía estar presente en el original."
+      },
+      {
+        "code": "not_extracted",
+        "path": "resultados[2].rango_referencia",
+        "message": "Campo no extraÔö£┬ído; podrÔö£┬ía estar presente en el original."
+      }
+    ],
+    "approved": false,
+    "model": "qwen3:4b-instruct",
+    "promptVersion": 3,
+    "elapsedMs": 55371
+  },
+  "approved": false
+}

@@ -52,3 +52,95 @@ test('límite de respuesta y JSON del modelo inválido',async()=>{
  const result=await createLocalExtractor({fetchImpl:async()=>new Response(JSON.stringify({done:true,message:{content:'{'}}))})('x');
  expect(result).toMatchObject({status:'rejected',raw:'{'});
 });
+
+test('detecta rango de referencia que no aparece en el documento original', () => {
+  const documentoOriginal = 'Perfil ficticio\nIndicador ficticio: 1.234,50 U/L\nFecha: 01-10-2026';
+
+  const resultadoOllama = {
+    ...complete,
+    resultados: [{
+      ...row,
+      rango_referencia: '1.000,00–2.000,00 U/L'
+    }]
+  };
+
+  const result = reviewExtraction(
+    JSON.stringify(resultadoOllama),
+    false,
+    documentoOriginal
+  );
+
+  expect(result.incidents).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        path: 'resultados[0].rango_referencia'
+      })
+    ])
+  );
+});
+
+test('Ollama registra incidencia cuando inventa un rango de referencia', async () => {
+  const documentoOriginal =
+    'Perfil ficticio\n' +
+    'Fecha: 01-10-2026\n' +
+    'Indicador ficticio: 1.234,50 U/L';
+
+  const extract = createLocalExtractor({
+    fetchImpl: async () => response(complete)
+  });
+
+  const result = await extract(documentoOriginal);
+
+  expect(result.status).toBe('requires_review');
+  expect(result.approved).toBe(false);
+
+  expect(result.incidents).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: 'not_in_source',
+        path: 'resultados[0].rango_referencia'
+      })
+    ])
+  );
+
+  expect(result.extraction.resultados[0].rango_referencia)
+    .toBe(row.rango_referencia);
+});
+
+test('no genera incidencia cuando el rango aparece en el documento original', async () => {
+  const documentoOriginal =
+    'Perfil ficticio\n' +
+    'Fecha: 01-10-2026\n' +
+    'Indicador ficticio: 1.234,50 U/L\n' +
+    'Rango de referencia: 1.000,00–2.000,00 U/L';
+
+  const extract = createLocalExtractor({
+    fetchImpl: async () => response(complete)
+  });
+
+  const result = await extract(documentoOriginal);
+
+  expect(result.status).toBe('requires_review');
+  expect(result.approved).toBe(false);
+  expect(result.incidents).toEqual([]);
+});
+
+test('reconoce un rango separado por saltos de linea en el PDF', async () => {
+  const documentoOriginal =
+    'Perfil ficticio\n' +
+    'Fecha: 01-10-2026\n' +
+    'Indicador ficticio: 1.234,50 U/L\n' +
+    'Rango de referencia:\n' +
+    '1.000,00–2.000,00\n' +
+    'U/L';
+
+  const extract = createLocalExtractor({
+    fetchImpl: async () => response(complete)
+  });
+
+  const result = await extract(documentoOriginal);
+
+  expect(result.status).toBe('requires_review');
+  expect(result.approved).toBe(false);
+  expect(result.incidents).toEqual([]);
+});

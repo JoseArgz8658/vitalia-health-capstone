@@ -1,0 +1,240 @@
+
+> vitalia-backend@0.1.0 test
+> npm run build && jest --runInBand
+
+
+> vitalia-backend@0.1.0 build
+> tsc
+
+node.exe : PASS test/privileged-accounts.test.cjs (5.384 s)
+En C:\Program Files\nodejs\npm.ps1: 29 Carácter: 3
++   & $NODE_EXE $NPM_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (PASS test/privi...t.cjs (5.384 s):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+
+PASS test/registration.test.cjs
+PASS test/password.test.cjs
+PASS test/ocr.test.cjs
+PASS test/credentials.test.cjs
+PASS test/exam-assistant.test.cjs
+  ÔùÅ Console
+
+    console.warn
+      {"event":"exam_assistant_failure","mode":"chat","reason":"internal","elapsedMs":1}
+
+    [0m [90m 169 |[39m             [36mconst[39m details [33m=[39m [[32m'numeric_text'[39m[33m,[39m [32m'external_link'[39m[33m,[39m
+[32m'classification_term'[39m[33m,[39m [32m'clinical_or_instruction_term'[39m][33m;[39m
+     [90m 170 |[39m             [36mconst[39m detail [33m=[39m error [36minstanceof[39m local_model_1[33m.[39m[33mAssistantModelError[39m
+[33m&&[39m error[33m.[39mdetail [33m&&[39m details[33m.[39mincludes(error[33m.[39mdetail) [33m?[39m error[33m.[39mdetail [33m:[39m
+undefined[33m;[39m
+    [31m[1m>[22m[39m[90m 171 |[39m             console[33m.[39mwarn([33mJSON[39m[33m.[39mstringify({ event[33m:[39m
+[32m'exam_assistant_failure'[39m[33m,[39m mode[33m,[39m reason[33m,[39m [33m...[39m(detail [33m?[39m { detail } [33m:[39m {})[33m,[39m
+elapsedMs[33m:[39m [33mDate[39m[33m.[39mnow() [33m-[39m attemptStarted }))[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 172 |[39m             [36mconst[39m rejected [33m=[39m error [36minstanceof[39m local_model_1[33m.[39m[33mAssistantModelError[39m
+[33m&&[39m [33m![39m[[32m'configuration'[39m[33m,[39m [32m'http'[39m[33m,[39m [32m'transport'[39m[33m,[39m
+[32m'timeout'[39m][33m.[39mincludes(error[33m.[39mreason)[33m;[39m
+     [90m 173 |[39m             [36mconst[39m code [33m=[39m reason [33m===[39m [32m'timeout'[39m [33m?[39m [32m'ASSISTANT_TIMEOUT'[39m
+[33m:[39m reason [33m===[39m [32m'transport'[39m [33m||[39m reason [33m===[39m [32m'http'[39m [33m?[39m [32m'ASSISTANT_MODEL_UNAVAILABLE'[39m
+[33m:[39m
+     [90m 174 |[39m                 reason [33m===[39m [32m'configuration'[39m [33m?[39m [32m'ASSISTANT_CONFIGURATION'[39m [33m:[39m rejected
+[33m?[39m [32m'ASSISTANT_RESPONSE_REJECTED'[39m [33m:[39m [32m'ASSISTANT_UNAVAILABLE'[39m[33m;[39m[0m
+
+      at warn (dist/exam-assistant/service.js:171:21)
+      at Object.<anonymous> (test/exam-assistant.test.cjs:110:81)
+
+    console.warn
+      {"event":"exam_assistant_failure","mode":"chat","reason":"unsafe_content","elapsedMs":1}
+
+    [0m [90m 169 |[39m             [36mconst[39m details [33m=[39m [[32m'numeric_text'[39m[33m,[39m [32m'external_link'[39m[33m,[39m
+[32m'classification_term'[39m[33m,[39m [32m'clinical_or_instruction_term'[39m][33m;[39m
+     [90m 170 |[39m             [36mconst[39m detail [33m=[39m error [36minstanceof[39m local_model_1[33m.[39m[33mAssistantModelError[39m
+[33m&&[39m error[33m.[39mdetail [33m&&[39m details[33m.[39mincludes(error[33m.[39mdetail) [33m?[39m error[33m.[39mdetail [33m:[39m
+undefined[33m;[39m
+    [31m[1m>[22m[39m[90m 171 |[39m             console[33m.[39mwarn([33mJSON[39m[33m.[39mstringify({ event[33m:[39m
+[32m'exam_assistant_failure'[39m[33m,[39m mode[33m,[39m reason[33m,[39m [33m...[39m(detail [33m?[39m { detail } [33m:[39m {})[33m,[39m
+elapsedMs[33m:[39m [33mDate[39m[33m.[39mnow() [33m-[39m attemptStarted }))[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 172 |[39m             [36mconst[39m rejected [33m=[39m error [36minstanceof[39m local_model_1[33m.[39m[33mAssistantModelError[39m
+[33m&&[39m [33m![39m[[32m'configuration'[39m[33m,[39m [32m'http'[39m[33m,[39m [32m'transport'[39m[33m,[39m
+[32m'timeout'[39m][33m.[39mincludes(error[33m.[39mreason)[33m;[39m
+     [90m 173 |[39m             [36mconst[39m code [33m=[39m reason [33m===[39m [32m'timeout'[39m [33m?[39m [32m'ASSISTANT_TIMEOUT'[39m
+[33m:[39m reason [33m===[39m [32m'transport'[39m [33m||[39m reason [33m===[39m [32m'http'[39m [33m?[39m [32m'ASSISTANT_MODEL_UNAVAILABLE'[39m
+[33m:[39m
+     [90m 174 |[39m                 reason [33m===[39m [32m'configuration'[39m [33m?[39m [32m'ASSISTANT_CONFIGURATION'[39m [33m:[39m rejected
+[33m?[39m [32m'ASSISTANT_RESPONSE_REJECTED'[39m [33m:[39m [32m'ASSISTANT_UNAVAILABLE'[39m[33m;[39m[0m
+
+      at warn (dist/exam-assistant/service.js:171:21)
+      at test/exam-assistant.test.cjs:284:2
+
+    console.warn
+      {"event":"exam_assistant_failure","mode":"chat","reason":"http","elapsedMs":0}
+
+    [0m [90m 169 |[39m             [36mconst[39m details [33m=[39m [[32m'numeric_text'[39m[33m,[39m [32m'external_link'[39m[33m,[39m
+[32m'classification_term'[39m[33m,[39m [32m'clinical_or_instruction_term'[39m][33m;[39m
+     [90m 170 |[39m             [36mconst[39m detail [33m=[39m error [36minstanceof[39m local_model_1[33m.[39m[33mAssistantModelError[39m
+[33m&&[39m error[33m.[39mdetail [33m&&[39m details[33m.[39mincludes(error[33m.[39mdetail) [33m?[39m error[33m.[39mdetail [33m:[39m
+undefined[33m;[39m
+    [31m[1m>[22m[39m[90m 171 |[39m             console[33m.[39mwarn([33mJSON[39m[33m.[39mstringify({ event[33m:[39m
+[32m'exam_assistant_failure'[39m[33m,[39m mode[33m,[39m reason[33m,[39m [33m...[39m(detail [33m?[39m { detail } [33m:[39m {})[33m,[39m
+elapsedMs[33m:[39m [33mDate[39m[33m.[39mnow() [33m-[39m attemptStarted }))[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 172 |[39m             [36mconst[39m rejected [33m=[39m error [36minstanceof[39m local_model_1[33m.[39m[33mAssistantModelError[39m
+[33m&&[39m [33m![39m[[32m'configuration'[39m[33m,[39m [32m'http'[39m[33m,[39m [32m'transport'[39m[33m,[39m
+[32m'timeout'[39m][33m.[39mincludes(error[33m.[39mreason)[33m;[39m
+     [90m 173 |[39m             [36mconst[39m code [33m=[39m reason [33m===[39m [32m'timeout'[39m [33m?[39m [32m'ASSISTANT_TIMEOUT'[39m
+[33m:[39m reason [33m===[39m [32m'transport'[39m [33m||[39m reason [33m===[39m [32m'http'[39m [33m?[39m [32m'ASSISTANT_MODEL_UNAVAILABLE'[39m
+[33m:[39m
+     [90m 174 |[39m                 reason [33m===[39m [32m'configuration'[39m [33m?[39m [32m'ASSISTANT_CONFIGURATION'[39m [33m:[39m rejected
+[33m?[39m [32m'ASSISTANT_RESPONSE_REJECTED'[39m [33m:[39m [32m'ASSISTANT_UNAVAILABLE'[39m[33m;[39m[0m
+
+      at warn (dist/exam-assistant/service.js:171:21)
+      at test/exam-assistant.test.cjs:284:2
+
+    console.warn
+      {"event":"exam_assistant_failure","mode":"chat","reason":"timeout","elapsedMs":0}
+
+    [0m [90m 169 |[39m             [36mconst[39m details [33m=[39m [[32m'numeric_text'[39m[33m,[39m [32m'external_link'[39m[33m,[39m
+[32m'classification_term'[39m[33m,[39m [32m'clinical_or_instruction_term'[39m][33m;[39m
+     [90m 170 |[39m             [36mconst[39m detail [33m=[39m error [36minstanceof[39m local_model_1[33m.[39m[33mAssistantModelError[39m
+[33m&&[39m error[33m.[39mdetail [33m&&[39m details[33m.[39mincludes(error[33m.[39mdetail) [33m?[39m error[33m.[39mdetail [33m:[39m
+undefined[33m;[39m
+    [31m[1m>[22m[39m[90m 171 |[39m             console[33m.[39mwarn([33mJSON[39m[33m.[39mstringify({ event[33m:[39m
+[32m'exam_assistant_failure'[39m[33m,[39m mode[33m,[39m reason[33m,[39m [33m...[39m(detail [33m?[39m { detail } [33m:[39m {})[33m,[39m
+elapsedMs[33m:[39m [33mDate[39m[33m.[39mnow() [33m-[39m attemptStarted }))[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 172 |[39m             [36mconst[39m rejected [33m=[39m error [36minstanceof[39m local_model_1[33m.[39m[33mAssistantModelError[39m
+[33m&&[39m [33m![39m[[32m'configuration'[39m[33m,[39m [32m'http'[39m[33m,[39m [32m'transport'[39m[33m,[39m
+[32m'timeout'[39m][33m.[39mincludes(error[33m.[39mreason)[33m;[39m
+     [90m 173 |[39m             [36mconst[39m code [33m=[39m reason [33m===[39m [32m'timeout'[39m [33m?[39m [32m'ASSISTANT_TIMEOUT'[39m
+[33m:[39m reason [33m===[39m [32m'transport'[39m [33m||[39m reason [33m===[39m [32m'http'[39m [33m?[39m [32m'ASSISTANT_MODEL_UNAVAILABLE'[39m
+[33m:[39m
+     [90m 174 |[39m                 reason [33m===[39m [32m'configuration'[39m [33m?[39m [32m'ASSISTANT_CONFIGURATION'[39m [33m:[39m rejected
+[33m?[39m [32m'ASSISTANT_RESPONSE_REJECTED'[39m [33m:[39m [32m'ASSISTANT_UNAVAILABLE'[39m[33m;[39m[0m
+
+      at warn (dist/exam-assistant/service.js:171:21)
+      at test/exam-assistant.test.cjs:284:2
+
+PASS test/server-startup.test.cjs
+PASS test/pdf-reader.test.cjs
+PASS test/document-extraction.test.cjs
+PASS test/pdf-extraction.test.cjs
+PASS test/processing-worker.test.cjs
+PASS test/processing-api.test.cjs
+PASS test/database.test.cjs
+PASS test/document-api.test.cjs
+PASS test/explanations.test.cjs
+PASS test/assignments.test.cjs
+PASS test/app.test.cjs
+PASS test/auth-router.test.cjs
+PASS test/professional-access.test.cjs
+PASS test/storage.test.cjs
+PASS test/professional-reviews.test.cjs
+PASS test/registration-router.test.cjs
+PASS test/patient-review.test.cjs
+PASS test/local-web-cors.test.cjs
+PASS test/accounts-migration.test.cjs
+PASS test/document-recovery.test.cjs
+PASS test/document-processing.test.cjs
+PASS test/report-extraction.test.cjs
+PASS test/document-service.test.cjs
+PASS test/documents.test.cjs
+PASS test/ai-extraction.test.cjs
+  ÔùÅ Console
+
+    console.warn
+      {"event":"document_extraction_failure","reason":"http","promptVersion":3,"elapsedMs":0}
+
+    [0m [90m 110 |[39m         [36mcatch[39m (error) {
+     [90m 111 |[39m             [36mconst[39m failure [33m=[39m error [36minstanceof[39m [33mExtractionServiceError[39m [33m?[39m error [33m:[39m
+[36mnew[39m [33mExtractionServiceError[39m([32m'No se pudo obtener una respuesta v├ílida de Ollama local.'[39m[33m,[39m
+controller[33m.[39msignal[33m.[39maborted [33m?[39m [32m'timeout'[39m [33m:[39m error [36minstanceof[39m [33mSyntaxError[39m [33m?[39m
+[32m'invalid_json'[39m [33m:[39m error [36minstanceof[39m report_blocks_1[33m.[39m[33mReportBlockError[39m [33m?[39m [32m'incomplete'[39m
+[33m:[39m [32m'transport'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 112 |[39m             console[33m.[39mwarn([33mJSON[39m[33m.[39mstringify({ event[33m:[39m
+[32m'document_extraction_failure'[39m[33m,[39m reason[33m:[39m failure[33m.[39mreason[33m,[39m promptVersion[33m:[39m version[33m,[39m
+elapsedMs[33m:[39m [33mMath[39m[33m.[39mround(performance[33m.[39mnow() [33m-[39m started) }))[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 113 |[39m             [36mthrow[39m failure[33m;[39m
+     [90m 114 |[39m         }
+     [90m 115 |[39m         [36mfinally[39m {[0m
+
+      at warn (dist/ai/local-extractor.js:112:21)
+      at Object.<anonymous> (test/ai-extraction.test.cjs:46:2)
+
+    console.warn
+      {"event":"document_extraction_failure","reason":"transport","promptVersion":3,"elapsedMs":0}
+
+    [0m [90m 110 |[39m         [36mcatch[39m (error) {
+     [90m 111 |[39m             [36mconst[39m failure [33m=[39m error [36minstanceof[39m [33mExtractionServiceError[39m [33m?[39m error [33m:[39m
+[36mnew[39m [33mExtractionServiceError[39m([32m'No se pudo obtener una respuesta v├ílida de Ollama local.'[39m[33m,[39m
+controller[33m.[39msignal[33m.[39maborted [33m?[39m [32m'timeout'[39m [33m:[39m error [36minstanceof[39m [33mSyntaxError[39m [33m?[39m
+[32m'invalid_json'[39m [33m:[39m error [36minstanceof[39m report_blocks_1[33m.[39m[33mReportBlockError[39m [33m?[39m [32m'incomplete'[39m
+[33m:[39m [32m'transport'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 112 |[39m             console[33m.[39mwarn([33mJSON[39m[33m.[39mstringify({ event[33m:[39m
+[32m'document_extraction_failure'[39m[33m,[39m reason[33m:[39m failure[33m.[39mreason[33m,[39m promptVersion[33m:[39m version[33m,[39m
+elapsedMs[33m:[39m [33mMath[39m[33m.[39mround(performance[33m.[39mnow() [33m-[39m started) }))[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 113 |[39m             [36mthrow[39m failure[33m;[39m
+     [90m 114 |[39m         }
+     [90m 115 |[39m         [36mfinally[39m {[0m
+
+      at warn (dist/ai/local-extractor.js:112:21)
+      at Object.<anonymous> (test/ai-extraction.test.cjs:47:2)
+
+    console.warn
+      {"event":"document_extraction_failure","reason":"incomplete","promptVersion":3,"elapsedMs":0}
+
+    [0m [90m 110 |[39m         [36mcatch[39m (error) {
+     [90m 111 |[39m             [36mconst[39m failure [33m=[39m error [36minstanceof[39m [33mExtractionServiceError[39m [33m?[39m error [33m:[39m
+[36mnew[39m [33mExtractionServiceError[39m([32m'No se pudo obtener una respuesta v├ílida de Ollama local.'[39m[33m,[39m
+controller[33m.[39msignal[33m.[39maborted [33m?[39m [32m'timeout'[39m [33m:[39m error [36minstanceof[39m [33mSyntaxError[39m [33m?[39m
+[32m'invalid_json'[39m [33m:[39m error [36minstanceof[39m report_blocks_1[33m.[39m[33mReportBlockError[39m [33m?[39m [32m'incomplete'[39m
+[33m:[39m [32m'transport'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 112 |[39m             console[33m.[39mwarn([33mJSON[39m[33m.[39mstringify({ event[33m:[39m
+[32m'document_extraction_failure'[39m[33m,[39m reason[33m:[39m failure[33m.[39mreason[33m,[39m promptVersion[33m:[39m version[33m,[39m
+elapsedMs[33m:[39m [33mMath[39m[33m.[39mround(performance[33m.[39mnow() [33m-[39m started) }))[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 113 |[39m             [36mthrow[39m failure[33m;[39m
+     [90m 114 |[39m         }
+     [90m 115 |[39m         [36mfinally[39m {[0m
+
+      at warn (dist/ai/local-extractor.js:112:21)
+      at Object.<anonymous> (test/ai-extraction.test.cjs:48:2)
+
+    console.warn
+      {"event":"document_extraction_failure","reason":"response_limit","promptVersion":3,"elapsedMs":0}
+
+    [0m [90m 110 |[39m         [36mcatch[39m (error) {
+     [90m 111 |[39m             [36mconst[39m failure [33m=[39m error [36minstanceof[39m [33mExtractionServiceError[39m [33m?[39m error [33m:[39m
+[36mnew[39m [33mExtractionServiceError[39m([32m'No se pudo obtener una respuesta v├ílida de Ollama local.'[39m[33m,[39m
+controller[33m.[39msignal[33m.[39maborted [33m?[39m [32m'timeout'[39m [33m:[39m error [36minstanceof[39m [33mSyntaxError[39m [33m?[39m
+[32m'invalid_json'[39m [33m:[39m error [36minstanceof[39m report_blocks_1[33m.[39m[33mReportBlockError[39m [33m?[39m [32m'incomplete'[39m
+[33m:[39m [32m'transport'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 112 |[39m             console[33m.[39mwarn([33mJSON[39m[33m.[39mstringify({ event[33m:[39m
+[32m'document_extraction_failure'[39m[33m,[39m reason[33m:[39m failure[33m.[39mreason[33m,[39m promptVersion[33m:[39m version[33m,[39m
+elapsedMs[33m:[39m [33mMath[39m[33m.[39mround(performance[33m.[39mnow() [33m-[39m started) }))[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 113 |[39m             [36mthrow[39m failure[33m;[39m
+     [90m 114 |[39m         }
+     [90m 115 |[39m         [36mfinally[39m {[0m
+
+      at warn (dist/ai/local-extractor.js:112:21)
+      at Object.<anonymous> (test/ai-extraction.test.cjs:51:2)
+
+PASS test/login-limit.test.cjs
+PASS test/report-blocks.test.cjs
+PASS test/reviewed-facts.test.cjs
+PASS test/local-services.test.cjs
+PASS test/accounts.test.cjs
+PASS test/secret-input.test.cjs
+PASS test/queue-processor.test.cjs
+PASS test/additional-migration.test.cjs
+PASS test/sessions.test.cjs
+
+Test Suites: 40 passed, 40 total
+Tests:       427 passed, 427 total
+Snapshots:   0 total
+Time:        32.405 s, estimated 39 s
+Ran all test suites.
