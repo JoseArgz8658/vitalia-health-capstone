@@ -537,3 +537,82 @@ Las fechas de la copia revisada requieren DD-MM-AAAA. Si se corrige información
 Si Windows bloquea impellerc.exe, revisar la directiva de control de aplicaciones antes de cambiar seguridad. Desactivar protecciones no es requisito general del manual.
 
 Android, web compilada con Nginx, restauración de respaldos, instalación completa en otro equipo y accesos AWS del resto del equipo quedan por comprobar. Los registros de esta sesión están en CAM-078.
+
+### Posibles problemas durante la instalación
+
+Durante la instalación y las pruebas de Vitalia Health pueden aparecer algunos problemas con la configuración o los servicios. Dejo algunas situaciones que encontré y las comprobaciones que me sirvieron para resolverlas.
+
+**1. Docker muestra errores con el archivo `.env`**
+
+Si Docker presenta errores al validar la configuración, recomiendo revisar primero que las variables del archivo `.env` estén bien escritas.
+
+En mi caso, tuve que corregir algunas líneas relacionadas con las credenciales de AWS porque tenían problemas de formato.
+
+Para comprobar la configuración utilicé:
+
+```powershell
+docker compose config --quiet
+```
+
+Después de corregirlas, el comando terminó sin errores y pude continuar con la instalación. Esto comprueba el formato de la configuración, pero no garantiza que las credenciales sean correctas.
+
+**2. Los contenedores están encendidos, pero no sabemos si funcionan correctamente**
+
+Aunque Docker muestre los servicios iniciados, conviene comprobar que estén respondiendo.
+
+Para revisar su estado:
+
+```powershell
+docker compose ps -a
+```
+
+Si alguno presenta problemas, podemos consultar sus registros:
+
+```powershell
+docker compose logs --tail 40 api worker postgres ollama
+```
+
+También podemos comprobar que la API responda:
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:3000/api/health"
+```
+
+En mi caso, la API respondió con `status: ok`. Después comprobé por separado PostgreSQL, Ollama y el almacenamiento S3 para asegurarme de que los servicios necesarios estuvieran funcionando.
+
+**3. Problemas con la conexión a AWS S3**
+
+Si aparecen errores al trabajar con documentos, podemos comprobar la conexión del backend con el bucket:
+
+```powershell
+docker compose exec api node dist/storage/check.js
+```
+
+En mi caso, esta prueba confirmó que podía conectarme al bucket y que tenía habilitadas las protecciones esperadas.
+
+Si aparece un error, conviene revisar la región, el nombre del bucket y las credenciales configuradas. No es necesario compartir las claves para pedir ayuda; basta con enviar el mensaje de error, cuidando que no incluya información privada.
+
+**4. El documento se sube, pero Ollama no lo procesa**
+
+Primero podemos revisar que el Worker esté funcionando y que Ollama tenga el modelo descargado:
+
+```powershell
+docker compose logs --tail 40 worker
+docker compose exec ollama ollama list
+```
+
+También hay que recordar que subir un documento no inicia automáticamente su procesamiento. La aplicación debe solicitar el análisis.
+
+En mi caso, probé con un PDF ficticio y confirmé que pasó por los estados `queued`, `processing` y `requires_review`.
+
+El último estado no significa necesariamente que el servicio haya fallado. Puede indicar que el análisis terminó, pero que los datos necesitan revisión antes de aprobarse.
+
+**5. Ollama extrae algunos datos incorrectamente**
+
+En mi caso, hice una prueba con un hemograma ficticio. Ollama reconoció correctamente los valores de hemoglobina, leucocitos y plaquetas, pero no logró extraer la fecha y agregó rangos de referencia que no aparecían en el PDF.
+
+El procesamiento terminó en `requires_review`, así que revisé el resultado almacenado en PostgreSQL para identificar qué había ocurrido.
+
+Este comportamiento ya está identificado por el equipo y se está trabajando en mejorarlo. Si aparece otro caso parecido, conviene guardar el resultado y anotar qué información no coincide con el documento original.
+
+**Nota:** Si algo no funciona a la primera, recomiendo revisar el mensaje de error antes de reinstalar o borrar cualquier cosa. A veces basta con corregir una variable o esperar a que un servicio termine de iniciar. Evitemos eliminar los volúmenes de Docker para solucionar estos problemas, porque podríamos perder los datos guardados en PostgreSQL.
