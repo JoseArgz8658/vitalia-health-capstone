@@ -144,3 +144,440 @@ test('reconoce un rango separado por saltos de linea en el PDF', async () => {
   expect(result.approved).toBe(false);
   expect(result.incidents).toEqual([]);
 });
+test('normaliza guiones Unicode sin alterar signos de interrogación', () => {
+  const documentoOriginal =
+    'Perfil ficticio\n' +
+    'Indicador ficticio: 1.234,50 U/L\n' +
+    'Rango de referencia: 1.000,00\u20132.000,00 U/L';
+
+  const resultadoOllama = {
+    ...complete,
+    resultados: [{
+      ...row,
+      rango_referencia: '1.000,00-2.000,00 U/L'
+    }]
+  };
+
+  const result = reviewExtraction(
+    JSON.stringify(resultadoOllama),
+    false,
+    documentoOriginal
+  );
+
+  expect(result.status).toBe('requires_review');
+  expect(result.approved).toBe(false);
+  expect(result.incidents).toEqual([]);
+
+  const documentoConInterrogacion =
+    'Rango de referencia: 1.000,00?2.000,00 U/L';
+
+  const resultConInterrogacion = reviewExtraction(
+    JSON.stringify(resultadoOllama),
+    false,
+    documentoConInterrogacion
+  );
+
+  expect(resultConInterrogacion.incidents).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: 'not_in_source',
+        path: 'resultados[0].rango_referencia'
+      })
+    ])
+  );
+});
+
+test('detecta un valor numerico que no aparece en el documento', () => {
+  const documento = 'Glucosa: 95 mg/dL. Referencia: 70-100 mg/dL.';
+  const respuesta = {
+    ...complete,
+    resultados: [{
+      ...row,
+      nombre: 'Glucosa',
+      valor: '190',
+      unidad: 'mg/dL',
+      rango_referencia: '70-100 mg/dL'
+    }]
+  };
+
+  const result = reviewExtraction(
+    JSON.stringify(respuesta),
+    false,
+    documento
+  );
+
+  expect(result.status).toBe('requires_review');
+  expect(result.approved).toBe(false);
+  expect(result.incidents).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: 'not_in_source',
+        path: 'resultados[0].valor'
+      })
+    ])
+  );
+});
+
+test('detecta valor asignado al analito equivocado', () => {
+  const documento = [
+    'Examen: Hemograma',
+    'Hemoglobina: 14.2 g/dL',
+    'Leucocitos: 7200 /uL',
+    'Plaquetas: 250000 /uL'
+  ].join('\n');
+
+  const respuesta = {
+    ...complete,
+    resultados: [{
+      ...row,
+      nombre: 'Hemoglobina',
+      valor: '7200',
+      unidad: 'g/dL',
+      rango_referencia: null
+    }]
+  };
+
+  const result = reviewExtraction(
+    JSON.stringify(respuesta),
+    false,
+    documento
+  );
+
+  expect(result.status).toBe('requires_review');
+  expect(result.approved).toBe(false);
+  expect(result.incidents).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: 'not_in_source',
+        path: 'resultados[0].valor'
+      })
+    ])
+  );
+});
+
+test('acepta valores correctamente asociados a sus analitos', () => {
+  const documento = [
+    'Examen: Hemograma',
+    'Hemoglobina: 14.2 g/dL',
+    'Leucocitos: 7200 /uL',
+    'Plaquetas: 250000 /uL'
+  ].join('\n');
+
+  const respuesta = {
+    ...complete,
+    resultados: [
+      {
+        nombre: 'Hemoglobina',
+        valor: '14.2',
+        unidad: 'g/dL',
+        rango_referencia: null
+      },
+      {
+        nombre: 'Leucocitos',
+        valor: '7200',
+        unidad: '/uL',
+        rango_referencia: null
+      },
+      {
+        nombre: 'Plaquetas',
+        valor: '250000',
+        unidad: '/uL',
+        rango_referencia: null
+      }
+    ]
+  };
+
+  const result = reviewExtraction(
+    JSON.stringify(respuesta),
+    false,
+    documento
+  );
+
+  expect(result.status).toBe('requires_review');
+  expect(result.approved).toBe(false);
+  expect(result.incidents.filter(
+    incident => incident.code === 'not_in_source'
+  )).toEqual([]);
+});
+
+test('no marca como incorrecto un valor valido de un analito repetido', () => {
+  const documento = [
+    'Glucosa: 95 mg/dL',
+    'Glucosa: 100 mg/dL'
+  ].join('\n');
+
+  const respuesta = {
+    ...complete,
+    resultados: [{
+      nombre: 'Glucosa',
+      valor: '100',
+      unidad: 'mg/dL',
+      rango_referencia: null
+    }]
+  };
+
+  const result = reviewExtraction(
+    JSON.stringify(respuesta),
+    false,
+    documento
+  );
+
+  expect(result.status).toBe('requires_review');
+  expect(result.approved).toBe(false);
+  expect(result.incidents.filter(
+    incident => incident.code === 'not_in_source'
+  )).toEqual([]);
+});
+
+test('distingue el mensaje de un valor asociado a otro analito', () => {
+  const documento = [
+    'Hemoglobina: 14.2 g/dL',
+    'Leucocitos: 7200 /uL'
+  ].join('\n');
+
+  const respuesta = {
+    ...complete,
+    resultados: [{
+      nombre: 'Hemoglobina',
+      valor: '7200',
+      unidad: 'g/dL',
+      rango_referencia: null
+    }]
+  };
+
+  const result = reviewExtraction(
+    JSON.stringify(respuesta),
+    false,
+    documento
+  );
+
+  const incidencia = result.incidents.find(
+    incident =>
+      incident.code === 'not_in_source' &&
+      incident.path === 'resultados[0].valor'
+  );
+
+  expect(incidencia).toBeDefined();
+  expect(incidencia.message).toContain(
+    'no coincide con el asociado a este analito'
+  );
+});
+
+test('reconoce valores con operadores de comparacion presentes en el documento', () => {
+  const casos = [
+    { nombre: 'Glucosa', valor: '<70', documento: 'Glucosa: <70 mg/dL' },
+    { nombre: 'PCR', valor: '>200', documento: 'PCR: >200 mg/L' }
+  ];
+
+  for (const caso of casos) {
+    const respuesta = {
+      ...complete,
+      resultados: [{
+        nombre: caso.nombre,
+        valor: caso.valor,
+        unidad: null,
+        rango_referencia: null
+      }]
+    };
+
+    const result = reviewExtraction(
+      JSON.stringify(respuesta),
+      false,
+      caso.documento
+    );
+
+    expect(result.status).toBe('requires_review');
+    expect(result.approved).toBe(false);
+    expect(result.incidents.filter(
+      incident => incident.code === 'not_in_source'
+    )).toEqual([]);
+  }
+});
+
+test('detecta operadores de comparacion omitidos o intercambiados', () => {
+  const casos = [
+    ['Glucosa: <70 mg/dL', 'Glucosa', '70'],
+    ['Glucosa: 70 mg/dL', 'Glucosa', '<70'],
+    ['PCR: >200 mg/L', 'PCR', '200'],
+    ['PCR: <200 mg/L', 'PCR', '>200']
+  ];
+
+  for (const [documento, nombre, valor] of casos) {
+    const respuesta = {
+      ...complete,
+      resultados: [{
+        nombre,
+        valor,
+        unidad: null,
+        rango_referencia: null
+      }]
+    };
+
+    const result = reviewExtraction(
+      JSON.stringify(respuesta),
+      false,
+      documento
+    );
+
+    expect(result.status).toBe('requires_review');
+    expect(result.approved).toBe(false);
+
+    expect(result.incidents.some(
+      incident =>
+        incident.code === 'not_in_source' &&
+        incident.path === 'resultados[0].valor'
+    )).toBe(true);
+  }
+});
+test('detecta operadores inclusivos omitidos o intercambiados', () => {
+  const casos = [
+    ['Glucosa: <=70 mg/dL', 'Glucosa', '70'],
+    ['Glucosa: <=70 mg/dL', 'Glucosa', '<70'],
+    ['Glucosa: <70 mg/dL', 'Glucosa', '<=70'],
+    ['PCR: >=200 mg/L', 'PCR', '200'],
+    ['PCR: >=200 mg/L', 'PCR', '>200'],
+    ['PCR: >200 mg/L', 'PCR', '>=200']
+  ];
+
+  for (const [documento, nombre, valor] of casos) {
+    const respuesta = {
+      ...complete,
+      resultados: [{
+        nombre,
+        valor,
+        unidad: null,
+        rango_referencia: null
+      }]
+    };
+
+    const result = reviewExtraction(
+      JSON.stringify(respuesta),
+      false,
+      documento
+    );
+
+    expect(result.status).toBe('requires_review');
+    expect(result.approved).toBe(false);
+
+    expect(result.incidents.some(
+      incident =>
+        incident.code === 'not_in_source' &&
+        incident.path === 'resultados[0].valor'
+    )).toBe(true);
+  }
+});
+test('detecta valor asignado al analito equivocado en una tabla', () => {
+  const documentoOriginal = [
+    'Examen          Resultado      Unidad',
+    'Glucosa         95             mg/dL',
+    'Colesterol      180            mg/dL'
+  ].join('\n');
+
+  const respuestaOllama = {
+    ...complete,
+    resultados: [{
+      nombre: 'Glucosa',
+      valor: '180',
+      unidad: 'mg/dL',
+      rango_referencia: null
+    }]
+  };
+
+  const result = reviewExtraction(
+    JSON.stringify(respuestaOllama),
+    false,
+    documentoOriginal
+  );
+
+  expect(result.status).toBe('requires_review');
+  expect(result.approved).toBe(false);
+
+  expect(result.incidents).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        code: 'not_in_source',
+        path: 'resultados[0].valor'
+      })
+    ])
+  );
+});
+test('valida analitos con nombres compuestos en tablas', () => {
+  const documento = [
+    'Examen                 Resultado    Unidad',
+    'Colesterol HDL         45           mg/dL',
+    'Colesterol LDL         130          mg/dL'
+  ].join('\n');
+
+  for (const [valor, debeDetectar] of [
+    ['45', false],
+    ['130', true]
+  ]) {
+    const respuesta = {
+      ...complete,
+      resultados: [{
+        nombre: 'Colesterol HDL',
+        valor,
+        unidad: 'mg/dL',
+        rango_referencia: null
+      }]
+    };
+
+    const result = reviewExtraction(
+      JSON.stringify(respuesta),
+      false,
+      documento
+    );
+
+    const detectado = result.incidents.some(
+      incident =>
+        incident.code === 'not_in_source' &&
+        incident.path === 'resultados[0].valor'
+    );
+
+    expect(detectado).toBe(debeDetectar);
+    expect(result.status).toBe('requires_review');
+    expect(result.approved).toBe(false);
+  }
+});
+test('distingue valores repetidos entre analitos de una tabla', () => {
+  const documento = [
+    'Examen                Resultado    Unidad',
+    'Glucosa               95           mg/dL',
+    'Colesterol HDL        45           mg/dL',
+    'Trigliceridos         95           mg/dL'
+  ].join('\n');
+
+  const casos = [
+    ['Glucosa', '95', false],
+    ['Trigliceridos', '95', false],
+    ['Colesterol HDL', '95', true]
+  ];
+
+  for (const [nombre, valor, debeDetectar] of casos) {
+    const respuesta = {
+      ...complete,
+      resultados: [{
+        nombre,
+        valor,
+        unidad: 'mg/dL',
+        rango_referencia: null
+      }]
+    };
+
+    const result = reviewExtraction(
+      JSON.stringify(respuesta),
+      false,
+      documento
+    );
+
+    const detectado = result.incidents.some(
+      incident =>
+        incident.code === 'not_in_source' &&
+        incident.path === 'resultados[0].valor'
+    );
+
+    expect(detectado).toBe(debeDetectar);
+    expect(result.status).toBe('requires_review');
+    expect(result.approved).toBe(false);
+  }
+});
