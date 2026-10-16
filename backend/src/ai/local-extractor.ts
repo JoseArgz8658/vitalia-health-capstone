@@ -73,7 +73,12 @@ export function createLocalExtractor(options: { model?: string; fetchImpl?: type
       } finally {clearTimeout(blockTimer);controller.signal.removeEventListener('abort',abort);}
       };
       const raw = version===4 ? await extractReportBlocks(text,generate) : await generate(schema,text);
-      return { ...reviewExtraction(raw,version===4), model, promptVersion: version, elapsedMs: Math.round(performance.now() - started) };
+      return {
+  ...reviewExtraction(raw, version === 4, text),
+  model,
+  promptVersion: version,
+  elapsedMs: Math.round(performance.now() - started)
+};
     } catch (error) {
       const failure = error instanceof ExtractionServiceError ? error : new ExtractionServiceError(
         'No se pudo obtener una respuesta válida de Ollama local.',

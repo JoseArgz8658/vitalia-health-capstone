@@ -8,7 +8,7 @@ export const extractionSchema = z.object({
   }).strict()).max(100),
 }).strict();
 export type Extraction = z.infer<typeof extractionSchema>;
-export type Incident = { code: 'invalid_json' | 'invalid_structure' | 'invalid_date' | 'not_extracted' | 'no_results'; path: string; message: string };
+export type Incident = { code: 'invalid_json' | 'invalid_structure' | 'invalid_date' | 'not_extracted' | 'no_results' | 'not_in_source'; path: string; message: string };
 export type ExtractionReview = {
   status: 'rejected' | 'requires_review'; raw: string; extraction: Extraction | null;
   incidents: Incident[]; approved: false;
@@ -22,7 +22,70 @@ export function isCalendarDate(value: string): boolean {
   date.setUTCHours(0, 0, 0, 0);
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
-export function reviewExtraction(raw: string, requireReport=false): ExtractionReview {
+function sourceContainsNumericValue(source: string, value: string): boolean {
+  const normalizedValue = value.normalize('NFKC').trim();
+
+  if (!/^(?:[<>]=?\s*)?[+-]?\d[\d.,]*$/.test(normalizedValue)) {
+    return false;
+  }
+
+  const compactValue = normalizedValue.replace(/\s+/g, '');
+  const escaped = compactValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const pattern = new RegExp(
+    `(^|[^\\d.,<>])${escaped}(?=$|[^\\d.,])`
+  );
+
+  return pattern.test(
+    source.normalize('NFKC').replace(/([<>]=?)\s+(?=[+-]?\d)/g, '$1')
+  );
+}
+
+function sourceHasDifferentAnalyteValue(
+  source: string,
+  name: string,
+  value: string
+): boolean {
+  const normalizedName = name.normalize('NFKC').trim().toLowerCase();
+  const normalizedValue = value.normalize('NFKC').trim().replace(/\s+/g, '');
+
+  if (!normalizedName || !/^(?:[<>]=?)?[+-]?\d[\d.,]*$/.test(normalizedValue)) {
+    return false;
+  }
+
+  const escapeRegex = (text: string) =>
+    text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const namePattern = escapeRegex(normalizedName);
+
+  const linePattern = new RegExp(
+    `^\\s*${namePattern}(?:\\s*:\\s*|[ \\t]{2,})([<>]=?\\s*)?([+-]?\\d[\\d.,]*)` +
+    `(?=$|\\s|[^\\d.,])`,
+    'i'
+  );
+
+  let foundDifferentValue = false;
+
+  for (const line of source.normalize('NFKC').split(/\r?\n/)) {
+    const match = line.toLowerCase().match(linePattern);
+
+    if (!match) continue;
+
+    const sourceValue = `${(match[1] || '').replace(/\s+/g, '')}${match[2]}`;
+
+    if (sourceValue === normalizedValue) {
+      return false;
+    }
+
+    foundDifferentValue = true;
+  }
+
+  return foundDifferentValue;
+}
+function normalizeSourceText(text: string): string {
+  return text.normalize('NFKC').replace(/[\u2010-\u2015\u2212]/g, '-').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+export function reviewExtraction(raw: string, requireReport=false, sourceText?: string): ExtractionReview {
   let value: unknown;
   try { value = JSON.parse(raw); } catch {
     return { status: 'rejected', raw, extraction: null, approved: false,
@@ -49,9 +112,33 @@ export function reviewExtraction(raw: string, requireReport=false): ExtractionRe
       if(date!==null&&!isCalendarDate(date))incidents.push({code:'invalid_date',path:`informe.${key}`,message:'Fecha inválida; comprobar el documento original.'});
     }
   }
+  const normalizedSource = sourceText?.trim() ? normalizeSourceText(sourceText) : null;
   extraction.resultados.forEach((row, index) => {
+    if (sourceText?.trim() && row.valor !== null) {
+      const valueExists = sourceContainsNumericValue(sourceText, row.valor);
+      const wrongAssociation = valueExists && row.nombre !== null &&
+        sourceHasDifferentAnalyteValue(sourceText, row.nombre, row.valor);
+
+      if (!valueExists || wrongAssociation) {
+        incidents.push({
+          code: 'not_in_source',
+          path: `resultados[${index}].valor`,
+          message: wrongAssociation
+            ? 'El valor aparece en el documento, pero no coincide con el asociado a este analito; requiere verificación humana.'
+            : 'El valor numérico no se encontró literalmente en el documento original; requiere verificación humana.'
+        });
+      }
+    }
     for (const key of ['nombre', 'valor', 'unidad', 'rango_referencia'] as const) {
       if (row[key] === null) incidents.push({ code: 'not_extracted', path: `resultados[${index}].${key}`, message: 'Campo no extraído; podría estar presente en el original.' });
+    }
+    if (normalizedSource !== null && row.rango_referencia !== null &&
+        !normalizedSource.includes(normalizeSourceText(row.rango_referencia))) {
+      incidents.push({
+        code: 'not_in_source',
+        path: `resultados[${index}].rango_referencia`,
+        message: 'El rango de referencia no se encontró literalmente en el documento original; requiere verificación humana.'
+      });
     }
   });
   if (!extraction.resultados.length) incidents.push({ code: 'no_results', path: 'resultados', message: 'No se extrajeron resultados; comprobar el original.' });

@@ -1,0 +1,5 @@
+NAME                 IMAGE                     COMMAND                  SERVICE    CREATED              STATUS                       PORTS
+vitalia-api-1        vitalia-backend:local     "docker-entrypoint.sÔÇª"   api        About a minute ago   Up 58 seconds                127.0.0.1:3000->3000/tcp
+vitalia-ollama-1     ollama/ollama:0.40.0      "/bin/ollama serve"      ollama     16 hours ago         Up About an hour             11434/tcp
+vitalia-postgres-1   postgres:16.15-bookworm   "docker-entrypoint.sÔÇª"   postgres   7 days ago           Up About an hour (healthy)   5432/tcp
+vitalia-worker-1     vitalia-backend:local     "docker-entrypoint.sÔÇª"   worker     About a minute ago   Up 58 seconds                3000/tcp
