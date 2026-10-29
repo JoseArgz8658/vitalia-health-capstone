@@ -38,18 +38,18 @@ test('modelo local recibe exclusivamente revisión y seis turnos del documento; 
   expect(data.review).toEqual(extraction);expect(data).not.toHaveProperty('patientId');expect(data).not.toHaveProperty('raw');
   return modelResponse(educational());
  });
- const result=await createExamAssistant({fetchImpl})({extraction,question:'¿Qué es hemoglobina?',mode:'chat',history:[]});expect(result.promptVersion).toBe(2);expect(result.reply).toEqual(educational());
+ const result=await createExamAssistant({fetchImpl})({extraction,question:'¿Cómo se relaciona la hemoglobina con el transporte de oxígeno en la sangre?',mode:'chat',history:[]});expect(result.promptVersion).toBe(2);expect(result.reply).toEqual(educational());
 });
 test('política bloquea solicitudes peligrosas antes de red y cloud no se admite',async()=>{
  const fetchImpl=jest.fn();const result=await createExamAssistant({fetchImpl})({extraction,question:'Receta algo para mi examen',mode:'chat',history:[]});expect(result.reply.kind).toBe('restricted');expect(fetchImpl).not.toHaveBeenCalled();
  expect(()=>createExamAssistant({model:'x:cloud'})).toThrow(AssistantModelError);
 });
 test.each([()=>new Response('bad'),()=>new Response('x'.repeat(65537)),()=>modelResponse(educational(),{done:false}),()=>modelResponse(educational(),{done_reason:'length'}),()=>new Response('oops',{status:500})])('modelo incompleto o transporte inválido no entrega respuesta',async respond=>{
- await expect(createExamAssistant({fetchImpl:async()=>respond()})({extraction,question:'¿Qué es hemoglobina?',mode:'chat',history:[]})).rejects.toBeInstanceOf(AssistantModelError);
+ await expect(createExamAssistant({fetchImpl:async()=>respond()})({extraction,question:'¿Cómo se relaciona la hemoglobina con el transporte de oxígeno en la sangre?',mode:'chat',history:[]})).rejects.toBeInstanceOf(AssistantModelError);
 });
 test('timeout termina transporte sin respuesta parcial',async()=>{
  jest.useFakeTimers();try{const fetchImpl=(_url,opts)=>new Promise((_resolve,reject)=>opts.signal.addEventListener('abort',()=>reject(new Error())));
- const pending=createExamAssistant({fetchImpl})({extraction,question:'¿Qué es hemoglobina?',mode:'chat',history:[]});const rejected=expect(pending).rejects.toBeInstanceOf(AssistantModelError);
+ const pending=createExamAssistant({fetchImpl})({extraction,question:'¿Cómo se relaciona la hemoglobina con el transporte de oxígeno en la sangre?',mode:'chat',history:[]});const rejected=expect(pending).rejects.toBeInstanceOf(AssistantModelError);
  await jest.advanceTimersByTimeAsync(120000);await rejected;}finally{jest.useRealTimers();}
 });
 function setup({owned=true,approved=true,model=async({mode})=>({reply:mode==='chat'?educational():definitions(),model:'synthetic-local',promptVersion:2,elapsedMs:1})}={}){
@@ -57,14 +57,15 @@ function setup({owned=true,approved=true,model=async({mode})=>({reply:mode==='ch
  const query=jest.fn(async(sql,args)=>{
   if(sql.startsWith('SELECT id FROM public.vitalia_documents'))return {rows:owned&&args[0]===doc&&args[1]===id?[{id:doc}]:[]};
   if(sql.startsWith('SELECT id,reviewed_extraction'))return {rows:approved?[{id:rid,reviewed_extraction:extraction}]:[]};
+  if(sql.includes('FROM public.vitalia_document_processing'))return {rows:[]};
   if(sql.startsWith('SELECT id,review_snapshot'))return {rows:thread?[thread]:[]};
-  if(sql.startsWith('INSERT INTO public.vitalia_exam_assistant_threads')){thread??={id:args[0],review_snapshot:JSON.parse(args[4])};return {rows:[]};}
+  if(sql.startsWith('INSERT INTO public.vitalia_exam_assistant_threads')){thread??={id:args[0],review_snapshot:JSON.parse(args[5])};return {rows:[]};}
   if(sql.startsWith('INSERT INTO public.vitalia_exam_assistant_audit')){actions.push(args[3]);return {rows:[]};}
   if(sql.includes("SELECT count(*)::text AS n"))return {rows:[{n:String([...turns.values()].filter(x=>x.mode==='chat').length)}]};
   if(sql.startsWith('SELECT id FROM public.vitalia_exam_assistant_turns'))return {rows:[...turns.values()].filter(x=>x.status==='pending')};
   if(sql.startsWith('SELECT id,mode,question')){
    if(sql.includes('AND id=$2'))return {rows:turns.has(args[1])?[turns.get(args[1])]:[]};
-   const values=[...turns.values()].filter(x=>x.mode==='chat');return {rows:sql.includes('LIMIT 6')?values.filter(x=>x.status==='ready'&&x.response?.kind==='education').slice(-6).reverse():values};
+   const values=[...turns.values()].filter(x=>x.mode==='chat');return {rows:sql.includes("response->>'kind'='education'")?values.filter(x=>x.status==='ready'&&x.response?.kind==='education').slice(-10).reverse():values};
   }
   if(sql.startsWith('INSERT INTO public.vitalia_exam_assistant_turns')){
    if(turns.has(args[0]))return {rows:[]};const now=new Date();turns.set(args[0],{id:args[0],mode:args[2],question:args[3],status:'pending',response:null,attempt_id:args[4],created_at:now,started_at:now,finished_at:null});return {rows:[{id:args[0]}]};
@@ -110,10 +111,20 @@ test('fallo no entrega respuesta parcial y repetir ID no vuelve a llamar a IA',a
  const x=setup({model:async()=>{throw new Error('secreto');}}),input=question();await expect(x.service.request(account,doc,input)).rejects.toMatchObject({status:503});
  expect((await x.service.get(account,doc)).turns[0].status).toBe('failed');expect((await x.service.request(account,doc,input)).turn.status).toBe('failed');expect(x.generator).toHaveBeenCalledTimes(1);
 });
-test('solo seis respuestas educativas previas se envían como memoria',async()=>{
- const x=setup();for(let i=0;i<8;i++)await x.service.request(account,doc,question());await x.service.request(account,doc,question(randomUUID(),'¿Qué dosis debo tomar?'));
- await x.service.request(account,doc,question());const context=x.generator.mock.calls.at(-1)[0];expect(context.history).toHaveLength(6);expect(context.history.every(x=>x.response.kind==='education')).toBe(true);
+
+test('solo diez respuestas educativas previas se envían como memoria',async()=>{
+ const x=setup();
+ for(let i=0;i<12;i++){
+  await x.service.request(account,doc,question());
+ }
+ await x.service.request(account,doc,question(randomUUID(),'¿Qué dosis debo tomar?'));
+ await x.service.request(account,doc,question());
+
+ const context=x.generator.mock.calls.at(-1)[0];
+ expect(context.history).toHaveLength(10);
+ expect(context.history.every(x=>x.response.kind==='education')).toBe(true);
 });
+
 test('límite de treinta preguntas impide crecimiento y modelo adicional',async()=>{
  const x=setup();for(let i=0;i<30;i++)await x.service.request(account,doc,question());await expect(x.service.request(account,doc,question())).rejects.toMatchObject({status:409});expect(x.generator).toHaveBeenCalledTimes(30);
 });
@@ -174,7 +185,7 @@ test.each([
  [()=>modelResponse({...educational(),definitions:definitions().definitions}),'chat_format'],
  [()=>modelResponse({...educational(),answer:42}),'invalid_reply'],
 ])('diagnóstico seguro clasifica el rechazo sin exponer la respuesta: %s',async(respond,reason)=>{
- const pending=createExamAssistant({fetchImpl:async()=>respond()})({extraction,question:'¿Qué es hemoglobina?',mode:'chat',history:[]});
+ const pending=createExamAssistant({fetchImpl:async()=>respond()})({extraction,question:'¿Cómo se relaciona la hemoglobina con el transporte de oxígeno en la sangre?',mode:'chat',history:[]});
  await expect(pending).rejects.toMatchObject({reason,message:'El asistente local no produjo una respuesta aceptable.'});
 });
 
@@ -185,7 +196,7 @@ test.each(['chat','explanation'])('esquema de generación limita definitions par
   if(mode==='explanation')expect(spec.minItems).toBe(extraction.resultados.length);
   return modelResponse(mode==='chat'?educational():definitions());
  };
- await createExamAssistant({fetchImpl})({extraction,question:'¿Qué es hemoglobina?',mode,history:[]});
+ await createExamAssistant({fetchImpl})({extraction,question:'¿Cómo se relaciona la hemoglobina con el transporte de oxígeno en la sangre?',mode,history:[]});
 });
 
 test('fundamento contiene únicamente conceptos del examen y conserva alias y orden',()=>{
@@ -228,38 +239,44 @@ test('generación restringe índices a la fila real de un seguimiento con orden 
 });
 
 test('diagnóstico de contenido revela categoría acotada sin mostrar prosa rechazada',async()=>{
- await expect(createExamAssistant({fetchImpl:async()=>modelResponse({...educational(),answer:'El resultado es normal.'})})({extraction,question:'¿Qué es hemoglobina?',mode:'chat',history:[]})).rejects.toMatchObject({reason:'unsafe_content',detail:'classification_term'});
+ await expect(createExamAssistant({fetchImpl:async()=>modelResponse({...educational(),answer:'El resultado es normal.'})})({extraction,question:'¿Cómo se relaciona la hemoglobina con el transporte de oxígeno en la sangre?',mode:'chat',history:[]})).rejects.toMatchObject({reason:'unsafe_content',detail:'classification_term'});
 });
 
 test('reformulación única no reenvía contenido rechazado y conserva las validaciones',async()=>{
  const fetchImpl=jest.fn(async(_,options)=>{
-  const body=JSON.parse(options.body);expect(JSON.stringify(body)).not.toContain('Toma hierro.');
-  if(fetchImpl.mock.calls.length===1)return modelResponse({...educational(),answer:'Toma hierro.'});
+  const body=JSON.parse(options.body);
+expect(JSON.stringify(body)).not.toContain('La cifra es 99.');
+  if(fetchImpl.mock.calls.length===1)return modelResponse({...educational(),answer:'La cifra es 99.'});
   expect(body.messages[0].content).toContain('Reformulación única');return modelResponse(educational());
  });
- const result=await createExamAssistant({fetchImpl})({extraction,question:'¿Qué es hemoglobina?',mode:'chat',history:[]});
+const result=await createExamAssistant({fetchImpl})({
+  extraction,
+  question:'¿Cómo se relaciona la hemoglobina con el transporte de oxígeno en la sangre?',
+  mode:'chat',
+  history:[]
+});
  expect(result.generationAttempts).toBe(2);expect(fetchImpl).toHaveBeenCalledTimes(2);expect(result.reply).toEqual(educational());
 });
 test('dos respuestas rechazadas terminan en error sin más llamadas ni contenido parcial',async()=>{
- const fetchImpl=jest.fn(async()=>modelResponse({...educational(),answer:'Toma hierro.'}));
- await expect(createExamAssistant({fetchImpl})({extraction,question:'¿Qué es hemoglobina?',mode:'chat',history:[]})).rejects.toMatchObject({reason:'unsafe_content'});
+ const fetchImpl=jest.fn(async()=>modelResponse({...educational(),answer:'La cifra es 99.'}));
+ await expect(createExamAssistant({fetchImpl})({extraction,question:'¿Cómo se relaciona la hemoglobina con el transporte de oxígeno en la sangre?',mode:'chat',history:[]})).rejects.toMatchObject({reason:'unsafe_content'});
  expect(fetchImpl).toHaveBeenCalledTimes(2);
 });
 test('fallos HTTP no activan reformulación',async()=>{
  const fetchImpl=jest.fn(async()=>new Response('error',{status:500}));
- await expect(createExamAssistant({fetchImpl})({extraction,question:'¿Qué es hemoglobina?',mode:'chat',history:[]})).rejects.toMatchObject({reason:'http'});expect(fetchImpl).toHaveBeenCalledTimes(1);
+ await expect(createExamAssistant({fetchImpl})({extraction,question:'¿Cómo se relaciona la hemoglobina con el transporte de oxígeno en la sangre?',mode:'chat',history:[]})).rejects.toMatchObject({reason:'http'});expect(fetchImpl).toHaveBeenCalledTimes(1);
 });
 test('las dos generaciones comparten el límite total de tiempo',async()=>{
  jest.useFakeTimers();
  try{
   const fetchImpl=jest.fn(async(_,options)=>{
-   if(fetchImpl.mock.calls.length===1){await new Promise(resolve=>setTimeout(resolve,70000));return modelResponse({...educational(),answer:'Toma hierro.'});}
+   if(fetchImpl.mock.calls.length===1){await new Promise(resolve=>setTimeout(resolve,15000));return modelResponse({...educational(),answer:'La cifra es 99.'});}
    return new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new Error('abort')),{once:true}));
   });
-  const pending=createExamAssistant({fetchImpl})({extraction,question:'¿Qué es hemoglobina?',mode:'chat',history:[]});
+  const pending=createExamAssistant({fetchImpl})({extraction,question:'¿Cómo se relaciona la hemoglobina con el transporte de oxígeno en la sangre?',mode:'chat',history:[]});
   const rejected=expect(pending).rejects.toMatchObject({reason:'timeout'});
-  await jest.advanceTimersByTimeAsync(70000);expect(fetchImpl).toHaveBeenCalledTimes(2);
-  await jest.advanceTimersByTimeAsync(50000);await rejected;expect(fetchImpl).toHaveBeenCalledTimes(2);
+  await jest.advanceTimersByTimeAsync(15000);expect(fetchImpl).toHaveBeenCalledTimes(2);
+  await jest.advanceTimersByTimeAsync(3000);await rejected;expect(fetchImpl).toHaveBeenCalledTimes(2);
  }finally{jest.useRealTimers();}
 });
 

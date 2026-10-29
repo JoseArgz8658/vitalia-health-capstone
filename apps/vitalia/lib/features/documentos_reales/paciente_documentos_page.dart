@@ -96,7 +96,7 @@ class _PacienteDocumentosPageState extends State<PacienteDocumentosPage> {
                   style: Theme.of(context).textTheme.headlineSmall)),
               ]),
               const SizedBox(height: 12),
-              const Text('Reúne tus exámenes y consulta los datos revisados por tu profesional.'),
+              const Text('Sube tus exámenes y pregunta a Vitalia mientras esperas la revisión profesional.'),
               const SizedBox(height: 8),
               Text(widget.email, style: Theme.of(context).textTheme.bodyMedium),
             ]),

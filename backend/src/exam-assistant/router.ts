@@ -16,7 +16,7 @@ export function createExamAssistantRouter(auth:Pick<AuthServices,'find'>,service
  router.post('/:id/assistant/explanation',guard,async(req,res)=>res.json(await service.explain(res.locals.account,req.params.id as string,req.body)));
  const errors:ErrorRequestHandler=(error,_req,res,next)=>{
   if(error instanceof AssistantAccessError){res.status(error.status).json({error:{code:error.code,message:
-   error.status===401?'Sesión no válida.':error.status===409?'Se requiere revisión aprobada, no reutilices una solicitud para otra pregunta y comprueba el límite de conversación.':
+   error.status===401?'Sesión no válida.':error.status===409?'La extracción aún no está disponible, o la solicitud está duplicada o superó el límite de conversación.':
    error.status===503?'Asistente no disponible. Actualiza la consulta para comprobar su estado.':'Solicitud o documento no disponible para esta cuenta.'}});return;}next(error);
  };router.use(errors);return router;
 }

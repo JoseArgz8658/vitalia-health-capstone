@@ -1,4 +1,4 @@
-import {extractReportBlocks,ReportBlockError} from './report-blocks';
+﻿import {extractReportBlocks,ReportBlockError} from './report-blocks';
 import {ollamaUrl} from '../runtime/local-services';
 import {reportExtractionPrompt} from './report-prompt';
 import { extractionPrompt, schema } from './prompt';
@@ -45,17 +45,18 @@ export function createLocalExtractor(options: { model?: string; fetchImpl?: type
     const timer = setTimeout(() => controller.abort(), version===4?360000:120000);
     try {
       const generate = async (format: object, input: string, instruction = ''): Promise<string> => {
+      const blockStarted = performance.now();
       const blockController = new AbortController();
       const abort = () => blockController.abort();
       controller.signal.addEventListener('abort', abort, {once:true});
       if (controller.signal.aborted) abort();
-      const blockTimer = setTimeout(abort,120000);
+      const blockTimer = setTimeout(abort,180000);
       try {
       const response = await fetchImpl(ollamaUrl('chat'), {
         method: 'POST', redirect: 'error', signal: blockController.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model, stream: false, format,
-          options: { temperature: 0, seed: 42, num_ctx: version===4?8192:4096, num_predict: version===4?3600:1600 },
+          options: { temperature: 0, seed: 42, num_ctx: 4096, num_predict: version===4?2048:1600 },
           messages: [{ role: 'system', content: (version===4?reportExtractionPrompt:extractionPrompt)+instruction }, { role: 'user', content: `${version===3?'DOCUMENTO FICTICIO':'DOCUMENTO'}:\n${input}` }],
         }),
       });
@@ -63,6 +64,7 @@ export function createLocalExtractor(options: { model?: string; fetchImpl?: type
       const responseText = await readBounded(response);
       let body;
       try { body = JSON.parse(responseText); } catch { throw new ExtractionServiceError('Formato de transporte inválido.', 'invalid_json'); }
+      console.info(JSON.stringify({event:'ollama_extraction_block',elapsedMs:Math.round(performance.now()-blockStarted),done:body.done,doneReason:body.done_reason,outputChars:typeof body.message?.content==='string'?body.message.content.length:null,evalCount:body.eval_count,evalDuration:body.eval_duration}));
       if (body.done !== true || body.done_reason === 'length' || typeof body.message?.content !== 'string') {
         throw new ExtractionServiceError('Respuesta de Ollama incompleta o inválida.', 'incomplete');
       }

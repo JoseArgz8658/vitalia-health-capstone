@@ -27,14 +27,33 @@ test('bloque inválido o transporte fallido impide devolver informe parcial',asy
   expect(calls).toBe(3);
  }
 });
-test('solicitud bloqueada se cancela a los dos minutos y no inicia otra',async()=>{
- jest.useFakeTimers();const warn=jest.spyOn(console,'warn').mockImplementation(()=>{});
+
+test('solicitud bloqueada se cancela a los tres minutos y no inicia otra',async()=>{
+ jest.useFakeTimers();
+ const warn=jest.spyOn(console,'warn').mockImplementation(()=>{});
  try{
-  const fetchImpl=jest.fn((_url,options)=>new Promise((_,reject)=>options.signal.addEventListener('abort',()=>reject(new Error('cancelado')))));
-  const pending=createLocalExtractor({promptVersion:4,fetchImpl})('Texto ficticio');const rejected=expect(pending).rejects.toMatchObject({reason:'timeout'});
-  await jest.advanceTimersByTimeAsync(120000);await rejected;expect(fetchImpl).toHaveBeenCalledTimes(1);
- }finally{jest.useRealTimers();warn.mockRestore();}
+  const fetchImpl=jest.fn((_url,options)=>
+   new Promise((_,reject)=>{
+    options.signal.addEventListener(
+     'abort',
+     ()=>reject(new Error('cancelado')),
+     {once:true}
+    );
+   })
+  );
+
+  const pending=createLocalExtractor({promptVersion:4,fetchImpl})('Texto ficticio');
+  const rejected=expect(pending).rejects.toMatchObject({reason:'timeout'});
+
+  await jest.advanceTimersByTimeAsync(180000);
+  await rejected;
+  expect(fetchImpl).toHaveBeenCalledTimes(1);
+ }finally{
+  jest.useRealTimers();
+  warn.mockRestore();
+ }
 });
+
 test('las solicitudes comparten seis minutos sin ampliar el presupuesto',async()=>{
  jest.useFakeTimers();const warn=jest.spyOn(console,'warn').mockImplementation(()=>{});
  try{

@@ -110,3 +110,18 @@ test('no permite quitar informe ampliado ni aprobar fechas imposibles del estudi
  const invalid=structuredClone(original);invalid.informe.fecha_muestra='31-11-2026';
  await expect(x.service.approve(account,patientId,docId,input({extraction:invalid,observations:'Fecha imposible.'}))).rejects.toBeInstanceOf(ReviewInputError);
 });
+
+test('conserva tildes y caracteres UTF-8 en las observaciones', async () => {
+  const x = setup();
+  const observations = 'Prueba técnica: emisión y validación del examen.';
+
+  const review = await x.service.approve(
+    account,
+    patientId,
+    docId,
+    input({ observations })
+  );
+
+  expect(review.observations).toBe(observations);
+  expect(x.saved().observations).toBe(observations);
+});

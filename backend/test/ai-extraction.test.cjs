@@ -34,7 +34,7 @@ test('solicitud solo local, sin redirección y con prompt congelado',async()=>{
   expect(url).toBe('http://127.0.0.1:11434/api/chat');expect(init.redirect).toBe('error');
   const body=JSON.parse(init.body);expect(body.model).toBe('qwen3:4b-instruct');expect(body.stream).toBe(false);
   expect(body.messages[0].content).toContain('INDEPENDIENTEMENTE');return response(complete);
- }})('Texto ficticio');
+ }})('Texto ficticio. Fecha: 01-10-2026');
  expect(result).toMatchObject({extraction:complete,promptVersion:3,approved:false});
 });
 test('entrada inválida y modelo cloud fallan antes de red',async()=>{
@@ -152,6 +152,7 @@ test('normaliza guiones Unicode sin alterar signos de interrogación', () => {
 
   const resultadoOllama = {
     ...complete,
+    fecha: null,
     resultados: [{
       ...row,
       rango_referencia: '1.000,00-2.000,00 U/L'
@@ -166,7 +167,7 @@ test('normaliza guiones Unicode sin alterar signos de interrogación', () => {
 
   expect(result.status).toBe('requires_review');
   expect(result.approved).toBe(false);
-  expect(result.incidents).toEqual([]);
+  expect(result.incidents.filter(i => i.path !== 'fecha')).toEqual([]);
 
   const documentoConInterrogacion =
     'Rango de referencia: 1.000,00?2.000,00 U/L';
@@ -265,6 +266,7 @@ test('acepta valores correctamente asociados a sus analitos', () => {
 
   const respuesta = {
     ...complete,
+    fecha: null,
     resultados: [
       {
         nombre: 'Hemoglobina',
@@ -308,6 +310,7 @@ test('no marca como incorrecto un valor valido de un analito repetido', () => {
 
   const respuesta = {
     ...complete,
+    fecha: null,
     resultados: [{
       nombre: 'Glucosa',
       valor: '100',
@@ -372,6 +375,7 @@ test('reconoce valores con operadores de comparacion presentes en el documento',
   for (const caso of casos) {
     const respuesta = {
       ...complete,
+    fecha: null,
       resultados: [{
         nombre: caso.nombre,
         valor: caso.valor,
