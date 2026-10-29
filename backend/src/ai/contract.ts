@@ -85,6 +85,11 @@ function sourceHasDifferentAnalyteValue(
 function normalizeSourceText(text: string): string {
   return text.normalize('NFKC').replace(/[\u2010-\u2015\u2212]/g, '-').replace(/\s+/g, ' ').trim().toLowerCase();
 }
+function sourceContainsExactDate(source: string, value: string): boolean {
+  const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`(^|[^\\d])${escaped}(?!\\d)`);
+  return pattern.test(source.normalize('NFKC'));
+}
 export function reviewExtraction(raw: string, requireReport=false, sourceText?: string): ExtractionReview {
   let value: unknown;
   try { value = JSON.parse(raw); } catch {
@@ -106,6 +111,15 @@ export function reviewExtraction(raw: string, requireReport=false, sourceText?: 
   if (extraction.fecha !== null && !isCalendarDate(extraction.fecha)) {
     incidents.push({ code: 'invalid_date', path: 'fecha', message: 'Fecha inválida; no se corrige ni se acepta automáticamente.' });
   }
+  if (sourceText?.trim() && extraction.fecha !== null &&
+      !sourceContainsExactDate(sourceText, extraction.fecha)) {
+    incidents.push({
+      code: 'not_in_source',
+      path: 'fecha',
+      message: 'La fecha extraída no aparece literalmente en el documento original.'
+    });
+    extraction.fecha = null;
+  }
   if(extraction.informe){
     for(const key of ['fecha_nacimiento','fecha_muestra','fecha_emision'] as const){
       const date=extraction.informe[key];
@@ -113,6 +127,40 @@ export function reviewExtraction(raw: string, requireReport=false, sourceText?: 
     }
   }
   const normalizedSource = sourceText?.trim() ? normalizeSourceText(sourceText) : null;
+  if (normalizedSource !== null && extraction.informe && sourceText) {
+  const informe = extraction.informe;
+
+  // Comprobar que la fecha de emisión esté identificada explícitamente.
+  if (informe.fecha_emision !== null) {
+    const hasEmissionDate = sourceText.split(/\r?\n/).some(line =>
+      /(?:fecha\s+(?:de\s+)?emisi[oó]n|emitido\s+el)\s*:?\s*/i.test(line) &&
+      line.includes(informe.fecha_emision!)
+    );
+
+    if (!hasEmissionDate) {
+      incidents.push({
+        code: 'not_in_source',
+        path: 'informe.fecha_emision',
+        message: 'La fecha de emisión no está identificada explícitamente en el documento.'
+      });
+      informe.fecha_emision = null;
+    }
+  }
+
+  // Detectar alteraciones en las observaciones transcritas.
+  if (informe.observaciones_originales !== null) {
+    const extracted = normalizeSourceText(informe.observaciones_originales);
+
+    if (!normalizedSource.includes(extracted)) {
+      incidents.push({
+        code: 'not_in_source',
+        path: 'informe.observaciones_originales',
+        message: 'Las observaciones no coinciden literalmente con el documento original.'
+      });
+    }
+  }
+}
+
   extraction.resultados.forEach((row, index) => {
     if (sourceText?.trim() && row.valor !== null) {
       const valueExists = sourceContainsNumericValue(sourceText, row.valor);

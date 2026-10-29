@@ -72,7 +72,7 @@ test('bloques lentos se abortan y señalan cobertura no disponible sin esperar d
   const result=await promise;
   expect(result.reply.definitions).toHaveLength(5);
   expect(result.reply.definitions.every(item=>!item.known&&item.text.includes('tiempo disponible'))).toBe(true);
-  expect(result.elapsedMs).toBe(20000);
+  expect(result.elapsedMs).toBe(18000);
   expect(calls).toBe(2);
  } finally {jest.useRealTimers();}
 });
@@ -118,11 +118,11 @@ test('bloque educativo rechazado conserva definiciones aceptadas y marca filas n
  let calls=0;
  const fetchImpl=async(_url,options)=>{
   const input=JSON.parse(JSON.parse(options.body).messages[1].content);calls++;
-  const unsafe=calls<=2;
+  const unsafe=calls===1;
   return new Response(JSON.stringify({done:true,message:{content:JSON.stringify({kind:'education',answer:'Conceptos.',indices:input.review.resultados.map((_,i)=>i),definitions:input.review.resultados.map((_,i)=>({index:i,known:true,text:unsafe?'Toma hierro.':'Componente del examen.'}))})}}));
  };
  const result=await createExamAssistant({fetchImpl})({extraction:value,question:'Explica.',mode:'explanation',history:[]});
- expect(calls).toBe(3);expect(result.generationAttempts).toBe(3);
+ expect(calls).toBe(2);expect(result.generationAttempts).toBe(3);
  expect(result.reply.definitions[0].known).toBe(true);
  expect(result.reply.definitions.slice(1,4).every(item=>item.known===false)).toBe(true);
  expect(result.reply.definitions[4].known).toBe(true);

@@ -4,11 +4,11 @@ import 'chat_examen_api.dart';
 
 class ChatExamenPanel extends StatefulWidget {
   const ChatExamenPanel({super.key, required this.auth, required this.documentId,
-    required this.reviewedExtraction, required this.onExpired, this.autoOpen = false});
+    this.reviewedExtraction, required this.onExpired, this.autoOpen = false});
   final bool autoOpen;
   final AuthApi auth;
   final String documentId;
-  final Map<String, dynamic> reviewedExtraction;
+  final Map<String, dynamic>? reviewedExtraction;
   final VoidCallback onExpired;
   @override
   State<ChatExamenPanel> createState() => _ChatExamenPanelState();
@@ -28,6 +28,7 @@ class _ChatExamenPanelState extends State<ChatExamenPanel> {
     });
   }
   List<Map<String, dynamic>> _turns = [];
+  Map<String, dynamic>? _serverExtraction;
   String? _error, _lastId, _lastQuestion;
   bool _busy = false, _opened = false, _available = false;
   @override
@@ -40,10 +41,10 @@ class _ChatExamenPanelState extends State<ChatExamenPanel> {
   @override
   void dispose() { _question.dispose(); super.dispose(); }
   void _validateReferences(List<Map<String, dynamic>> turns) {
-    final rows = widget.reviewedExtraction['resultados'] as List;
+    final rows = (widget.reviewedExtraction ?? _serverExtraction)?['resultados'] as List?;
     for (final turn in turns) {
       final reply = turn['response'] as Map<String, dynamic>?;
-      if (reply != null && (reply['indices'] as List).any((i) => i >= rows.length)) throw const FormatException();
+      if (reply != null && rows != null && (reply['indices'] as List).any((i) => i >= rows.length)) throw const FormatException();
     }
   }
   Future<void> _load() async {
@@ -52,8 +53,10 @@ class _ChatExamenPanelState extends State<ChatExamenPanel> {
     try {
       final data = await ChatExamenApi(widget.auth).consultar(widget.documentId);
       final turns = (data['turns'] as List).cast<Map<String, dynamic>>();
+      _serverExtraction = data['extraction'] as Map<String, dynamic>?;
       _validateReferences(turns);
       if (mounted) setState(() { _available = data['status'] == 'available'; _turns = _available ? turns : []; _opened = true; });
+      _showLatest();
     } on AuthFailure catch (error) { _failure(error); }
     catch (_) { if (mounted) setState(() { _available = false; _error = 'No se pudo consultar esta conversación.'; }); }
     finally { if (mounted) setState(() => _busy = false); }
@@ -76,6 +79,7 @@ class _ChatExamenPanelState extends State<ChatExamenPanel> {
     try {
       final data = await ChatExamenApi(widget.auth).consultar(widget.documentId);
       final turns = (data['turns'] as List).cast<Map<String, dynamic>>();
+      _serverExtraction = data['extraction'] as Map<String, dynamic>?;
       _validateReferences(turns);
       if (!mounted) return;
       setState(() {
@@ -89,6 +93,7 @@ class _ChatExamenPanelState extends State<ChatExamenPanel> {
         }
         if (!_available) _error = null;
       });
+      _showLatest();
     } on AuthFailure catch (error) { _failure(error); }
     catch (_) { if (mounted) setState(() { _available = false; _error = 'No se pudo validar la conversación. Actualiza antes de continuar.'; }); }
   }
@@ -123,11 +128,11 @@ class _ChatExamenPanelState extends State<ChatExamenPanel> {
   }
   @override
   Widget build(BuildContext context) {
-    final rows = widget.reviewedExtraction['resultados'] as List;
+    final rows = (widget.reviewedExtraction ?? _serverExtraction)?['resultados'] as List?;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const SizedBox(height: 16),
       Text('Preguntas sobre este examen', style: Theme.of(context).textTheme.titleMedium),
-      const Text('La IA puede equivocarse. Usa solo los datos revisados de este documento; no diagnostica ni recomienda tratamientos. Las respuestas no están aprobadas por un profesional.'),
+      const Text('La IA puede equivocarse. Antes de la revisión utiliza datos preliminares, que pueden contener errores. No diagnostica ni recomienda tratamientos. Sus respuestas no requieren aprobación profesional.'),
       TextButton(onPressed: _busy ? null : _load,
         child: Text(_opened ? 'Actualizar conversación' : 'Abrir conversación')),
       if (_busy && !_sending) ...[
@@ -135,7 +140,7 @@ class _ChatExamenPanelState extends State<ChatExamenPanel> {
         const Text('Cargando la conversación de este examen…'),
       ],
       if (_error != null) Semantics(liveRegion: true, child: Text(_error!)),
-      if (_opened && !_available && _error == null) const Text('Se requiere una revisión profesional aprobada.'),
+      if (_opened && !_available && _error == null) const Text('La extracción todavía no está disponible. Actualiza cuando termine el procesamiento.'),
       for (final turn in _turns) ...[
         Align(alignment: Alignment.centerRight, child: Container(
           constraints: const BoxConstraints(maxWidth: 600),
@@ -167,8 +172,11 @@ class _ChatExamenPanelState extends State<ChatExamenPanel> {
             if (turn['response'] != null) ...[
               SelectableText(turn['response']['answer'] as String),
               const SizedBox(height: 12),
-              for (final index in turn['response']['indices'] as List) SelectableText(
-                'Dato revisado: ${rows[index]['nombre'] ?? 'Sin nombre'} — ${rows[index]['valor'] ?? 'No disponible'} ${rows[index]['unidad'] ?? ''}'),
+              if (rows != null) for (final index in turn['response']['indices'] as List)
+                if (!((turn['response']['answer'] as String).contains('${rows[index]['nombre'] ?? ''}: ${rows[index]['valor'] ?? ''}') ||
+                      (turn['response']['answer'] as String).contains('${rows[index]['nombre'] ?? ''} — ${rows[index]['valor'] ?? ''}') ||
+                      (turn['response']['answer'] as String).contains('${rows[index]['nombre'] ?? ''}» es «${rows[index]['valor'] ?? ''}')))
+                  SelectableText('Dato del examen: ${rows[index]['nombre'] ?? 'Sin nombre'} — ${rows[index]['valor'] ?? 'No disponible'} ${rows[index]['unidad'] ?? ''}'),
             ],
           ]),
         )),
@@ -188,18 +196,18 @@ class _ChatExamenPanelState extends State<ChatExamenPanel> {
             const SizedBox(height: 16),
             const LinearProgressIndicator(),
             const SizedBox(height: 12),
-            const Text('Vitalia está preparando una respuesta sobre este examen. Puede tardar hasta dos minutos.'),
+            const Text('Vitalia está preparando una respuesta sobre este examen.'),
           ]),
         ),
         const SizedBox(height: 16),
         if (_turns.isEmpty) Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final suggestion in ['¿Qué significa rango de referencia?', '¿Cuál es la fecha del examen?'])
+          for (final suggestion in ['Explícame los indicadores de este examen', '¿Qué significa rango de referencia?', '¿Cuál es la fecha del examen?'])
             ActionChip(label: Text(suggestion), onPressed: _busy ? null : () {
               setState(() => _question.text = suggestion);
             }),
         ]),
         const SizedBox(height: 16),
-        const Text('Hasta treinta preguntas por examen; solo las últimas seis respuestas educativas se usan como contexto.'),
+        const Text('Hasta treinta preguntas por examen; las últimas diez respuestas educativas se usan como contexto.'),
         const SizedBox(height: 12),
         TextField(key: _composer, controller: _question, enabled: !_busy, maxLength: 500, minLines: 1, maxLines: 4,
           decoration: const InputDecoration(labelText: 'Pregunta sobre este examen',
@@ -212,27 +220,44 @@ class _ChatExamenPanelState extends State<ChatExamenPanel> {
   }
 }
 
-class ChatExamenPage extends StatelessWidget {
+class ChatExamenPage extends StatefulWidget {
   const ChatExamenPage({super.key, required this.auth, required this.documentId,
-    required this.reviewedExtraction, required this.onExpired});
+    this.reviewedExtraction, required this.onExpired});
   final AuthApi auth;
   final String documentId;
-  final Map<String, dynamic> reviewedExtraction;
+  final Map<String, dynamic>? reviewedExtraction;
   final VoidCallback onExpired;
   @override
+  State<ChatExamenPage> createState() => _ChatExamenPageState();
+}
+
+class _ChatExamenPageState extends State<ChatExamenPage> {
+  final ScrollController _scroll = ScrollController();
+  @override
+  void dispose() { _scroll.dispose(); super.dispose(); }
+  void _bottom() {
+    if (!_scroll.hasClients) return;
+    _scroll.animateTo(_scroll.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+  }
+  @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Asistente de Vitalia')),
+    appBar: AppBar(title: const Text('Asistente de Vitalia'), actions: [
+      IconButton(tooltip: 'Ir a escribir una pregunta', icon: const Icon(Icons.arrow_downward),
+        onPressed: _bottom),
+    ]),
     body: SafeArea(child: SingleChildScrollView(
+      controller: _scroll,
       padding: const EdgeInsets.all(20),
       child: Center(child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 800),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(reviewedExtraction['examen'] as String? ?? 'Examen abierto',
+          Text(widget.reviewedExtraction?['examen'] as String? ?? 'Examen abierto',
             style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 8),
           const Text('Esta conversación corresponde únicamente a este examen.'),
-          ChatExamenPanel(auth: auth, documentId: documentId,
-            reviewedExtraction: reviewedExtraction, onExpired: onExpired, autoOpen: true),
+          ChatExamenPanel(auth: widget.auth, documentId: widget.documentId,
+            reviewedExtraction: widget.reviewedExtraction, onExpired: widget.onExpired, autoOpen: true),
         ]),
       ))),
     ),

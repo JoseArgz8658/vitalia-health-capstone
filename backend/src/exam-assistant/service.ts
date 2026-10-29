@@ -9,19 +9,32 @@ import {AssistantModelError,type ExamAssistant} from './local-model';
 import {type Mode,type Reply,gate,synthetic,fixed,ASSISTANT_VERSION,validateReply,explanationView,notice} from './contract';
 export class AssistantAccessError extends Error {constructor(public status:401|403|404|409|400|503,public code:string='ASSISTANT_UNAVAILABLE'){super();}}
 type DB=Pick<Pool,'query'>;
-interface Review{id:string;reviewed_extraction:Extraction}
+interface Review{id:string;reviewed_extraction:Extraction;source:'reviewed'|'preliminary'}
 interface Thread{id:string;review_snapshot:Extraction}
 interface Turn{id:string;mode:Mode;question:string;status:'pending'|'ready'|'failed';response:Reply|null;created_at:Date;started_at:Date;finished_at:Date|null;attempt_id:string}
 async function authorize(tx:DB,account:AccountSummary,doc:string){
  const own=await tx.query(`SELECT id FROM public.vitalia_documents WHERE id=$1 AND patient_id=$2 AND status='stored' FOR SHARE`,[doc,account.id]);
  if(own.rows.length!==1)throw new AssistantAccessError(404);
  const found=await tx.query<Review>(`SELECT id,reviewed_extraction FROM public.vitalia_professional_reviews WHERE document_id=$1 AND patient_id=$2 AND approved=true`,[doc,account.id]);
- const row=found.rows[0];return row?{id:row.id,reviewed_extraction:extractionSchema.parse(row.reviewed_extraction)}:null;
+ const row=found.rows[0];
+ if(row)return {id:row.id,reviewed_extraction:extractionSchema.parse(row.reviewed_extraction),source:'reviewed' as const};
+ // Datos preliminares: acceso exclusivo al paciente dueño del documento.
+ // Nunca exponer la extracción si la IA rechazó el documento.
+ const pending=await tx.query<{id:string;extraction:unknown}>(`SELECT p.id,p.result->'ai'->'extraction' AS extraction
+ FROM public.vitalia_document_processing p
+ JOIN public.vitalia_documents d ON d.id=p.document_id
+ WHERE d.id=$1 AND d.patient_id=$2 AND d.status='stored' AND p.status='requires_review'
+ AND p.result->'ai'->'extraction' IS NOT NULL`,[doc,account.id]);
+ const candidate=pending.rows[0];
+ if(!candidate)return null;
+ const parsed=extractionSchema.safeParse(candidate.extraction);
+ return parsed.success?{id:candidate.id,reviewed_extraction:parsed.data,source:'preliminary' as const}:null;
 }
 function identity(account:AccountSummary,doc:string){if(account.role!=='paciente')throw new AssistantAccessError(403);if(!z.uuid().safeParse(doc).success)throw new AssistantAccessError(404);}
 async function audit(tx:DB,account:AccountSummary,doc:string,action:string){await tx.query(`INSERT INTO public.vitalia_exam_assistant_audit (id,patient_id,document_id,action) VALUES ($1,$2,$3,$4)`,[randomUUID(),account.id,doc,action]);}
 async function threadFor(tx:DB,account:AccountSummary,doc:string,review:Review,lock=false){
- const found=await tx.query<Thread>(`SELECT id,review_snapshot FROM public.vitalia_exam_assistant_threads WHERE review_id=$1 AND document_id=$2 AND patient_id=$3${lock?' FOR UPDATE':''}`,[review.id,doc,account.id]);
+ const field=review.source==='reviewed'?'review_id':'processing_id';
+ const found=await tx.query<Thread>(`SELECT id,review_snapshot FROM public.vitalia_exam_assistant_threads WHERE ${field}=$1 AND document_id=$2 AND patient_id=$3${lock?' FOR UPDATE':''}`,[review.id,doc,account.id]);
  const row=found.rows[0];if(row&&!isDeepStrictEqual(row.review_snapshot,review.reviewed_extraction))throw new AssistantAccessError(503);return row??null;
 }
 async function turnFor(tx:DB,thread:string,id:string){
@@ -32,7 +45,7 @@ function publicTurn(turn:Turn,extraction:Extraction){return {id:turn.id,mode:tur
 function explanationState(turn:Turn|null,review:Review|null){
  const reply=turn?.status==='ready'&&review?validateReply(turn.response,review.reviewed_extraction,'explanation'):null;
  return {status:!review?'not_available':!turn?'not_requested':turn.status==='pending'?'generating':turn.status,
-  reviewId:review?.id??null,approved:false,generatedAt:turn?.status==='ready'?turn.finished_at:null,
+  reviewId:review?.source==='reviewed'?review.id:null,approved:false,generatedAt:turn?.status==='ready'?turn.finished_at:null,
   explanation:reply&&review?explanationView(review.reviewed_extraction,reply):null};
 }
 export function createExamAssistantService(db:DocumentDatabase,model:ExamAssistant){
@@ -58,8 +71,8 @@ export function createExamAssistantService(db:DocumentDatabase,model:ExamAssista
   try{
    const reserved=await db.transaction(async tx=>{
     const review=await authorize(tx,account,doc);if(!review||review.id!==preview.review.id)throw new AssistantAccessError(409);
-    await tx.query(`INSERT INTO public.vitalia_exam_assistant_threads (id,review_id,document_id,patient_id,review_snapshot)
-     VALUES ($1,$2,$3,$4,$5::jsonb) ON CONFLICT (review_id) DO NOTHING`,[randomUUID(),review.id,doc,account.id,JSON.stringify(review.reviewed_extraction)]);
+    await tx.query(`INSERT INTO public.vitalia_exam_assistant_threads (id,review_id,processing_id,document_id,patient_id,review_snapshot)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb) ON CONFLICT DO NOTHING`,[randomUUID(),review.source==='reviewed'?review.id:null,review.source==='preliminary'?review.id:null,doc,account.id,JSON.stringify(review.reviewed_extraction)]);
     const thread=await threadFor(tx,account,doc,review,true);if(!thread)throw new AssistantAccessError(503);
     threadId=thread.id;
     const expired=await tx.query(`UPDATE public.vitalia_exam_assistant_turns SET status='failed',response=NULL,finished_at=CURRENT_TIMESTAMP
@@ -81,7 +94,7 @@ export function createExamAssistantService(db:DocumentDatabase,model:ExamAssista
     }
     await audit(tx,account,doc,'request');
     const prior=await tx.query<Turn>(`SELECT id,mode,question,status,response,created_at,started_at,finished_at,attempt_id
-     FROM public.vitalia_exam_assistant_turns WHERE thread_id=$1 AND mode='chat' AND status='ready' AND response->>'kind'='education' ORDER BY ordinal DESC LIMIT 6`,[thread.id]);
+     FROM public.vitalia_exam_assistant_turns WHERE thread_id=$1 AND mode='chat' AND status='ready' AND response->>'kind'='education' ORDER BY ordinal DESC LIMIT 10`,[thread.id]);
     const turn=await turnFor(tx,thread.id,id);if(!turn)throw new AssistantAccessError(503);
     return {turn,review,execute:true,history:prior.rows.reverse().map(row=>({question:row.question,response:validateReply(row.response,review.reviewed_extraction,'chat')}))};
    });
@@ -123,7 +136,7 @@ export function createExamAssistantService(db:DocumentDatabase,model:ExamAssista
    identity(account,doc);return db.transaction(async tx=>{
     const review=await authorize(tx,account,doc),thread=review?await threadFor(tx,account,doc,review):null;
     const result=thread?await tx.query<Turn>(`SELECT id,mode,question,status,response,created_at,started_at,finished_at,attempt_id FROM public.vitalia_exam_assistant_turns WHERE thread_id=$1 AND mode='chat' ORDER BY ordinal LIMIT 30`,[thread.id]):{rows:[]};
-    await audit(tx,account,doc,'view');return {status:review?'available':'not_available',reviewId:review?.id??null,notice,approved:false,
+    await audit(tx,account,doc,'view');return {status:review?'available':'not_available',reviewId:review?.source==='reviewed'?review.id:null,source:review?.source??null,extraction:review?.reviewed_extraction??null,notice:review?.source==='preliminary'?'Datos preliminares extraídos por IA, sin revisión profesional. Pueden contener errores; consulta el documento original. No son un diagnóstico.':notice,approved:false,
      turns:review?result.rows.map(row=>publicTurn(row,review.reviewed_extraction)):[]};
    });
   },

@@ -1,5 +1,6 @@
 import '../../core/mensaje_vista.dart';
 import 'revision_paciente_panel.dart';
+import 'chat_examen_panel.dart';
 import 'package:flutter/material.dart';
 import '../../core/auth_api.dart';
 import 'procesamiento_api.dart';
@@ -81,8 +82,16 @@ class _ProcesamientoPanelState extends State<ProcesamientoPanel> {
         const Text('La solicitud quedó registrada y espera ejecución.'),
       if (_status == 'professionally_reviewed')
         const Text('La revisión fue aprobada por un profesional. Puedes consultar sus resultados.'),
-      if (_status == 'requires_review')
-        const Text('Los datos extraídos aún no están aprobados.'),
+      if (_status == 'requires_review') ...[
+        const Text('Los datos son preliminares. Puedes pedir una explicación educativa sin esperar la revisión profesional.'),
+        const SizedBox(height: 10),
+        FilledButton.icon(
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => ChatExamenPage(auth: widget.auth, documentId: widget.documentId,
+              onExpired: widget.onExpired))),
+          icon: const Icon(Icons.auto_awesome_outlined),
+          label: const Text('Preguntar a Vitalia ahora')),
+      ],
       if (_error != null) MensajeVista(text: _error!, icon: Icons.error_outline, error: true),
       if (!_busy && _error == null && _status != null)
         RevisionPacientePanel(key: ValueKey('${widget.documentId}:$_status'), auth: widget.auth,

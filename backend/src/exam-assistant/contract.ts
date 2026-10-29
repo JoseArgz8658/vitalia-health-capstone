@@ -39,8 +39,8 @@ export function gate(question:string,extraction:Extraction,history:History):Repl
   const token=normalize(value??'').replace(/[\s/]/g,'').replace(/μ/g,'µ');
   return token.length>=2&&q.replace(/[\s/]/g,'').replace(/μ/g,'µ').includes(token);
  }));
- const generic=/examen|resultado|indicador|valor|unidad|rango|referencia|fecha|laboratorio|hemograma/.test(q);
- const followup=history.length>0&&/^(y |por que|para que|como|que significa|explica|eso|entonces|puedes aclarar)/.test(q);
+ const generic=/examen|resultado|indicador|valor|unidad|rango|referencia|fecha|laboratorio|hemograma|doctor|medico|profesional|atendio|atencion|solicito|quien me vio|quien me tomo|nombre|clinica|centro|muestra/.test(q);
+ const followup=history.length>0&&/^(y |por que|para que|como|que significa|explica|eso|entonces|puedes aclarar|que mas|cuales mas|dime mas)/.test(q);
  if(!relevant.length&&!fieldReference&&!aliasReference&&!generic&&!(exam.length>3&&q.includes(exam))&&!followup)return fixed('out_of_scope');
  return null;
 }
