@@ -1,3 +1,5 @@
+> **Rama de integración de fase 7:** el avance se trasladó a `integracion/fase-7-atencion-examen`. Antes de ejecutar, consulta [el informe del traspaso y la migración 025](docs/fase-7/traspaso-oficial.md). Esta rama está pendiente de validación Windows y acuerdo del equipo; `develop` no se ha fusionado. (José Aránguiz)
+
 # Vitalia Health: instalación y pruebas en Windows
 
 Esta guía está pensada para los computadores Windows del equipo. Todos los comandos se ejecutan en PowerShell. Conservamos Flutter para web y Android, backend, migraciones, pruebas y documentos de avance. Los cambios por fase están en `docs/Evidencias_Proyect/docs/avance` y `docs/Evidencias_Proyect/docs/cambios-codigo`.

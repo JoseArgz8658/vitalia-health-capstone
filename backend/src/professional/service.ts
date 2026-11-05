@@ -20,15 +20,15 @@ function identity(account:AccountSummary,patientId:string,documentId?:string){
 }
 async function assigned(tx:Database,account:AccountSummary,patientId:string){
  const result=await tx.query<{id:string}>(`SELECT x.id FROM public.vitalia_patient_assignments x
- JOIN public.vitalia_accounts p ON p.id=x.patient_id AND p.role_code='paciente'
- JOIN public.vitalia_accounts r ON r.id=x.professional_id AND r.role_code='profesional'
+ JOIN public.vitalia_accounts p ON p.id=x.patient_id AND EXISTS(SELECT 1 FROM public.vitalia_account_roles g WHERE g.account_id=p.id AND g.role_code='paciente' AND g.active)
+ JOIN public.vitalia_accounts r ON r.id=x.professional_id AND EXISTS(SELECT 1 FROM public.vitalia_account_roles g WHERE g.account_id=r.id AND g.role_code='profesional' AND g.active)
  WHERE x.professional_id=$1 AND x.patient_id=$2 AND x.active=true FOR SHARE OF x,p,r`,[account.id,patientId]);
  if(result.rows.length!==1)throw new ProfessionalNotFoundError();
  return result.rows[0].id;
 }
 async function document(tx:Database,patientId:string,id:string){
  const result=await tx.query<DocumentRow>(`SELECT ${columns} FROM public.vitalia_documents
- WHERE id=$1 AND patient_id=$2 AND status='stored'`,[id,patientId]);
+ WHERE id=$1 AND patient_id=$2 AND status='stored' AND care_flow=false`,[id,patientId]);
  if(result.rows.length!==1)throw new ProfessionalNotFoundError();return result.rows[0];
 }
 async function audit(tx:Database,account:AccountSummary,patientId:string,assignmentId:string,
@@ -45,7 +45,7 @@ export function createProfessionalService(db:DocumentDatabase,storage:Pick<Docum
    return db.transaction(async tx=>{
     const assignmentId=await assigned(tx,account,patientId);
     const result=await tx.query<DocumentRow>(`SELECT ${columns} FROM public.vitalia_documents
-     WHERE patient_id=$1 AND status='stored' ORDER BY exam_date DESC,created_at DESC,id DESC LIMIT $2 OFFSET $3`,[patientId,limit,offset]);
+     WHERE patient_id=$1 AND status='stored' AND care_flow=false ORDER BY exam_date DESC,created_at DESC,id DESC LIMIT $2 OFFSET $3`,[patientId,limit,offset]);
     await audit(tx,account,patientId,assignmentId,'list');return result.rows.map(summary);
    });
   },

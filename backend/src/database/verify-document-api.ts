@@ -81,7 +81,7 @@ async function main(): Promise<void> {
     const tokenB = (await issueSession(client, b.id)).token;
     server = createApp({
       authenticate: async () => null,
-      issue: id => issueSession(dbClient, id),
+      issue: (id,mode) => issueSession(dbClient, id,mode),
       find: token => findSessionAccount(dbClient, token),
       revoke: token => revokeSession(dbClient, token),
     }, undefined, documents).listen(0, '127.0.0.1');

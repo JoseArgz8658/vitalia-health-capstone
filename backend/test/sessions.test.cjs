@@ -12,7 +12,7 @@ test('cada sesión usa un token diferente y almacena solo su huella', async () =
   expect(first.token).toMatch(/^[a-f0-9]{64}$/);
   expect(first.expiresAt).toBe(expires);
   const [sql, values] = db.query.mock.calls[0];
-  expect(values).toEqual([createHash('sha256').update(first.token).digest('hex'), 'cuenta']);
+  expect(values).toEqual([createHash('sha256').update(first.token).digest('hex'), 'cuenta', 'paciente']);
   expect(sql).not.toContain(first.token);
   expect(sql).toContain("INTERVAL '30 minutes'");
 });

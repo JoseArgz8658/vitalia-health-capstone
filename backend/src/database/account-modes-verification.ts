@@ -1,0 +1,77 @@
+import {randomUUID} from 'node:crypto';
+import {type PoolClient} from 'pg';
+import {type AccountSummary} from '../accounts/repository';
+import {type DocumentDatabase} from '../documents/service';
+import {hashPassword} from '../auth/password';
+import {createCredentialAuthenticator} from '../auth/credentials';
+import {issueSession,findSessionAccount} from '../auth/sessions';
+import {createOnboardingService} from '../onboarding/service';
+export async function verifyAccountModes(client:Pick<PoolClient,'query'>):Promise<number>{
+ let begun=false,checks=0;const check=(ok:boolean)=>{if(!ok)throw new Error('Comprobación de modos incorrecta.');checks++;};
+ const denied=async(fn:()=>Promise<unknown>,status:number)=>{let ok=false;try{await fn();}catch(e){ok=(e as {status:number}).status===status;}check(ok);};
+ try{
+ await client.query('BEGIN');begun=true;
+ if(!(await client.query('SELECT version FROM public.vitalia_schema_migrations WHERE version=$1',['018_mode_passwords'])).rows.length)throw new Error('Falta migración 018.');
+ const db={query:client.query.bind(client),transaction:async(fn:(tx:Pick<PoolClient,'query'>)=>Promise<unknown>)=>{await client.query('SAVEPOINT modes_check');try{const r=await fn(client);await client.query('RELEASE SAVEPOINT modes_check');return r;}catch(e){await client.query('ROLLBACK TO SAVEPOINT modes_check');await client.query('RELEASE SAVEPOINT modes_check');throw e;}}} as DocumentDatabase;
+ const professionalPassword='Clave-profesional-distinta-2026!',password='Clave-sintetica-2026!',hash=await hashPassword(password),patient=randomUUID(),chief=randomUUID(),chiefPerson=randomUUID(),clinic=randomUUID(),other=randomUUID(),otherAccount=randomUUID(),secondClinic=randomUUID();
+ const mail=patient+'@example.invalid';
+ for(const [id,email,role]of [[patient,mail,'paciente'],[chief,chief+'@example.invalid','profesional'],[otherAccount,otherAccount+'@example.invalid','paciente']])await client.query('INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code) VALUES($1,$2,$3,$4)',[id,email,hash,role]);
+ check((await client.query('SELECT role_code FROM public.vitalia_account_roles WHERE account_id=$1',[patient])).rows[0].role_code==='paciente');
+ for(const id of [clinic,secondClinic])await client.query('INSERT INTO public.vitalia_clinics(id,name) VALUES($1,$2)',[id,'Clínica sintética '+id]);
+ await client.query("INSERT INTO public.vitalia_people(id,account_id,first_name,first_surname) VALUES($1,$2,'Jefe','Sintético')",[chiefPerson,chief]);await client.query('INSERT INTO public.vitalia_professional_profiles(person_id) VALUES($1)',[chiefPerson]);
+ for(const cid of [clinic,secondClinic])await client.query("INSERT INTO public.vitalia_clinic_memberships(id,clinic_id,professional_person_id,clinical_role,active) VALUES($1,$2,$3,'jefe_clinico',true)",[randomUUID(),cid,chiefPerson]);
+ const person=randomUUID();await client.query("INSERT INTO public.vitalia_people(id,account_id,first_name,first_surname) VALUES($1,$2,'Nombre conservado','Apellido conservado')",[person,patient]);await client.query('INSERT INTO public.vitalia_patient_profiles(person_id) VALUES($1)',[person]);
+ const auth=await createCredentialAuthenticator(client);
+ check((await auth({email:mail,password}))?.role==='paciente');check(await auth({email:mail,password,mode:'profesional'})===null);check(await auth({email:mail,password,mode:'administrador'})===null);
+ const pSession=await issueSession(client,patient,'paciente');check((await findSessionAccount(client,pSession.token))?.role==='paciente');
+ const onboarding=createOnboardingService(db),ca={id:chief,email:chief+'@example.invalid',role:'profesional'} as AccountSummary,pa={id:patient,email:mail,role:'paciente'} as AccountSummary;
+ const grant=await onboarding.invite(ca,clinic,{requestId:randomUUID(),email:mail,authorizationId:null,branchIds:[],specialtyIds:[]});check(grant.item.clinicalRole==='profesional');
+ await denied(()=>onboarding.accept({...pa,id:otherAccount,email:otherAccount+'@example.invalid'},{token:grant.token,firstName:'Nombre',firstSurname:'Prueba',confirmed:true,currentPassword:password}),403);
+ await denied(()=>onboarding.accept(pa,{token:grant.token,firstName:'Nombre',firstSurname:'Prueba',confirmed:false}),400);
+ const accept={token:grant.token,firstName:'No sustituir',firstSurname:'No sustituir',confirmed:true,currentPassword:password,professionalPassword,professionalConfirmation:professionalPassword};
+ await denied(()=>onboarding.accept(pa,{...accept,currentPassword:'incorrecta'}),403);
+ await denied(()=>onboarding.accept(pa,{...accept,professionalPassword:password,professionalConfirmation:password}),400);
+ await denied(()=>onboarding.accept(pa,{...accept,professionalConfirmation:'Otra-clave-no-coincide'}),400);
+ check((await onboarding.accept(pa,accept)).accepted);
+ await denied(()=>onboarding.accept(pa,accept),400);
+ const account=(await client.query('SELECT password_hash,role_code FROM public.vitalia_accounts WHERE id=$1',[patient])).rows[0];check(account.password_hash===hash&&account.role_code==='paciente');
+ const names=(await client.query('SELECT id,first_name,first_surname FROM public.vitalia_people WHERE account_id=$1',[patient])).rows[0];check(names.id===person&&names.first_name==='Nombre conservado'&&names.first_surname==='Apellido conservado');
+ check((await client.query('SELECT * FROM public.vitalia_patient_profiles WHERE person_id=$1',[person])).rows.length===1);
+ check((await client.query('SELECT verification_status FROM public.vitalia_professional_profiles WHERE person_id=$1',[person])).rows[0].verification_status==='pending');
+ check((await findSessionAccount(client,pSession.token))?.role==='paciente');
+ check(await auth({email:mail,password,mode:'profesional'})===null);check(await auth({email:mail,password:professionalPassword,mode:'paciente'})===null);check((await auth({email:mail,password:professionalPassword,mode:'profesional'}))?.role==='profesional');check((await auth({email:mail,password,mode:'paciente'}))?.role==='paciente');
+ const rSession=await issueSession(client,patient,'profesional');check((await findSessionAccount(client,rSession.token))?.role==='profesional');check(pSession.token!==rSession.token);
+ check(!(await client.query('SELECT id FROM public.vitalia_patient_assignments WHERE professional_id=$1',[patient])).rows.length);
+ const grant2=await onboarding.invite(ca,secondClinic,{requestId:randomUUID(),email:mail,authorizationId:null,branchIds:[],specialtyIds:[]});check((await onboarding.accept({...pa,role:'profesional'},{token:grant2.token,firstName:'No sustituir',firstSurname:'No sustituir',confirmed:true,currentPassword:professionalPassword})).accepted);
+ check((await client.query('SELECT id FROM public.vitalia_clinic_memberships WHERE professional_person_id=$1',[person])).rows.length===2);
+ await client.query("UPDATE public.vitalia_account_roles SET active=false WHERE account_id=$1 AND role_code='profesional'",[patient]);
+ check(await findSessionAccount(client,rSession.token)===null);check((await findSessionAccount(client,pSession.token))?.role==='paciente');check(await auth({email:mail,password,mode:'profesional'})===null);
+ let rejected=false;try{await db.transaction(async tx=>{await issueSession(tx,patient,'profesional');});}catch{rejected=true;}check(rejected);
+ check(await auth({email:mail,password,mode:'desconocido'})===null);
+ // Simular cuenta dual activada antes de 018: sin hash adicional, nunca reutiliza paciente.
+ await client.query("INSERT INTO public.vitalia_account_roles(account_id,role_code,grant_source) VALUES($1,'profesional','legacy')",[otherAccount]);
+ const oldPatient={id:otherAccount,role:'paciente'} as AccountSummary,oldMail=otherAccount+'@example.invalid';
+ check((await auth({email:oldMail,password,mode:'profesional'}))?.professionalPasswordRequired===true);
+ await denied(()=>onboarding.configureProfessionalPassword(oldPatient,{currentPassword:'incorrecta',professionalPassword,professionalConfirmation:professionalPassword}),403);
+ await denied(()=>onboarding.configureProfessionalPassword(oldPatient,{currentPassword:password,professionalPassword:password,professionalConfirmation:password}),400);
+ check((await onboarding.configureProfessionalPassword(oldPatient,{currentPassword:password,professionalPassword,professionalConfirmation:professionalPassword})).configured);
+ check((await auth({email:oldMail,password:professionalPassword,mode:'profesional'}))?.role==='profesional');
+ check((await auth({email:oldMail,password,mode:'paciente'}))?.role==='paciente');
+ await denied(()=>onboarding.configureProfessionalPassword(oldPatient,{currentPassword:password,professionalPassword:'No-reemplazar-2026!',professionalConfirmation:'No-reemplazar-2026!'}),409);
+ const nextPassword='Profesional-renovada-2026!';
+ const priorProfessional=await issueSession(client,otherAccount,'profesional');
+ const priorPatient=await issueSession(client,otherAccount,'paciente');
+ await denied(()=>onboarding.changeProfessionalPassword({...oldPatient,role:'profesional'},{currentPassword:professionalPassword,professionalPassword:password,professionalConfirmation:password,confirmed:true}),400);
+ check((await onboarding.changeProfessionalPassword({...oldPatient,role:'profesional'},{currentPassword:professionalPassword,professionalPassword:nextPassword,professionalConfirmation:nextPassword,confirmed:true})).changed);
+ check(await findSessionAccount(client,priorProfessional.token)===null);
+ check((await findSessionAccount(client,priorPatient.token))?.role==='paciente');
+ check(await auth({email:oldMail,password:professionalPassword,mode:'profesional'})===null);
+ check((await auth({email:oldMail,password:nextPassword,mode:'profesional'}))?.role==='profesional');
+ check((await auth({email:oldMail,password,mode:'paciente'}))?.role==='paciente');
+ // Profesional cuyo modo original también era profesional conserva la credencial nueva por modo.
+ check((await onboarding.changeProfessionalPassword(ca,{currentPassword:password,professionalPassword:nextPassword,professionalConfirmation:nextPassword,confirmed:true})).changed);
+ check(await auth({email:ca.email,password,mode:'profesional'})===null);
+ check((await auth({email:ca.email,password:nextPassword,mode:'profesional'}))?.role==='profesional');
+ return checks;
+ }finally{if(begun)await client.query('ROLLBACK');}
+}
