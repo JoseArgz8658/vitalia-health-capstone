@@ -249,7 +249,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\configurar.ps1 -Mod
 
 ```powershell
 cd backend
-npm ci
+npm ci --include=dev
 npm run build
 npm run migrate
 node --env-file=.env dist/database/check.js
@@ -474,9 +474,25 @@ En pgAdmin hice clic derecho en vitalia_dev > Backup, formato Custom, con Pre-da
 Backend local, desde `backend`:
 
 ```powershell
-npm ci
+npm ci --include=dev
 npm test
 ```
+
+
+### Dependencias del backend y error «tsc no se reconoce»
+
+Para trabajar localmente, indiqué `npm ci --include=dev` desde `backend`: instala las versiones de `package-lock.json` e incluye las herramientas de desarrollo, como TypeScript y Jest, aunque el entorno omita las dependencias de desarrollo. Aplica a cada integrante al clonar o descargar el proyecto en una carpeta nueva, al cambiar el lockfile o al recuperar una instalación incompleta. No hace falta repetirlo antes de cada prueba si las dependencias ya están instaladas. Este paso corresponde al desarrollo local; el camino Docker utiliza su Dockerfile. (José Aránguiz)
+
+`node_modules` no se comparte por Git. Si aparece «tsc no se reconoce como un comando interno o externo», ejecutar desde `backend`:
+
+```powershell
+npm ci --include=dev
+npm test
+```
+
+`npm ci` reemplaza la instalación de `node_modules` usando el lockfile; no modifica `.env` ni la base de datos. No instalar TypeScript globalmente para resolver este caso. Si informa que `package.json` y `package-lock.json` no coinciden, registrar el error y revisar ambos archivos; no borrar el lockfile ni reemplazar la instalación por una actualización sin revisión. (José Aránguiz)
+
+En la instalación Windows posterior a CAM-102, npm informó 23 vulnerabilidades (3 bajas, 17 moderadas y 3 altas) y una advertencia de obsolescencia de glob 10.5.0. Este resultado requiere revisar `npm audit` y `npm audit --omit=dev` para identificar las rutas afectadas y separar dependencias de ejecución y desarrollo. No determina por sí solo el alcance en producción ni queda resuelto porque las pruebas pasen. No apliqué `npm audit fix` ni `npm audit fix --force`; la remediación queda pendiente como cambio separado. El resultado de auditoría del 12 de octubre más abajo es histórico. (José Aránguiz)
 
 Backend con Docker, desde la raíz:
 
