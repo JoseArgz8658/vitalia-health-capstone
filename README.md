@@ -479,6 +479,18 @@ npm test
 ```
 
 
+### Configuración local y registro de incidencias
+
+Antes de ejecutar un comando local con --env-file=.env, indiqué comprobar desde backend: (José Aránguiz)
+
+```powershell
+Test-Path -LiteralPath .env -PathType Leaf
+```
+
+Debe devolver True. El mensaje «.env: not found» indica que Node no encontró ese archivo antes de conectarse a PostgreSQL: todavía no está validando la contraseña. Al clonar o cambiar de carpeta, .env y node_modules no llegan por Git. Para el mismo entorno local, conservar o trasladar la configuración propia sin sobrescribir archivos existentes; una instalación nueva requiere la configuración autorizada del integrante. No compartir .env ni credenciales entre compañeros. Consultar el procedimiento y los resultados en [incidencias del traspaso](docs/fase-7/incidencias-traspaso-oficial.md). (José Aránguiz)
+
+Documenté la regla de registrar cada error observado y su solución o estado pendiente, diferenciando las causas comprobadas de las hipótesis. El registro incluye el cierre abrupto de Node, la ejecución posterior de 832 pruebas correctas y la migración 025 con verificación de permisos aprobada en Windows. (José Aránguiz)
+
 ### Dependencias del backend y error «tsc no se reconoce»
 
 Para trabajar localmente, indiqué `npm ci --include=dev` desde `backend`: instala las versiones de `package-lock.json` e incluye las herramientas de desarrollo, como TypeScript y Jest, aunque el entorno omita las dependencias de desarrollo. Aplica a cada integrante al clonar o descargar el proyecto en una carpeta nueva, al cambiar el lockfile o al recuperar una instalación incompleta. No hace falta repetirlo antes de cada prueba si las dependencias ya están instaladas. Este paso corresponde al desarrollo local; el camino Docker utiliza su Dockerfile. (José Aránguiz)
