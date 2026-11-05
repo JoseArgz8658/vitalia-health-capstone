@@ -76,10 +76,21 @@ void main(){
   await tester.pumpWidget(panel(auth));await tap(tester,'Abrir conversación');
   await tester.enterText(find.byType(TextField),'¿Qué es hemoglobina?');await tap(tester,'Enviar pregunta');
   expect(find.text('La hemoglobina transporta oxígeno.'),findsOneWidget);
-  expect(find.text('Dato revisado: Hemoglobina — 14,2 g/dL'),findsOneWidget);
+  expect(find.text('Dato del examen: Hemoglobina — 14,2 g/dL'),findsOneWidget);
   expect(find.text('Respuesta de IA, sin aprobación profesional'),findsOneWidget);
   await tester.binding.setSurfaceSize(const Size(360,800));await tester.pumpAndSettle();expect(tester.takeException(),isNull);
   await tester.binding.setSurfaceSize(null);await tester.pumpWidget(const SizedBox());auth.close();
+ });
+ testWidgets('muestra datos preliminares del servidor sin presentarlos como revisados',(tester)async{
+  final auth=await session((_)async=>response({...history([turn(nuevaSolicitudChat())]),'source':'preliminary','extraction':reviewed}));
+  await tester.pumpWidget(MaterialApp(home:Scaffold(body:SingleChildScrollView(child:ChatExamenPanel(
+   auth:auth,documentId:id,onExpired:(){})))));
+  await tap(tester,'Abrir conversación');
+  expect(find.text('Dato del examen: Hemoglobina — 14,2 g/dL'),findsOneWidget);
+  expect(find.text('Dato revisado: Hemoglobina — 14,2 g/dL'),findsNothing);
+  expect(find.text('Respuesta de IA, sin aprobación profesional'),findsOneWidget);
+  expect(find.textContaining('datos preliminares'),findsOneWidget);
+  await tester.pumpWidget(const SizedBox());auth.close();
  });
  testWidgets('respuesta perdida conserva requestId al actualizar y repetir',(tester)async{
   String? requestId;var posts=0;final auth=await session((req)async{

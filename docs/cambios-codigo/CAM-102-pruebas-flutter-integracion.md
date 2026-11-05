@@ -1,0 +1,7 @@
+# CAM-102 — Pruebas Flutter de la integración
+
+Corregí dos expectativas que conservaban textos anteriores al asistente preliminar del oficial. El chat utiliza «Dato del examen» porque puede mostrar datos revisados o preliminares; procesamiento informa que la extracción es preliminar y permite abrir la explicación educativa antes de la revisión. Conservé esos comportamientos y comprobé que el estado pendiente no se presente como aprobado. Añadí un caso de chat que obtiene la extracción del servidor sin una revisión profesional proporcionada por la pantalla. (José Aránguiz)
+
+Restablecí las versiones del lockfile compatibles con Flutter 3.44 y Dart 3.12 utilizadas en Windows, conservando vm_service 15.4.0 y su huella del archivo comunicado por José. No cambié pubspec.yaml ni añadí dependencias. El archivo generado se llama pubspec.lock y permanece versionado. (José Aránguiz)
+
+La validación Windows recibida antes de esta corrección fue: flutter analyze sin problemas; 156 pruebas correctas y dos fallidas por los textos anteriores. Flutter no está disponible en este entorno, por lo que no declaro ejecutadas las pruebas modificadas: corresponde repetir análisis y pruebas en Windows. El error de tsc en la carpeta oficial requiere instalar las dependencias locales del backend con npm ci --include=dev antes de npm test; no requiere instalar TypeScript globalmente ni cambiar el código. No modifiqué develop, migraciones ni servicios externos. (José Aránguiz)
