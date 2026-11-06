@@ -75,7 +75,9 @@ void main() {
     await tester.tap(find.text('Actualizar estado'));
     await tester.pumpAndSettle();
     expect(find.text('Extracción pendiente de revisión profesional'), findsOneWidget);
-    expect(find.text('Los datos extraídos aún no están aprobados.'), findsOneWidget);
+    expect(find.text('Los datos son preliminares. Puedes pedir una explicación educativa sin esperar la revisión profesional.'), findsOneWidget);
+    expect(find.text('Preguntar a Vitalia ahora'), findsOneWidget);
+    expect(find.text('La revisión fue aprobada por un profesional. Puedes consultar sus resultados.'), findsNothing);
     await tester.binding.setSurfaceSize(const Size(360, 800));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);

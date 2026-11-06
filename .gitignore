@@ -14,7 +14,3 @@
 *.pem
 *.key
 *.log
-
-**/dist/
-**/coverage/
-*.iml

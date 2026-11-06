@@ -21,7 +21,7 @@ function setup(){
   if(sql.startsWith('INSERT INTO public.vitalia_professional_access_audit')){audit.push(args);return {rows:[]};}
   if(sql.startsWith('SELECT id FROM public.vitalia_documents'))return {rows:args[0]===docId&&args[1]===patientId?[{id:docId}]:[]};
   if(sql.startsWith('SELECT p.id'))return {rows:[{id:processingId,status,created_at:new Date(),started_at:null,finished_at:null}]};
-  if(sql.startsWith('SELECT created_at FROM public.vitalia_professional_reviews'))return {rows:saved?[{created_at:saved.created_at}]:[]};
+  if(sql.startsWith('SELECT created_at FROM public.vitalia_current_approved_reviews'))return {rows:saved?[{created_at:saved.created_at}]:[]};
   throw new Error('Unexpected SQL');
  });
  const db={query,transaction:jest.fn(work=>work({query}))};

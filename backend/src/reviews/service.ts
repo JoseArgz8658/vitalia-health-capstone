@@ -1,5 +1,5 @@
+import {reviewedExtractionValid} from './validation';
 import {randomUUID} from 'node:crypto';
-import {isDeepStrictEqual} from 'node:util';
 import {z} from 'zod';
 import {type Pool} from 'pg';
 import {type AccountSummary} from '../accounts/repository';
@@ -24,9 +24,9 @@ function identity(account:AccountSummary,patientId:string,documentId:string){
 }
 async function assigned(tx:Database,account:AccountSummary,patientId:string,documentId:string){
  const result=await tx.query<{id:string}>(`SELECT x.id FROM public.vitalia_patient_assignments x
- JOIN public.vitalia_accounts p ON p.id=x.patient_id AND p.role_code='paciente'
- JOIN public.vitalia_accounts r ON r.id=x.professional_id AND r.role_code='profesional'
- JOIN public.vitalia_documents d ON d.patient_id=x.patient_id AND d.id=$3 AND d.status='stored'
+ JOIN public.vitalia_accounts p ON p.id=x.patient_id AND EXISTS(SELECT 1 FROM public.vitalia_account_roles g WHERE g.account_id=p.id AND g.role_code='paciente' AND g.active)
+ JOIN public.vitalia_accounts r ON r.id=x.professional_id AND EXISTS(SELECT 1 FROM public.vitalia_account_roles g WHERE g.account_id=r.id AND g.role_code='profesional' AND g.active)
+ JOIN public.vitalia_documents d ON d.patient_id=x.patient_id AND d.id=$3 AND d.status='stored' AND d.care_flow=false
  WHERE x.professional_id=$1 AND x.patient_id=$2 AND x.active=true FOR SHARE OF x,p,r,d`,[account.id,patientId,documentId]);
  if(result.rows.length!==1)throw new ReviewNotFoundError();return result.rows[0].id;
 }
@@ -47,7 +47,7 @@ export function createReviewService(db:DocumentDatabase){
      WHERE id=$1 AND patient_id=$2 AND status='stored' FOR SHARE`,[documentId,account.id]);
     if(owned.rows.length!==1)throw new ReviewNotFoundError();
     const found=await tx.query<ReviewRow>(`SELECT v.id,v.processing_id,v.reviewed_extraction,v.observations,v.created_at
-     FROM public.vitalia_professional_reviews v
+     FROM public.vitalia_current_approved_reviews v
      WHERE v.document_id=$1 AND v.patient_id=$2 AND v.approved=true`,[documentId,account.id]);
     const row=found.rows[0];
     return {review:row?{extraction:extractionSchema.parse(row.reviewed_extraction),
@@ -84,9 +84,7 @@ export function createReviewService(db:DocumentDatabase){
     if(await findReview(tx,documentId))throw new ReviewConflictError();
     const value=processingResultSchema.parse(job.result);const original=value.ai?.extraction;
     if(!original)throw new ReviewConflictError();
-    if(original.informe&&!reviewed.informe)throw new ReviewInputError();
-    const missing=reviewed.examen===null||reviewed.fecha===null||(reviewed.informe&&Object.values(reviewed.informe).some(field=>field===null))||reviewed.resultados.some(row=>Object.values(row).some(field=>field===null));
-    if((missing||!isDeepStrictEqual(original,reviewed))&&!parsed.data.observations)throw new ReviewInputError();
+    if(!reviewedExtractionValid(reviewed,original,parsed.data.observations))throw new ReviewInputError();
     await tx.query(`INSERT INTO public.vitalia_professional_reviews
      (id,processing_id,document_id,patient_id,assignment_id,reviewer_id,original_extraction,reviewed_extraction,observations,confirmed_original)
      VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,true)`,

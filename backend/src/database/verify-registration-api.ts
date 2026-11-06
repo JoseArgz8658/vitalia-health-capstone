@@ -29,7 +29,7 @@ async function main(): Promise<void> {
     started = true;
     server = createApp({
       authenticate,
-      issue: id => issueSession(database, id),
+      issue: (id,mode) => issueSession(database, id,mode),
       find: token => findSessionAccount(database, token),
       revoke: token => revokeSession(database, token),
     }, register).listen(0, '127.0.0.1');

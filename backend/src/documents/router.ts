@@ -1,3 +1,4 @@
+import {CareUploadError} from '../care/upload';
 import { Router, type ErrorRequestHandler, type RequestHandler } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
@@ -38,7 +39,7 @@ export function createDocumentRouter(auth: Pick<AuthServices, 'find'>, services:
     next();
   };
   const parse = multer({ storage: multer.memoryStorage(), limits: {
-    fileSize: MAX_FILE_BYTES, files: 1, fields: 3, parts: 4, fieldSize: 1024,
+    fileSize: MAX_FILE_BYTES, files: 1, fields: 4, parts: 5, fieldSize: 4096,
   } }).single('file');
   router.post('/', capacity, parse, async (req, res) => {
     if (!req.file) throw new DocumentInputError('Falta archivo.');
@@ -68,6 +69,13 @@ export function createDocumentRouter(auth: Pick<AuthServices, 'find'>, services:
   });
   const errors: ErrorRequestHandler = (error, _req, res, next) => {
     if (res.headersSent) { next(error); return; }
+    if (error instanceof CareUploadError) {
+      res.status(error.status).json({error:{code:error.code,message:
+       error.code==='CARE_PROFILE_REQUIRED'?'Completa primero tus datos personales en Mi perfil.':
+       error.code==='CARE_PROFILE_CHANGED'?'Tu perfil cambió. Actualiza los datos antes de enviar.':
+       error.status===409?'La atención elegida cambió. Revisa nuevamente el profesional y la sucursal.':
+       error.status===503?'La atención no está disponible temporalmente.':'Revisa ubicación, contacto y confirmación.'}});return;
+    }
     if (error instanceof multer.MulterError || error instanceof DocumentInputError) {
       const large = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
       res.status(large ? 413 : 400).json({ error: {

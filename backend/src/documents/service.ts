@@ -1,3 +1,4 @@
+import {type CareUploadServices} from '../care/upload';
 import { type Pool } from 'pg';
 import { z } from 'zod';
 import { type AccountSummary } from '../accounts/repository';
@@ -39,18 +40,21 @@ async function audit(db: Queryable, account: AccountSummary, action: string, id:
   await db.query(`INSERT INTO public.vitalia_document_audit
     (account_id, document_id, action) VALUES ($1,$2,$3)`, [account.id, id, action]);
 }
-export function createDocumentService(db: DocumentDatabase, storage: DocumentStorage) {
+export function createDocumentService(db: DocumentDatabase, storage: DocumentStorage, care?: CareUploadServices) {
   return {
     async upload(account: AccountSummary, file: IncomingDocument) {
       const contentType = identifyDocument(file.body, file.contentType, file.name);
       const meta = z.object({
-        examName: z.string(), examType: z.string(), examDate: z.string(),
+        examName: z.string(), examType: z.string(), examDate: z.string(), care: z.string().max(4096).optional(),
       }).strict().safeParse(file.metadata);
       if (!meta.success) throw new DocumentInputError('Metadatos inválidos.');
+      const choice = care ? care.parse(meta.data.care) : undefined;
+      if (!care && meta.data.care !== undefined) throw new DocumentInputError('Atención no disponible.');
+      if (care && choice) await care.preflight(account, choice);
       let reserved: { id: string; storageKey: string };
       try {
         reserved = await reserveDocument(db, account, {
-          ...meta.data, originalName: file.name, contentType, sizeBytes: file.body.length,
+          examName: meta.data.examName, examType: meta.data.examType, examDate: meta.data.examDate, originalName: file.name, contentType, sizeBytes: file.body.length,
         });
       } catch (error) {
         if (error instanceof z.ZodError) throw new DocumentInputError('Metadatos inválidos.');
@@ -60,6 +64,7 @@ export function createDocumentService(db: DocumentDatabase, storage: DocumentSto
         await storage.put(reserved.storageKey, file.body, contentType);
         await db.transaction(async tx => {
           if (!await completeDocument(tx, account, reserved.id)) throw new Error('Reserva no confirmada.');
+          if (care && choice) await care.attach(tx, account, reserved.id, choice);
           await audit(tx, account, 'upload', reserved.id);
         });
       } catch (error) {
