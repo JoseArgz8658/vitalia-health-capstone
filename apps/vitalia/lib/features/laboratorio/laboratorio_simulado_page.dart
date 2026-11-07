@@ -4,10 +4,11 @@ import '../../core/auth_api.dart';
 /// Demostración para administrador. No emite informes clínicos.
 class LaboratorioSimuladoPage extends StatefulWidget {
   const LaboratorioSimuladoPage({
-    super.key, required this.api, required this.onExpired,
+    super.key, required this.api, required this.onExpired, this.onLogout,
   });
   final AuthApi api;
   final VoidCallback onExpired;
+  final VoidCallback? onLogout;
 
   @override
   State<LaboratorioSimuladoPage> createState() => _LaboratorioSimuladoPageState();
@@ -61,7 +62,16 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
     final results = (_order?['results'] as List?) ?? [];
     final sample = _order?['sample'] as Map?;
     return Scaffold(
-      appBar: AppBar(title: const Text('Laboratorio simulado')),
+      appBar: AppBar(
+        title: const Text('Vitalia SIL Simple'),
+        actions: [
+          if (widget.onLogout != null)
+            TextButton(
+              onPressed: _busy ? null : widget.onLogout,
+              child: const Text('Cerrar sesión'),
+            ),
+        ],
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
