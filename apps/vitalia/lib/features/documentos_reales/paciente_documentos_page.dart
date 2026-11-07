@@ -8,7 +8,6 @@ import '../../core/auth_api.dart';
 import 'documento.dart';
 import 'documentos_api.dart';
 import 'guardar_documento.dart';
-import 'subir_documento_form.dart';
 
 class PacienteDocumentosPage extends StatefulWidget {
   const PacienteDocumentosPage({
@@ -35,7 +34,6 @@ class _PacienteDocumentosPageState extends State<PacienteDocumentosPage> {
   List<Documento> _items = [];
   int _offset = 0;
   bool _loading = true;
-  bool _upload = false;
   String? _downloading;
   String? _error;
   @override
@@ -104,13 +102,6 @@ class _PacienteDocumentosPageState extends State<PacienteDocumentosPage> {
     }
   }
 
-  void _saved() {
-    setState(() => _upload = false);
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Examen guardado.')));
-    _load(0);
-  }
-
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -168,7 +159,7 @@ class _PacienteDocumentosPageState extends State<PacienteDocumentosPage> {
                       ),
                       const SizedBox(height: 12),
                       const Text(
-                        'Reúne tus exámenes y consulta los datos revisados por tu profesional.',
+                        'Consulta los exámenes entregados por el laboratorio y conversa con la IA educativa.',
                       ),
                       const SizedBox(height: 8),
                       Text(
@@ -179,32 +170,11 @@ class _PacienteDocumentosPageState extends State<PacienteDocumentosPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                if (_upload)
-                  Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(
-                        MediaQuery.sizeOf(context).width < 600 ? 16 : 24,
-                      ),
-                      child: SubirDocumentoForm(
-                        api: _documents,
-                        onSaved: _saved,
-                        onCancel: () => setState(() => _upload = false),
-                        onExpired: widget.onExpired,
-                      ),
-                    ),
-                  )
-                else ...[
+                ...[
                   Wrap(
                     spacing: 12,
                     runSpacing: 12,
                     children: [
-                      FilledButton.icon(
-                        onPressed: _loading || _downloading != null
-                            ? null
-                            : () => setState(() => _upload = true),
-                        icon: const Icon(Icons.upload_file),
-                        label: const Text('Subir examen'),
-                      ),
                       OutlinedButton.icon(
                         onPressed: _loading || _downloading != null
                             ? null
@@ -250,10 +220,10 @@ class _PacienteDocumentosPageState extends State<PacienteDocumentosPage> {
                             Icon(Icons.folder_open_outlined, size: 48),
                             SizedBox(height: 16),
                             Text(
-                              'No hay exámenes en esta página. Puedes subir un documento.',
+                              'Todavía no tienes exámenes disponibles.',
                             ),
                             SizedBox(height: 8),
-                            Text('Usa el botón Subir examen para comenzar.'),
+                            Text('Los informes aparecerán cuando el laboratorio los incorpore a tu cuenta.'),
                           ],
                         ),
                       ),
