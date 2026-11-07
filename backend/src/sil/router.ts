@@ -56,6 +56,15 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     const recorded=await service.recordResults(req.params.id as string,data.data.results);
     res.status(201).json({result:recorded});
   });
+  router.post('/orders/:id/simulate',async(req,res)=>{
+    if(!uuid.safeParse(req.params.id).success ||
+      req.body===null || typeof req.body!=='object' ||
+      Array.isArray(req.body) || Object.keys(req.body).length!==0) {
+      res.status(400).json({error:{code:'INVALID_SIMULATION'}});return;
+    }
+    const result=await service.simulateAnalyzer(req.params.id as string);
+    res.status(201).json({result});
+  });
   router.get('/orders/:id',async(req,res)=>{
     if(!uuid.safeParse(req.params.id).success) {
       res.status(404).json({error:{code:'NOT_FOUND'}});return;
