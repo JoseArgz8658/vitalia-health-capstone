@@ -19,6 +19,7 @@ async function main() {
     connectionTimeoutMillis:5000,statement_timeout:10000});
   const patientId = randomUUID(), actorId = randomUUID();
   let orderId=null;
+  let simulatedOrderId=null;
   let success=false, clean=false;
   try {
     const target=await db.query('SELECT current_database() AS db, current_user AS actor');
@@ -58,24 +59,39 @@ async function main() {
     assert.equal(complete.order.synthetic,true);
     assert.equal(complete.sample.barcode,sample.barcode);
     assert.equal(complete.results.length,2);
-    success=true;
     console.log('PRUEBA SIL: orden, muestra, 2 resultados y transiciones correctas.');
+    // Segundo circuito, independiente: el simulador genera cinco resultados ficticios.
+    const simulatedOrder=await sil.createOrder(patientId,actorId);
+    simulatedOrderId=simulatedOrder.id;
+    await assert.rejects(sil.simulateAnalyzer(simulatedOrderId),SilConflictError);
+    await sil.registerSample(simulatedOrderId,'SIM-'+randomUUID().slice(0,30));
+    const simulated=await sil.simulateAnalyzer(simulatedOrderId);
+    assert.equal(simulated.count,5);
+    assert.equal(simulated.simulated,true);
+    assert.equal(simulated.analyzerId,'simulador-hemograma-v1');
+    const simulatedRead=await sil.getOrder(simulatedOrderId);
+    assert.equal(simulatedRead.order.status,'results_recorded');
+    assert.equal(simulatedRead.results.length,5);
+    assert.equal(simulatedRead.order.synthetic,true);
+    await assert.rejects(sil.simulateAnalyzer(simulatedOrderId),SilConflictError);
+    console.log('PRUEBA ANALIZADOR: muestra, 5 resultados sintéticos y segundo intento rechazado.');
+    success=true;
   } finally {
     try {
       // Borrar solamente registros identificados por UUID creados por esta ejecución.
-      if (orderId) {
-        await db.query('DELETE FROM public.vitalia_sil_results WHERE order_id=$1',[orderId]);
-        await db.query('DELETE FROM public.vitalia_sil_samples WHERE order_id=$1',[orderId]);
-        await db.query('DELETE FROM public.vitalia_sil_orders WHERE id=$1',[orderId]);
+      for(const id of [orderId,simulatedOrderId].filter(Boolean)) {
+        await db.query('DELETE FROM public.vitalia_sil_results WHERE order_id=$1',[id]);
+        await db.query('DELETE FROM public.vitalia_sil_samples WHERE order_id=$1',[id]);
+        await db.query('DELETE FROM public.vitalia_sil_orders WHERE id=$1',[id]);
       }
       // La migración 017 crea roles automáticamente por trigger; primero eliminar dependientes.
       await db.query('DELETE FROM public.vitalia_account_roles WHERE account_id=ANY($1::uuid[])',[[patientId,actorId]]);
       await db.query('DELETE FROM public.vitalia_accounts WHERE id=ANY($1::uuid[])',[[patientId,actorId]]);
       const remaining=await db.query(
         `SELECT
-          (SELECT COUNT(*)::int FROM public.vitalia_sil_orders WHERE id=$1) AS orders,
+          (SELECT COUNT(*)::int FROM public.vitalia_sil_orders WHERE id=ANY($1::uuid[])) AS orders,
           (SELECT COUNT(*)::int FROM public.vitalia_accounts WHERE id=ANY($2::uuid[])) AS accounts`,
-        [orderId||'00000000-0000-0000-0000-000000000000',[patientId,actorId]]);
+        [[orderId,simulatedOrderId].filter(Boolean),[patientId,actorId]]);
       assert.equal(remaining.rows[0].orders,0);
       assert.equal(remaining.rows[0].accounts,0);
       clean=true;
