@@ -72,8 +72,19 @@ export function createOnboardingService(db:DocumentDatabase){
  await lock(tx,clinic);await clinicActive(tx,clinic);
  const r=await tx.query(`INSERT INTO public.vitalia_institution_authorizations(id,clinic_id,nominee_email,requester_name,requester_position,requester_contact,evidence_reference,requested_at,recorded_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING ${authorizationCols}`,[v.requestId,clinic,v.nomineeEmail,v.requesterName,v.requesterPosition,v.requesterContact,v.evidenceReference,v.requestedAt,a.id]);
  await audit(tx,a.id,clinic,'authorization_recorded',v.requestId);return r.rows[0];});},
- async verify(a:AccountSummary,clinic:string,id:string,input:unknown){admin(a);checkId(clinic);checkId(id);parse(z.object({confirmed:z.literal(true),...professionalPasswordFields}).strict(),input);return transaction(async tx=>{
- await lock(tx,clinic);await clinicActive(tx,clinic);const r=await tx.query(`UPDATE public.vitalia_institution_authorizations SET verified_by=$3,verified_at=CURRENT_TIMESTAMP WHERE clinic_id=$1 AND id=$2 AND verified_at IS NULL AND revoked_at IS NULL RETURNING ${authorizationCols}`,[clinic,id,a.id]);if(!r.rows.length)fail(409,'AUTHORIZATION_UNAVAILABLE');await audit(tx,a.id,clinic,'authorization_verified',id);return r.rows[0];});},
+ async verify(a:AccountSummary,clinic:string,id:string,input:unknown){admin(a);checkId(clinic);checkId(id);const v=parse(z.object({confirmed:z.literal(true),...professionalPasswordFields}).strict(),input);return transaction(async tx=>{
+ await lock(tx,clinic);
+ const credentials=await tx.query(
+  `SELECT COALESCE(
+    (SELECT password_hash FROM public.vitalia_account_roles
+      WHERE account_id=$1 AND role_code='administrador' AND active),
+    (SELECT password_hash FROM public.vitalia_accounts
+      WHERE id=$1 AND role_code='administrador')
+   ) AS password_hash`,[a.id]);
+ const currentHash=credentials.rows[0]?.password_hash;
+ if(!currentHash||!await verifyPassword(v.currentPassword,currentHash))
+  fail(403,'CURRENT_PASSWORD_INVALID');
+ await clinicActive(tx,clinic);const r=await tx.query(`UPDATE public.vitalia_institution_authorizations SET verified_by=$3,verified_at=CURRENT_TIMESTAMP WHERE clinic_id=$1 AND id=$2 AND verified_at IS NULL AND revoked_at IS NULL RETURNING ${authorizationCols}`,[clinic,id,a.id]);if(!r.rows.length)fail(409,'AUTHORIZATION_UNAVAILABLE');await audit(tx,a.id,clinic,'authorization_verified',id);return r.rows[0];});},
  async revokeAuthorization(a:AccountSummary,clinic:string,id:string){admin(a);checkId(clinic);checkId(id);return transaction(async tx=>{await lock(tx,clinic);const r=await tx.query('UPDATE public.vitalia_institution_authorizations SET revoked_at=CURRENT_TIMESTAMP WHERE clinic_id=$1 AND id=$2 AND revoked_at IS NULL AND NOT EXISTS(SELECT 1 FROM public.vitalia_professional_invitations i WHERE i.authorization_id=$2 AND i.activated_at IS NOT NULL) RETURNING id',[clinic,id]);if(!r.rows.length)fail(409,'AUTHORIZATION_UNAVAILABLE');await audit(tx,a.id,clinic,'authorization_revoked',id);});},
  async addSpecialty(a:AccountSummary,clinic:string,input:unknown){admin(a);checkId(clinic);const v=parse(z.object({name:text(150)}).strict(),input);return transaction(async tx=>{await clinicActive(tx,clinic);const r=await tx.query('INSERT INTO public.vitalia_specialties(id,name) VALUES($1,$2) RETURNING id,name',[randomUUID(),v.name]);await audit(tx,a.id,clinic,'specialty_created');return r.rows[0];});},
  async invite(a:AccountSummary,clinic:string,input:unknown){checkId(clinic);const v=parse(invitationInput,input);return transaction(async tx=>{

@@ -3,6 +3,7 @@ import {type PoolClient} from 'pg';
 import {type DocumentDatabase} from '../documents/service';
 import {type AccountSummary} from '../accounts/repository';
 import {createOnboardingService} from '../onboarding/service';
+import {hashPassword} from '../auth/password';
 export async function verifyInvitations(client:Pick<PoolClient,'query'>):Promise<number>{
  let checks=0;const check=(v:boolean)=>{if(!v)throw new Error('Comprobación de invitaciones incorrecta.');checks++;};
  const deny=async(work:()=>Promise<unknown>,status:number)=>{let ok=false;try{await work();}catch(e){ok=(e as {status:number}).status===status;}check(ok);};
@@ -13,7 +14,11 @@ export async function verifyInvitations(client:Pick<PoolClient,'query'>):Promise
   const db={query:client.query.bind(client),transaction:async(fn:(tx:Pick<PoolClient,'query'>)=>Promise<unknown>)=>{await client.query('SAVEPOINT onboarding_check');try{const r=await fn(client);await client.query('RELEASE SAVEPOINT onboarding_check');return r;}catch(e){await client.query('ROLLBACK TO SAVEPOINT onboarding_check');await client.query('RELEASE SAVEPOINT onboarding_check');throw e;}}} as DocumentDatabase;
   const s=createOnboardingService(db),actor=randomUUID(),clinic=randomUUID(),other=randomUUID();
   const admin={id:actor,role:'administrador'} as AccountSummary;
-  await client.query("INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code) VALUES($1,$2,'synthetic-no-login','administrador')",[actor,actor+'@example.invalid']);
+  const adminPassword='Clave-sintetica-2026!';
+  const adminHash=await hashPassword(adminPassword);
+  await client.query(
+   "INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code) VALUES($1,$2,$3,'administrador')",
+   [actor,actor+'@example.invalid',adminHash]);
   for(const id of [clinic,other])await client.query('INSERT INTO public.vitalia_clinics(id,name) VALUES($1,$2)',[id,'Clínica sintética '+id]);
   const commune=(await client.query('SELECT code FROM public.vitalia_communes ORDER BY code LIMIT 1')).rows[0]?.code;if(!commune)throw new Error('Falta catálogo territorial.');
   const branch=randomUUID(),wrongBranch=randomUUID();for(const [id,cid]of [[branch,clinic],[wrongBranch,other]])await client.query("INSERT INTO public.vitalia_branches(id,clinic_id,commune_code,name,street,address_number) VALUES($1,$2,$3,'Sucursal ficticia','Calle ficticia','S/N')",[id,cid,commune]);
@@ -25,6 +30,7 @@ export async function verifyInvitations(client:Pick<PoolClient,'query'>):Promise
   check((await s.record(admin,clinic,auth)).verifiedAt===null);
   await deny(()=>s.invite(admin,clinic,invite),409);
   await deny(()=>s.verify(admin,clinic,auth.requestId,{confirmed:false}),400);
+  await deny(()=>s.verify(admin,clinic,auth.requestId,{confirmed:true,currentPassword:'incorrecta'}),403);
   check((await s.verify(admin,clinic,auth.requestId,{confirmed:true,currentPassword:'Clave-sintetica-2026!'})).verifiedBy===actor);
   await deny(()=>s.invite(admin,other,invite),409);
   await deny(()=>s.invite(admin,clinic,{...invite,email:randomUUID()+'@example.invalid'}),409);
