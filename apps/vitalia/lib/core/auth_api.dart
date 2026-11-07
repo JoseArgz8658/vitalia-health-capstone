@@ -43,9 +43,11 @@ class AuthApi {
   }
 
   Future<Map<String, dynamic>> silRequest(
-    String path, {Map<String, dynamic>? body}
-  ) async {
-    if (!RegExp(r'^/orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results))?)?
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    final validPath = RegExp(
+      r'^/orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results))?)?
     final data = await _profileRequest(update: update);
     return data['profile'] as Map<String, dynamic>?;
   }
@@ -1059,25 +1061,27 @@ class AuthApi {
     }
   }
 }
-)
-        .hasMatch(path)) {
+,
+    );
+    if (!validPath.hasMatch(path)) {
       throw const AuthFailure('Ruta de laboratorio inválida.');
     }
     final token = _token;
-    if (token == null || expiresAt == null ||
+    if (token == null ||
+        expiresAt == null ||
         !expiresAt!.isAfter(DateTime.now())) {
       clear();
       throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
     }
     try {
+      final uri = _base.resolve('/api/sil$path');
       final headers = {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
       };
-      final uri = _base.resolve('/api/sil$path');
       final response = await (body == null
-          ? _client.get(uri, headers: headers)
-          : _client.post(uri, headers: headers, body: jsonEncode(body)))
+              ? _client.get(uri, headers: headers)
+              : _client.post(uri, headers: headers, body: jsonEncode(body)))
           .timeout(const Duration(seconds: 20));
       if (_token != token || response.statusCode == 401) {
         clear();
@@ -1096,7 +1100,9 @@ class AuthApi {
     } on AuthFailure {
       rethrow;
     } on TimeoutException {
-      throw const AuthFailure('La operación tardó demasiado. Consulta la orden antes de repetir.');
+      throw const AuthFailure(
+        'La operación tardó demasiado. Consulta la orden antes de repetir.',
+      );
     } catch (_) {
       throw const AuthFailure('No fue posible conectar con el laboratorio.');
     }
