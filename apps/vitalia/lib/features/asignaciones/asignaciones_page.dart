@@ -1,3 +1,4 @@
+import '../laboratorio/laboratorio_simulado_page.dart';
 import '../profesional/atenciones_page.dart';
 import '../incorporacion/incorporacion_page.dart';
 import '../clinicas/clinicas_page.dart';
@@ -154,6 +155,21 @@ class _AsignacionesPageState extends State<AsignacionesPage> {
                     ),
                   ),
           ),
+          if (_admin)
+            IconButton(
+              tooltip: 'Laboratorio simulado',
+              icon: const Icon(Icons.science_outlined),
+              onPressed: _busy || widget.sessionBusy
+                  ? null
+                  : () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => LaboratorioSimuladoPage(
+                          api: widget.auth,
+                          onExpired: widget.onExpired,
+                        ),
+                      ),
+                    ),
+            ),
           if (_admin)
             IconButton(
               tooltip: 'Clínicas y sucursales',
