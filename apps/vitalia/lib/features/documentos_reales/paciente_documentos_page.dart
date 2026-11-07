@@ -50,11 +50,12 @@ class _PacienteDocumentosPageState extends State<PacienteDocumentosPage> {
     });
     try {
       final items = await _documents.list(offset: offset);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _items = items;
           _offset = offset;
         });
+      }
     } on AuthFailure catch (e) {
       if (!mounted) return;
       if (e.status == 401) {
