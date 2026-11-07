@@ -58,7 +58,7 @@ void main() {
       await tester.tap(find.text('Iniciar sesión'));
       await tester.pumpAndSettle();
       expect(find.text('Mis exámenes'), findsOneWidget);
-      expect(find.textContaining('No hay exámenes'), findsOneWidget);
+      expect(find.text('Todavía no tienes exámenes disponibles.'), findsOneWidget);
       expect(find.text('Subir examen'), findsNothing);
       expect(find.textContaining('laboratorio los incorpore'), findsOneWidget);
       await tester.binding.setSurfaceSize(const Size(360, 800));
