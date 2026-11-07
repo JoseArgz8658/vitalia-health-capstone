@@ -30,28 +30,21 @@ test('rol profesional no obtiene acceso de paciente', async () => {
   expect((await request(app).get('/api/documents').set('Authorization', 'Bearer ' + token)).status).toBe(403);
   expect(services.list).not.toHaveBeenCalled();
 });
-test('multipart entrega identidad de sesión y metadatos al servicio', async () => {
-  const { app, services } = setup();
-  const res = await request(app).post('/api/documents').set('Authorization', 'Bearer ' + token)
-    .field('examName', 'Examen sintético').field('examType', 'Laboratorio').field('examDate', '2026-01-01')
-    .attach('file', pdf, { filename: 'sintetico.pdf', contentType: 'application/pdf' });
-  expect(res.status).toBe(201);
-  expect(services.upload.mock.calls[0][0]).toEqual(account);
-  expect(services.upload.mock.calls[0][1].body).toEqual(pdf);
+test('paciente no puede subir archivos ni con sesión válida', async () => {
+  const {app,services}=setup();
+  const res=await request(app).post('/api/documents')
+    .set('Authorization','Bearer '+token)
+    .field('examName','Examen sintético')
+    .attach('file',pdf,'sintetico.pdf');
+  expect(res.status).toBe(403);
+  expect(res.body.error.code).toBe('PATIENT_UPLOAD_DISABLED');
+  expect(services.upload).not.toHaveBeenCalled();
 });
-test('archivo ausente o campo de archivo equivocado devuelve 400', async () => {
-  for (const field of [null, 'otro']) {
-    const { app, services } = setup();
-    let req = request(app).post('/api/documents').set('Authorization', 'Bearer ' + token);
-    req = field ? req.attach(field, pdf, 'sintetico.pdf') : req.field('examName', 'sintético');
-    expect((await req).status).toBe(400);
-    expect(services.upload).not.toHaveBeenCalled();
-  }
-});
-test('tamaño superior a 10 MiB devuelve 413', async () => {
-  const { app, services } = setup();
-  expect((await request(app).post('/api/documents').set('Authorization', 'Bearer ' + token)
-    .attach('file', Buffer.alloc(10 * 1024 * 1024 + 1), 'grande.pdf')).status).toBe(413);
+test('paciente no puede subir archivos aunque estén vacíos o superen el límite anterior', async () => {
+  const {app,services}=setup();
+  expect((await request(app).post('/api/documents').set('Authorization','Bearer '+token)).status).toBe(403);
+  expect((await request(app).post('/api/documents').set('Authorization','Bearer '+token)
+    .attach('file', Buffer.alloc(10 * 1024 * 1024 + 1), 'grande.pdf')).status).toBe(403);
   expect(services.upload).not.toHaveBeenCalled();
 });
 test('paginación inválida rechazada', async () => {
