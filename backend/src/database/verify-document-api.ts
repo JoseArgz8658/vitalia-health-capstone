@@ -119,9 +119,13 @@ async function main(): Promise<void> {
     const events = await client.query<{ action: string }>(
       'SELECT action FROM public.vitalia_document_audit WHERE account_id = $1 ORDER BY id', [a.id]);
     if (events.rows.map(row => row.action).join(',') !== 'upload,list,download') throw new Error('Auditoría inválida.');
-  } catch {
+  } catch (error) {
     failed = true; process.exitCode = 1;
-    console.error('No se pudo verificar la API de documentos. Revisa PostgreSQL, S3 y migración de auditoría.');
+    console.error('No se pudo verificar la API de documentos.');
+    console.error('ERROR REAL:', error instanceof Error ? error.message : String(error));
+    console.error('TIPO:', error instanceof Error ? error.name : 'Desconocido');
+    console.error('CODIGO:', (error as {code?: string})?.code ?? 'N/A');
+    console.error('ORIGEN:', error instanceof Error ? error.stack?.split('\n').slice(0, 6).join('\n') : 'N/A');
   } finally {
     if (server) {
       server.closeAllConnections();

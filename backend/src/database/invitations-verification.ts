@@ -25,7 +25,7 @@ export async function verifyInvitations(client:Pick<PoolClient,'query'>):Promise
   check((await s.record(admin,clinic,auth)).verifiedAt===null);
   await deny(()=>s.invite(admin,clinic,invite),409);
   await deny(()=>s.verify(admin,clinic,auth.requestId,{confirmed:false}),400);
-  check((await s.verify(admin,clinic,auth.requestId,{confirmed:true})).verifiedBy===actor);
+  check((await s.verify(admin,clinic,auth.requestId,{confirmed:true,currentPassword:'Clave-sintetica-2026!'})).verifiedBy===actor);
   await deny(()=>s.invite(admin,other,invite),409);
   await deny(()=>s.invite(admin,clinic,{...invite,email:randomUUID()+'@example.invalid'}),409);
   await deny(()=>s.invite(admin,clinic,{...invite,branchIds:[wrongBranch]}),400);
@@ -67,7 +67,7 @@ export async function verifyInvitations(client:Pick<PoolClient,'query'>):Promise
   await client.query('UPDATE public.vitalia_clinics SET active=true WHERE id=$1',[clinic]);
   const secondEmail=randomUUID()+'@example.invalid';
   const secondAuth={...auth,requestId:randomUUID(),nomineeEmail:secondEmail};
-  await s.record(admin,other,secondAuth);await s.verify(admin,other,secondAuth.requestId,{confirmed:true});
+  await s.record(admin,other,secondAuth);await s.verify(admin,other,secondAuth.requestId,{confirmed:true,currentPassword:'Clave-sintetica-2026!'});
   const second=await s.invite(admin,other,{...invite,requestId:randomUUID(),authorizationId:secondAuth.requestId,email:secondEmail,branchIds:[]});
   await s.revokeAuthorization(admin,other,secondAuth.requestId);
   await deny(()=>s.activate({...active,token:second.token}),409);
