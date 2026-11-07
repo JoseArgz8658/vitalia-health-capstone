@@ -1,3 +1,5 @@
+import {createSilRouter} from './sil/router';
+import {type SilServices} from './sil/service';
 import {createCareHistoryRouter} from './care/history-router';
 import {type CareHistoryServices} from './care/history';
 import {createCareInboxRouter} from './care/inbox-router';
@@ -37,7 +39,7 @@ import { createAuthRouter, type AuthServices } from './auth/router';
 import { createRegistrationRouter } from './auth/registration-router';
 import { type PatientRegistrar } from './auth/registration';
 
-export function createApp(auth?: AuthServices, register?: PatientRegistrar, documents?: DocumentServices, processing?: ProcessingServices, assignments?: AssignmentServices, professional?: ProfessionalServices, reviews?: ReviewServices, explanations?: ExplanationServices, assistant?: ExamAssistantServices, profiles?: ProfileServices, institutions?: InstitutionServices, onboarding?: OnboardingServices, team?: TeamServices, credentialVerification?: CredentialVerificationServices, careCatalog?: CareCatalogServices, careUpload?: CareUploadServices, careInbox?: CareInboxServices, careHistory?: CareHistoryServices) {
+export function createApp(auth?: AuthServices, register?: PatientRegistrar, documents?: DocumentServices, processing?: ProcessingServices, assignments?: AssignmentServices, professional?: ProfessionalServices, reviews?: ReviewServices, explanations?: ExplanationServices, assistant?: ExamAssistantServices, profiles?: ProfileServices, institutions?: InstitutionServices, onboarding?: OnboardingServices, team?: TeamServices, credentialVerification?: CredentialVerificationServices, careCatalog?: CareCatalogServices, careUpload?: CareUploadServices, careInbox?: CareInboxServices, careHistory?: CareHistoryServices, sil?: SilServices) {
   const app = express();
   app.disable('x-powered-by');
   app.use(localWebCors);
@@ -48,6 +50,7 @@ export function createApp(auth?: AuthServices, register?: PatientRegistrar, docu
     res.status(200).json({ status: 'ok', service: 'vitalia-api' });
   });
 
+  if (auth && sil) app.use('/api/sil', createSilRouter(auth, sil));
   if (auth && careHistory) app.use('/api/documents', createCareHistoryRouter(auth, careHistory));
   if (auth && careInbox) app.use('/api/care-inbox', createCareInboxRouter(auth, careInbox));
   if (auth && careUpload) app.use('/api/care', createCareUploadRouter(auth, careUpload));
