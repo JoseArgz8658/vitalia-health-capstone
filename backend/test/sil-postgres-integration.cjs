@@ -41,9 +41,9 @@ async function main() {
     await assert.rejects(
       sil.recordResults(orderId,[{analyte:'Hemoglobina',numericValue:13.2,unit:'g/dL'}]),
       SilConflictError);
-    const sample=await sil.registerSample(orderId,'TEST-'+randomUUID());
+    const sample=await sil.registerSample(orderId,'TEST-'+randomUUID().slice(0,30));
     assert.equal(sample.orderId,orderId);
-    await assert.rejects(sil.registerSample(orderId,'TEST-'+randomUUID()),SilConflictError);
+    await assert.rejects(sil.registerSample(orderId,'TEST-'+randomUUID().slice(0,30)),SilConflictError);
     const recorded=await sil.recordResults(orderId,[
       {analyte:'Hemoglobina',numericValue:13.2,unit:'g/dL',referenceMin:12,referenceMax:16},
       {analyte:'Hematocrito',numericValue:40,unit:'%',referenceMin:35,referenceMax:48},
