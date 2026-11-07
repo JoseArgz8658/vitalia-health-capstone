@@ -40,11 +40,18 @@ test('paciente no puede subir archivos ni con sesión válida', async () => {
   expect(res.body.error.code).toBe('PATIENT_UPLOAD_DISABLED');
   expect(services.upload).not.toHaveBeenCalled();
 });
-test('paciente no puede subir archivos aunque estén vacíos o superen el límite anterior', async () => {
+test('paciente no puede iniciar carga sin archivo o usando otra forma de solicitud', async () => {
   const {app,services}=setup();
-  expect((await request(app).post('/api/documents').set('Authorization','Bearer '+token)).status).toBe(403);
-  expect((await request(app).post('/api/documents').set('Authorization','Bearer '+token)
-    .attach('file', Buffer.alloc(10 * 1024 * 1024 + 1), 'grande.pdf')).status).toBe(403);
+  const empty=await request(app).post('/api/documents')
+    .set('Authorization','Bearer '+token);
+  expect(empty.status).toBe(403);
+  expect(empty.body.error.code).toBe('PATIENT_UPLOAD_DISABLED');
+
+  const json=await request(app).post('/api/documents')
+    .set('Authorization','Bearer '+token)
+    .send({examName:'Examen sintético'});
+  expect(json.status).toBe(403);
+  expect(json.body.error.code).toBe('PATIENT_UPLOAD_DISABLED');
   expect(services.upload).not.toHaveBeenCalled();
 });
 test('paginación inválida rechazada', async () => {
