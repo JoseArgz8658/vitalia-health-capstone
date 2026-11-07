@@ -68,6 +68,8 @@ async function main() {
         await db.query('DELETE FROM public.vitalia_sil_samples WHERE order_id=$1',[orderId]);
         await db.query('DELETE FROM public.vitalia_sil_orders WHERE id=$1',[orderId]);
       }
+      // La migración 017 crea roles automáticamente por trigger; primero eliminar dependientes.
+      await db.query('DELETE FROM public.vitalia_account_roles WHERE account_id=ANY($1::uuid[])',[[patientId,actorId]]);
       await db.query('DELETE FROM public.vitalia_accounts WHERE id=ANY($1::uuid[])',[[patientId,actorId]]);
       const remaining=await db.query(
         `SELECT
