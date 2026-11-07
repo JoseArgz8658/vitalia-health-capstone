@@ -8,6 +8,7 @@ const service={
  createOrder:jest.fn().mockResolvedValue({id,status:'registered'}),
  registerSample:jest.fn().mockResolvedValue(sample),
  recordResults:jest.fn().mockResolvedValue({orderId:id,status:'results_recorded',count:1,synthetic:true}),
+ simulateAnalyzer:jest.fn().mockResolvedValue({orderId:id,status:'results_recorded',count:5,synthetic:true,simulated:true,analyzerId:'simulador-hemograma-v1'}),
  getOrder:jest.fn().mockResolvedValue({order:{id,status:'registered'},sample:null,results:[]}),
 };
 function app(role='administrador',hasSession=true) {
@@ -73,4 +74,21 @@ test('rechaza analitos repetidos, valores inválidos y rangos invertidos',async(
 test('consulta admin ve estado y no expone datos a paciente',async()=>{
  expect((await request(app()).get('/api/sil/orders/'+id).set(bearer)).status).toBe(200);
  expect((await request(app('paciente')).get('/api/sil/orders/'+id).set(bearer)).status).toBe(403);
+});
+
+test('solo administrador puede simular resultados ficticios',async()=>{
+ const accepted=await request(app()).post('/api/sil/orders/'+id+'/simulate')
+  .set(bearer).send({});
+ expect(accepted.status).toBe(201);
+ expect(accepted.body.result.simulated).toBe(true);
+ expect(service.simulateAnalyzer).toHaveBeenCalledWith(id);
+ expect((await request(app('paciente')).post('/api/sil/orders/'+id+'/simulate')
+  .set(bearer).send({})).status).toBe(403);
+});
+test('simulador rechaza parametros de usuario o ids invalidos',async()=>{
+ expect((await request(app()).post('/api/sil/orders/'+id+'/simulate')
+  .set(bearer).send({numericValue:99})).status).toBe(400);
+ expect((await request(app()).post('/api/sil/orders/no-es-uuid/simulate')
+  .set(bearer).send({})).status).toBe(400);
+ expect(service.simulateAnalyzer).not.toHaveBeenCalled();
 });
