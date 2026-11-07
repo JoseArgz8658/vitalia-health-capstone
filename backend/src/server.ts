@@ -1,3 +1,4 @@
+import {createSilService} from './sil/service';
 import {createCareHistoryService} from './care/history';
 import {createCareInboxService} from './care/inbox';
 import {createCareUploadService} from './care/upload';
@@ -93,7 +94,7 @@ async function main(): Promise<void> {
       issue: (id,mode) => issueSession(database, id,mode),
       find: token => findSessionAccount(database, token),
       revoke: token => revokeSession(database, token),
-    }, register, documents, createProcessingService(database), createAssignmentService(documentDatabase(database)), createProfessionalService(documentDatabase(database), s3DocumentStorage(storage, storageConfig)), createReviewService(documentDatabase(database)), createExplanationService(documentDatabase(database), createExplanationGenerator()), createExamAssistantService(documentDatabase(database), createExamAssistant()), createProfileService(documentDatabase(database)), createInstitutionService(documentDatabase(database)), createOnboardingService(documentDatabase(database)), createTeamService(documentDatabase(database)), createCredentialVerificationService(documentDatabase(database)), createCareCatalogService(database), careUpload, createCareInboxService(documentDatabase(database), s3DocumentStorage(storage, storageConfig)), createCareHistoryService(documentDatabase(database))).listen(config.PORT, config.HOST);
+    }, register, documents, createProcessingService(database), createAssignmentService(documentDatabase(database)), createProfessionalService(documentDatabase(database), s3DocumentStorage(storage, storageConfig)), createReviewService(documentDatabase(database)), createExplanationService(documentDatabase(database), createExplanationGenerator()), createExamAssistantService(documentDatabase(database), createExamAssistant()), createProfileService(documentDatabase(database)), createInstitutionService(documentDatabase(database)), createOnboardingService(documentDatabase(database)), createTeamService(documentDatabase(database)), createCredentialVerificationService(documentDatabase(database)), createCareCatalogService(database), careUpload, createCareInboxService(documentDatabase(database), s3DocumentStorage(storage, storageConfig)), createCareHistoryService(documentDatabase(database)), createSilService(database)).listen(config.PORT, config.HOST);
     server.on('listening', () => console.info('Vitalia API iniciada en el entorno local.'));
     server.on('error', () => {
       console.error('No se pudo iniciar el servidor. Revisa el puerto y la dirección configurados.');
