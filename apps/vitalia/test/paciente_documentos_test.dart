@@ -10,7 +10,7 @@ import 'package:vitalia_health/app/vitalia_mvp_app.dart';
 final token = List.filled(64, 'a').join();
 void main() {
   testWidgets(
-    'paciente autenticado ve historial real vacío y formulario de carga',
+    'paciente autenticado ve historial vacío sin opción de carga',
     (tester) async {
       final auth = AuthApi(
         client: MockClient((req) async {
@@ -59,23 +59,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Mis exámenes'), findsOneWidget);
       expect(find.textContaining('No hay exámenes'), findsOneWidget);
-      await tester.ensureVisible(find.text('Subir examen'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Subir examen'));
-      await tester.pumpAndSettle();
-      expect(find.text('Paso 1 de 4 · Ubicación y contacto'), findsOneWidget);
+      expect(find.text('Subir examen'), findsNothing);
+      expect(find.textContaining('laboratorio los incorpore'), findsOneWidget);
       await tester.binding.setSurfaceSize(const Size(360, 800));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       await tester.binding.setSurfaceSize(null);
       await tester.pumpAndSettle();
-      final volverAlHistorial = find.text('Volver al historial');
-      await tester.ensureVisible(volverAlHistorial);
-      await tester.pumpAndSettle();
-      await tester.tap(volverAlHistorial);
-      await tester.pumpAndSettle();
-      expect(find.text('Mis exámenes'), findsOneWidget);
-      expect(find.text('Paso 1 de 4 · Ubicación y contacto'), findsNothing);
       await tester.tap(find.text('Cerrar sesión'));
       await tester.pumpAndSettle();
       expect(find.text('Iniciar sesión'), findsOneWidget);
