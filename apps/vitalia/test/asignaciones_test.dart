@@ -287,7 +287,7 @@ void main() {
       expect(
         find.text(
           role == 'administrador'
-              ? 'Asignaciones de pacientes'
+              ? 'Vitalia SIL Simple'
               : 'Mis pacientes',
         ),
         findsOneWidget,
