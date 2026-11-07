@@ -1,3 +1,4 @@
+import {SIL_ANALYZER_ID,simulateHemogram} from './analyzer';
 import {randomUUID} from 'node:crypto';
 import {type Pool} from 'pg';
 
@@ -67,6 +68,13 @@ export function createSilService(db: Pool) {
         if ((error as {code?:string}).code==='23505') throw new SilConflictError();
         throw error;
       } finally { client.release(failed); }
+    },
+    async simulateAnalyzer(orderId: string) {
+      // Reutiliza la misma transacción y control de estado que el ingreso manual.
+      // No publica resultados ni emite informe clínico.
+      const recorded = await this.recordResults(orderId,simulateHemogram());
+      return {...recorded,analyzerId:SIL_ANALYZER_ID,simulated:true,
+        notice:'SIMULACIÓN: resultados ficticios, sin validez clínica.'};
     },
     async getOrder(orderId: string) {
       const order = await db.query(
