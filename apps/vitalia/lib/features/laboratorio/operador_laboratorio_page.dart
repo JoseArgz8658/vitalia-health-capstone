@@ -548,6 +548,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           _metric(Icons.science_outlined, 'Pendientes de resultados', count('pendingResults')),
           _metric(Icons.verified_outlined, 'Pendientes de revisión', count('pendingReview')),
           _metric(Icons.undo_outlined, 'Devueltas para corregir', count('returned')),
+          _metric(Icons.picture_as_pdf_outlined, 'Informes por publicar', count('attached')),
+          _metric(Icons.file_download_done_outlined, 'Informes disponibles', count('published')),
         ]),
         const SizedBox(height: 20),
         _panel(
@@ -607,6 +609,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             DropdownMenuItem(value: 'results_recorded', child: Text('Pendiente de revisión')),
             DropdownMenuItem(value: 'review_rejected', child: Text('Devueltas para corrección')),
             DropdownMenuItem(value: 'review_approved', child: Text('Revisión aprobada')),
+            DropdownMenuItem(value: 'report_attached', child: Text('Informe externo recibido')),
+            DropdownMenuItem(value: 'report_published', child: Text('Informe publicado')),
           ],
           onChanged: (value) {
             setState(() {
@@ -1045,12 +1049,125 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     ]);
   }
 
+  Widget _reportsView() {
+    final data = _selected;
+    if (data == null) return _withoutOrder('Informes PDF');
+    final order = data['order'] as Map;
+    final status = order['status'] as String?;
+    final report = data['externalReport'] as Map?;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _panel(
+        'Informes autorizados por el laboratorio de origen',
+        'Este flujo incorpora PDF de prueba ya autorizado externamente; '
+        'no valida clínicamente resultados ni notifica por correo o WhatsApp.',
+        Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _orderHeader(Map<String, dynamic>.from(order)),
+          const SizedBox(height: 14),
+          if (status == 'registered') ...[
+            const Text('Para recibir el PDF debes comprobar por separado '
+                'la autorización emitida por el laboratorio y la identidad del paciente.'),
+            const SizedBox(height: 15),
+            TextField(
+              controller: _reportIssuer,
+              enabled: !_busy,
+              maxLength: 120,
+              decoration: const InputDecoration(
+                labelText: 'Laboratorio emisor',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _reportReference,
+              enabled: !_busy,
+              maxLength: 120,
+              decoration: const InputDecoration(
+                labelText: 'Referencia de autorización externa',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : _selectAuthorizationDate,
+              icon: const Icon(Icons.calendar_today_outlined),
+              label: Text(_reportAuthorizedAt == null
+                  ? 'Fecha de autorización externa'
+                  : '${_reportAuthorizedAt!.day}/${_reportAuthorizedAt!.month}/${_reportAuthorizedAt!.year}'),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : _selectReportPdf,
+              icon: const Icon(Icons.attach_file),
+              label: Text(_reportFile == null
+                  ? 'Seleccionar PDF autorizado (máximo 2 MiB)'
+                  : _reportFile!.name),
+            ),
+            const SizedBox(height: 10),
+            CheckboxListTile(
+              value: _confirmExternal,
+              onChanged: _busy ? null : (value) =>
+                  setState(() => _confirmExternal = value ?? false),
+              controlAffinity: ListTileControlAffinity.leading,
+              title: const Text('Confirmé fuera de Vitalia que el PDF ya '
+                  'fue autorizado por el laboratorio emisor.'),
+            ),
+            CheckboxListTile(
+              value: _confirmPatient,
+              onChanged: _busy ? null : (value) =>
+                  setState(() => _confirmPatient = value ?? false),
+              controlAffinity: ListTileControlAffinity.leading,
+              title: Text('Verifiqué que el informe corresponde al paciente '
+                  '${order['patientEmail']}.'),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : _attachExternalReport,
+                icon: const Icon(Icons.upload_file_outlined),
+                label: const Text('Incorporar PDF autorizado'),
+              ),
+            ),
+          ] else if (report != null) ...[
+            Text('Documento: ${report['fileName']}'),
+            Text('Emisor: ${report['issuingLaboratory']}'),
+            Text('Autorización externa: ${report['authorizationReference']}'),
+            Text('Fecha de autorización: ${_date(report['externallyAuthorizedAt'])}'),
+            Text('Integridad SHA-256: ${report['sha256']}',
+                style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 14),
+            if (status == 'report_attached')
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.icon(
+                  onPressed: _busy ? null : _publishExternalReport,
+                  icon: const Icon(Icons.publish_outlined),
+                  label: const Text('Publicar PDF para este paciente'),
+                ),
+              )
+            else if (status == 'report_published')
+              const Text('El informe está disponible exclusivamente en '
+                  'el portal de este paciente.')
+            else
+              const Text('El documento no está habilitado para publicación.'),
+          ] else
+            const Text('Esta orden tiene un flujo de resultados internos. '
+                'Para adjuntar un PDF externo, registra una nueva orden.'),
+        ]),
+        icon: Icons.picture_as_pdf_outlined,
+      ),
+      const SizedBox(height: 14),
+      _auditTrail(data),
+    ]);
+  }
+
   Widget _bodyForSection() => switch (_section) {
     0 => _dashboard(),
     1 => _ordersView(),
     2 => _newOrderView(),
     3 => _samplesView(),
-    _ => _resultsView(),
+    4 => _resultsView(),
+    _ => _reportsView(),
   };
 
   Widget _content() {
