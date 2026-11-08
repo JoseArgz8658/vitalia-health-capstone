@@ -4,6 +4,12 @@ const request = require('supertest');
 const {createSilRouter} = require('../dist/sil/router');
 
 const token = 'a'.repeat(64);
+const previousDemo = process.env.VITALIA_SIL_DEMO;
+beforeAll(() => { process.env.VITALIA_SIL_DEMO = 'YES'; });
+afterAll(() => {
+  if(previousDemo === undefined) delete process.env.VITALIA_SIL_DEMO;
+  else process.env.VITALIA_SIL_DEMO=previousDemo;
+});
 const patientId = '11111111-1111-4111-8111-111111111111';
 const actorId = '22222222-2222-4222-8222-222222222222';
 
@@ -28,6 +34,12 @@ function setup(role) {
     simulateAnalyzer: jest.fn(async () => ({orderId:actorId,count:9})),
     getOrder: jest.fn(async () => ({order:{id:actorId},exams:[],results:[]})),
     reviewOrder: jest.fn(async (_order,_actor,decision) => ({orderId:actorId,decision})),
+    attachExternalReport: jest.fn(async () => ({id:actorId,status:'report_attached'})),
+    publishExternalReport: jest.fn(async () => ({status:'report_published'})),
+    listPatientReports: jest.fn(async () => ({reports:[{id:actorId}]})),
+    downloadPatientReport: jest.fn(async () => ({
+      fileName:'informe.pdf',bytes:Buffer.from('%PDF-1.4\\n%%EOF'),
+    })),
   };
   const app = express();
   app.use(express.json());
@@ -149,6 +161,55 @@ describe('SIL: permisos y catálogo multiprestación', () => {
       .send({decision:'return',note:'Revisar valores del hemograma.'}).expect(201);
     expect(service.reviewOrder).toHaveBeenCalledWith(
       actorId,actorId,'return','Revisar valores del hemograma.');
+  });
+  test('operador incorpora informe PDF externo y lo publica con confirmación',async () => {
+    const {app,service}=setup('operador_laboratorio');
+    const pdf=Buffer.from('%PDF-1.4\\n%%EOF');
+    const res=await authorized(request(app).post('/api/sil/orders/'+actorId+'/report'))
+      .set('Content-Type','application/pdf')
+      .set('x-report-filename','informe.pdf')
+      .set('x-report-issuer','Laboratorio ejemplo')
+      .set('x-report-authorization-ref','LAB-REFERENCIA-01')
+      .set('x-report-authorized-at','2026-11-01T12:00:00Z')
+      .set('x-report-patient-confirmed','true')
+      .set('x-report-externally-authorized','true')
+      .send(pdf).expect(201);
+    expect(res.body.report.status).toBe('report_attached');
+    expect(service.attachExternalReport).toHaveBeenCalled();
+    await authorized(request(app).post('/api/sil/orders/'+actorId+'/report/publish'))
+      .send({}).expect(201);
+    expect(service.publishExternalReport).toHaveBeenCalledWith(actorId,actorId);
+    await authorized(request(app).post('/api/sil/orders/'+actorId+'/report/publish'))
+      .send({clinicalAuthorization:true}).expect(400);
+  });
+  test('PDF externo exige autorización, asociación y permisos',async () => {
+    const payload=Buffer.from('%PDF-1.4\\n%%EOF');
+    const {app,service}=setup('operador_laboratorio');
+    await authorized(request(app).post('/api/sil/orders/'+actorId+'/report'))
+      .set('Content-Type','application/pdf')
+      .set('x-report-filename','informe.pdf')
+      .set('x-report-issuer','Laboratorio ejemplo')
+      .set('x-report-authorization-ref','REF-01')
+      .set('x-report-authorized-at','2026-11-01')
+      .set('x-report-externally-authorized','true')
+      .send(payload).expect(400);
+    expect(service.attachExternalReport).not.toHaveBeenCalled();
+    await authorized(request(setup('validador_laboratorio').app)
+      .post('/api/sil/orders/'+actorId+'/report/publish'))
+      .send({}).expect(403);
+  });
+  test('solo paciente puede consultar sus informes y descargar archivo',async () => {
+    const patient=setup('paciente');
+    const listed=await authorized(request(patient.app)
+      .get('/api/sil/patient/reports')).expect(200);
+    expect(listed.body.reports.length).toBe(1);
+    const downloaded=await authorized(request(patient.app)
+      .get('/api/sil/patient/reports/'+actorId+'/file')).expect(200);
+    expect(downloaded.headers['content-type']).toMatch(/application\\/pdf/);
+    expect(patient.service.downloadPatientReport).toHaveBeenCalledWith(actorId,actorId);
+    await authorized(request(setup('administrador').app)
+      .get('/api/sil/patient/reports')).expect(403);
+    await authorized(request(patient.app).get('/api/sil/orders')).expect(403);
   });
   test('se requiere token de sesión para consultar',async () => {
     const {app}=setup('operador_laboratorio');
