@@ -1,5 +1,6 @@
 import {SIL_ANALYZER_ID} from './analyzer';
 import {createSilPatientEducation} from './patient-education';
+import {createSilResultsFilePreview} from './results-file-preview';
 import {randomUUID,createHash} from 'node:crypto';
 import {identifyDocument} from '../documents/file-validation';
 import {type Pool,type PoolClient} from 'pg';
@@ -22,6 +23,7 @@ export interface SilManualInput {
 }
 export function createSilService(db: Pool) {
   const education=createSilPatientEducation(db);
+  const previewResultsFile=createSilResultsFilePreview(db);
   async function appendAudit(client:PoolClient,orderId:string,actorId:string,
     action:'order_created'|'sample_received'|'results_simulated'|'results_manual'|
       'results_corrected'|'review_approved'|'review_rejected'|
@@ -34,6 +36,7 @@ export function createSilService(db: Pool) {
   }
   return {
     askPatientReport:education.ask,
+    previewResultsFile,
     async catalog() {
       const [exams,analytes,containers] = await Promise.all([
         db.query<{code:string;name:string;sampleType:string}>(
@@ -279,7 +282,7 @@ export function createSilService(db: Pool) {
       }finally{client.release(failed);}
     },
     async recordResults(orderId:string,results:SilResultInput[],
-      actorId:string,source:'manual'|'simulated'='simulated') {
+      actorId:string,source:'manual'|'simulated'='simulated',assistedImport=false) {
       const client = await db.connect();
       let failed = false;
       try {
@@ -320,7 +323,7 @@ export function createSilService(db: Pool) {
         await appendAudit(client,orderId,actorId,
           wasReturned?'results_corrected':
           source==='manual'?'results_manual':'results_simulated',
-          wasReturned?{count:results.length,previousResults}:{count:results.length});
+          wasReturned?{count:results.length,previousResults,assistedImport}:{count:results.length,assistedImport});
         await client.query('COMMIT');
         return {orderId,status:'results_recorded',count:results.length,synthetic:true};
       } catch (error) {
@@ -329,7 +332,7 @@ export function createSilService(db: Pool) {
         throw error;
       } finally {client.release(failed);}
     },
-    async recordManualResults(orderId:string,values:SilManualInput[],actorId:string) {
+    async recordManualResults(orderId:string,values:SilManualInput[],actorId:string,assistedImport=false) {
       const expected=await db.query<{
         examCode:string;analyte:string;unit:string;
         referenceMin:number|null;referenceMax:number|null;
@@ -355,7 +358,7 @@ export function createSilService(db: Pool) {
         if(value===undefined)throw new SilConflictError();
         records.push({...item,numericValue:value});
       }
-      return this.recordResults(orderId,records,actorId,'manual');
+      return this.recordResults(orderId,records,actorId,'manual',assistedImport);
     },
     async simulateAnalyzer(orderId: string,actorId:string) {
       // Solo plantillas sintéticas del catálogo. No conecta con equipos médicos.
