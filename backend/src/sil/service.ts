@@ -29,7 +29,7 @@ export function createSilService(db: Pool) {
   }
   return {
     async catalog() {
-      const [exams,analytes] = await Promise.all([
+      const [exams,analytes,containers] = await Promise.all([
         db.query<{code:string;name:string;sampleType:string}>(
           `SELECT code,name,sample_type AS "sampleType"
            FROM public.vitalia_sil_exam_catalog
@@ -39,9 +39,16 @@ export function createSilService(db: Pool) {
            FROM public.vitalia_sil_exam_analytes a
            JOIN public.vitalia_sil_exam_catalog c ON c.code=a.exam_code
            WHERE c.active ORDER BY a.exam_code,a.analyte`),
+        db.query<{examCode:string;containerCode:string;containerLabel:string}>(
+          `SELECT m.exam_code AS "examCode",c.code AS "containerCode",
+                  c.label AS "containerLabel"
+           FROM public.vitalia_sil_exam_containers m
+           JOIN public.vitalia_sil_containers c ON c.code=m.container_code`),
       ]);
       return {exams:exams.rows.map(exam=>({
-        ...exam,analytes:analytes.rows.filter(item=>item.examCode===exam.code)
+        ...exam,
+        ...(containers.rows.find(item=>item.examCode===exam.code)??{}),
+        analytes:analytes.rows.filter(item=>item.examCode===exam.code)
           .map(({analyte,unit})=>({analyte,unit})),
       }))};
     },
@@ -281,24 +288,44 @@ export function createSilService(db: Pool) {
          JOIN public.vitalia_accounts a ON a.id=o.patient_id
          WHERE o.id=$1`,[orderId]);
       if (!order.rows.length) throw new SilNotFoundError();
-      const [exams,sample,results] = await Promise.all([
+      const [exams,samples,required,results,audit] = await Promise.all([
         db.query(
           `SELECT c.code,c.name,c.sample_type AS "sampleType"
            FROM public.vitalia_sil_order_exams e
            JOIN public.vitalia_sil_exam_catalog c ON c.code=e.exam_code
            WHERE e.order_id=$1 ORDER BY c.name`,[orderId]),
         db.query(
-          `SELECT barcode,sample_type AS "sampleType",registered_at AS "registeredAt"
-           FROM public.vitalia_sil_samples WHERE order_id=$1`,[orderId]),
+          `SELECT s.barcode,s.container_code AS "containerCode",
+            COALESCE(c.label,'Recepción anterior sin tipo de tubo') AS "containerLabel",
+            s.sample_type AS "sampleType",s.receipt_note AS "receiptNote",
+            s.registered_at AS "registeredAt",a.email AS "receivedBy"
+           FROM public.vitalia_sil_samples s
+           LEFT JOIN public.vitalia_sil_containers c ON c.code=s.container_code
+           LEFT JOIN public.vitalia_accounts a ON a.id=s.received_by
+           WHERE s.order_id=$1 ORDER BY s.registered_at,s.id`,[orderId]),
+        db.query(
+          `SELECT DISTINCT c.code,c.label
+           FROM public.vitalia_sil_order_exams e
+           JOIN public.vitalia_sil_exam_containers m ON m.exam_code=e.exam_code
+           JOIN public.vitalia_sil_containers c ON c.code=m.container_code
+           WHERE e.order_id=$1 ORDER BY c.code`,[orderId]),
         db.query(
           `SELECT exam_code AS "examCode",analyte,
             numeric_value::float8 AS "numericValue",unit,
-            reference_min::float8 AS "referenceMin",reference_max::float8 AS "referenceMax"
+            reference_min::float8 AS "referenceMin",reference_max::float8 AS "referenceMax",
+            entry_method AS "entryMethod"
            FROM public.vitalia_sil_results WHERE order_id=$1
            ORDER BY exam_code,analyte`,[orderId]),
+        db.query(
+          `SELECT e.action,e.details,e.created_at AS "createdAt",
+                  a.email AS "actorEmail"
+           FROM public.vitalia_sil_audit e
+           JOIN public.vitalia_accounts a ON a.id=e.actor_id
+           WHERE e.order_id=$1 ORDER BY e.created_at,e.id`,[orderId]),
       ]);
       return {order:order.rows[0],exams:exams.rows,
-        sample:sample.rows[0]??null,results:results.rows};
+        sample:samples.rows[0]??null,samples:samples.rows,
+        requiredContainers:required.rows,results:results.rows,audit:audit.rows};
     },
   };
 }
