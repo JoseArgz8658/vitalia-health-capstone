@@ -77,6 +77,10 @@ async function main(){
       "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='033_sil_branches_patient_demo'");
     if(branchVersion.rows.length!==1)
       throw new Error('Falta la migración 033_sil_branches_patient_demo.');
+    const requestVersion=await db.query(
+      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='034_sil_medical_requests_demo'");
+    if(requestVersion.rows.length!==1)
+      throw new Error('Falta la migración 034_sil_medical_requests_demo.');
     const operatorEmail='operador.sil@example.invalid';
     const adminEmail='admin.sil@example.invalid';
     const validatorEmail='validador.sil@example.invalid';
