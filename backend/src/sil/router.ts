@@ -46,6 +46,11 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     if((reportAction||previewAction) && process.env.VITALIA_SIL_DEMO!=='YES'){
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
     }
+    const intakeAction=req.method==='POST' &&
+      /^\/medical-requests\/(?:preview|confirm)$/.test(req.path);
+    if(intakeAction && process.env.VITALIA_SIL_DEMO!=='YES'){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
     const reviewAction=req.method==='POST' &&
       /^\/orders\/[a-f0-9-]{36}\/review$/.test(req.path);
     if((reviewAction && account.role!=='validador_laboratorio') ||
@@ -82,6 +87,52 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
       encodeURIComponent(file.fileName));
     res.set('Content-Length',String(file.bytes.length));
     res.send(file.bytes);
+  });
+  router.post('/medical-requests/preview',
+    express.raw({type:'application/pdf',limit:'2mb'}),async(req,res)=>{
+    if(!Buffer.isBuffer(req.body)){
+      res.status(400).json({error:{code:'INVALID_REQUEST_DOCUMENT'}});return;
+    }
+    let email:string;
+    let fileName:string;
+    try{
+      email=decodeURIComponent(req.get('x-request-patient-email')??'')
+        .toLowerCase().trim();
+      fileName=decodeURIComponent(req.get('x-request-filename')??'');
+    }catch{
+      res.status(400).json({error:{code:'INVALID_REQUEST_DOCUMENT'}});return;
+    }
+    const parsed=z.object({
+      email:z.email().max(254).refine(v=>v.endsWith('@example.invalid')),
+      fileName:z.string().min(5).max(120).regex(/\.pdf$/i)
+        .refine(v=>!/[\/\\\x00-\x1f]/.test(v)),
+    }).safeParse({email,fileName});
+    if(!parsed.success){
+      res.status(400).json({error:{code:'INVALID_REQUEST_DOCUMENT'}});return;
+    }
+    const preview=await service.previewMedicalRequest(
+      res.locals.account.id,parsed.data.email,parsed.data.fileName,req.body);
+    res.json({preview});
+  });
+  router.post('/medical-requests/confirm',async(req,res)=>{
+    const parsed=z.object({
+      previewToken:uuid,
+      patientId:uuid,
+      branchCode:z.string().regex(/^[a-z0-9-]{3,50}$/),
+      examCodes:z.array(z.string().regex(/^[a-z0-9_]{3,40}$/)).min(1).max(6),
+      documentReference:z.string().trim().min(3).max(100),
+      prescriberName:z.string().trim().min(3).max(120),
+      requestDate:z.iso.date(),
+      verified:z.literal(true),
+    }).strict().superRefine((data,ctx)=>{
+      if(new Set(data.examCodes).size!==data.examCodes.length)
+        ctx.addIssue({code:'custom',message:'Prestaciones duplicadas'});
+    }).safeParse(req.body);
+    if(!parsed.success){
+      res.status(400).json({error:{code:'INVALID_REQUEST_CONFIRMATION'}});return;
+    }
+    const result=await service.confirmMedicalRequest(res.locals.account.id,parsed.data);
+    res.status(201).json(result);
   });
   router.get('/branches',async(_req,res)=>{
     res.json(await service.branches());
