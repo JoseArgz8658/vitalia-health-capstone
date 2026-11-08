@@ -26,12 +26,58 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
   final _barcode = TextEditingController();
   final _orderLookup = TextEditingController();
   final _recentOrders = <String>[];
+  List<Map<String, dynamic>> _catalog = [];
+  List<Map<String, dynamic>> _orders = [];
+  final Set<String> _selectedExams = {'hemograma'};
 
   bool _busy = false;
   String? _error;
   String? _message;
   Map<String, dynamic>? _data;
   String? _orderId;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshOverview();
+  }
+
+  Future<void> _refreshOverview() async {
+    try {
+      final catalog = await widget.api.silRequest('/catalog');
+      final orders = await widget.api.silRequest('/orders');
+      if (!mounted) return;
+      setState(() {
+        _catalog = (catalog['exams'] as List? ?? [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+        _orders = (orders['orders'] as List? ?? [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+      });
+    } on AuthFailure catch (error) {
+      if (!mounted) return;
+      if (error.status == 401) {
+        widget.onExpired();
+      } else {
+        setState(() => _error = error.message);
+      }
+    }
+  }
+
+  String _examName(String code) {
+    for (final exam in _catalog) {
+      if (exam['code'] == code) return exam['name'] as String;
+    }
+    return code.replaceAll('_', ' ');
+  }
+
+  String _labelForStatus(String status) => switch (status) {
+    'registered' => 'Registrada',
+    'sampled' => 'Muestra recibida',
+    'results_recorded' => 'Resultados registrados',
+    _ => status,
+  };
 
   @override
   void dispose() {
@@ -101,17 +147,27 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
   };
 
   Future<void> _create() => _run(() async {
-    final id = _patient.text.trim();
-    if (!RegExp(r'^[a-fA-F0-9-]{36}$').hasMatch(id)) {
-      throw const AuthFailure('Ingresa el identificador válido de un paciente registrado.');
+    final email = _patient.text.trim().toLowerCase();
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+      throw const AuthFailure('Ingresa el correo de un paciente registrado.');
     }
+    if (_selectedExams.isEmpty) {
+      throw const AuthFailure('Selecciona al menos un examen.');
+    }
+    final patient = await widget.api.silRequest(
+      '/patients?email=${Uri.encodeQueryComponent(email)}',
+    );
+    final id = (patient['patient'] as Map)['id'] as String;
     final response = await widget.api.silRequest('/orders', body: {
       'patientId': id,
-      'examCode': 'hemograma',
+      'examCodes': _selectedExams.toList()..sort(),
     });
     final orderId = (response['order'] as Map)['id'] as String;
     await _load(orderId);
-    if (mounted) setState(() => _message = 'Orden de hemograma creada correctamente.');
+    await _refreshOverview();
+    if (mounted) {
+      setState(() => _message = 'Orden registrada correctamente.');
+    }
   });
 
   Future<void> _registerSample() => _run(() async {
@@ -123,12 +179,14 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
       'barcode': barcode,
     });
     await _load(_orderId!);
+    await _refreshOverview();
     if (mounted) setState(() => _message = 'Muestra registrada correctamente.');
   });
 
   Future<void> _simulate() => _run(() async {
     await widget.api.silRequest('/orders/$_orderId/simulate', body: {});
     await _load(_orderId!);
+    await _refreshOverview();
     if (mounted) {
       setState(() => _message =
           'Resultados de prueba registrados. No están validados ni publicados.');
@@ -194,7 +252,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
   Widget _resultsTable(List<dynamic> results) {
     final theme = Theme.of(context);
     return _panel(
-      'Resultados del hemograma',
+      'Resultados de la orden',
       'Resultados del analizador de demostración. No constituyen un informe clínico.',
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -206,6 +264,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                 theme.colorScheme.primary.withValues(alpha: 0.06),
               ),
               columns: const [
+                DataColumn(label: Text('Examen')),
                 DataColumn(label: Text('Analito')),
                 DataColumn(label: Text('Resultado')),
                 DataColumn(label: Text('Unidad')),
@@ -214,6 +273,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
               rows: results.map((item) {
                 final value = item as Map;
                 return DataRow(cells: [
+                  DataCell(Text(_examName('${value['examCode'] ?? 'hemograma'}'))),
                   DataCell(Text('${value['analyte']}')),
                   DataCell(Text('${value['numericValue']}')),
                   DataCell(Text('${value['unit']}')),
@@ -267,7 +327,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                   Text('Panel del laboratorio', style: theme.textTheme.headlineMedium),
                   const SizedBox(height: 6),
                   Text(
-                    'Órdenes, recepción de muestras y resultados de hemograma.',
+                    'Órdenes, recepción de muestras y resultados de laboratorio.',
                     style: theme.textTheme.bodyLarge,
                   ),
                   const SizedBox(height: 16),
@@ -276,7 +336,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                     runSpacing: 12,
                     children: [
                       _metric(Icons.assignment_outlined, 'Orden seleccionada',
-                          _orderId == null ? 'Sin seleccionar' : 'Hemograma'),
+                          _orderId == null ? 'Sin seleccionar' : '${(_data?['exams'] as List? ?? []).length} exámenes'),
                       _metric(Icons.fact_check_outlined, 'Estado actual',
                           _statusLabel),
                       _metric(Icons.science_outlined, 'Analitos registrados',
@@ -311,16 +371,43 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                             controller: _patient,
                             enabled: !_busy,
                             decoration: const InputDecoration(
-                              labelText: 'Identificador de paciente (UUID)',
-                              hintText: 'Pegar UUID del paciente de prueba',
+                              labelText: 'Correo del paciente',
+                              hintText: 'paciente.sil@example.invalid',
                               border: OutlineInputBorder(),
                             ),
                           ),
+                          const SizedBox(height: 16),
+                          Text('Exámenes solicitados',
+                              style: theme.textTheme.titleMedium),
+                          const SizedBox(height: 8),
+                          if (_catalog.isEmpty)
+                            const Text('Cargando catálogo de exámenes…')
+                          else
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              children: _catalog.map((exam) {
+                                final code = exam['code'] as String;
+                                return FilterChip(
+                                  label: Text(exam['name'] as String),
+                                  selected: _selectedExams.contains(code),
+                                  onSelected: _busy
+                                      ? null
+                                      : (selected) => setState(() {
+                                          if (selected) {
+                                            _selectedExams.add(code);
+                                          } else {
+                                            _selectedExams.remove(code);
+                                          }
+                                        }),
+                                );
+                              }).toList(),
+                            ),
                           const SizedBox(height: 12),
                           FilledButton.icon(
-                            onPressed: _busy ? null : _create,
+                            onPressed: _busy || _catalog.isEmpty ? null : _create,
                             icon: const Icon(Icons.add_circle_outline),
-                            label: const Text('Crear orden de hemograma'),
+                            label: const Text('Registrar orden'),
                           ),
                         ],
                       ),
@@ -381,6 +468,41 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                       ],
                     );
                   }),
+                  const SizedBox(height: 14),
+                  _panel(
+                    'Órdenes recientes',
+                    'Últimas órdenes registradas en el laboratorio. La consulta es de solo lectura.',
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            onPressed: _busy ? null : _refreshOverview,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Actualizar'),
+                          ),
+                        ),
+                        if (_orders.isEmpty)
+                          const Text('No hay órdenes registradas.')
+                        else
+                          ..._orders.take(10).map((item) {
+                            final id = item['id'] as String;
+                            final codes = (item['examCodes'] as List? ?? [])
+                                .map((code) => _examName('${code}'))
+                                .join(', ');
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(item['patientEmail'] as String? ?? 'Paciente'),
+                              subtitle: Text('${_labelForStatus(item['status'] as String? ?? '')} · ${codes}'),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: _busy ? null : () => _run(() => _load(id)),
+                            );
+                          }),
+                      ],
+                    ),
+                    icon: Icons.list_alt_outlined,
+                  ),
                   if (_orderId != null) ...[
                     const SizedBox(height: 14),
                     _panel(
@@ -391,7 +513,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                         children: [
                           SelectableText('Orden: $_orderId'),
                           const SizedBox(height: 6),
-                          Text('Examen: Hemograma'),
+                          Text('Exámenes: ${(_data?['exams'] as List? ?? []).map((item) => (item as Map)['name']).join(', ')}'),
                           if (current?['createdAt'] != null)
                             Text('Creación: ${current!['createdAt']}'),
                           const SizedBox(height: 6),
@@ -440,8 +562,8 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                           if (_status == 'sampled') ...[
                             const SizedBox(height: 14),
                             const Text(
-                              'El analizador de demostración generará cinco '
-                              'resultados de prueba predeterminados.',
+                              'Se generarán resultados de prueba para cada '
+                              'examen solicitado en la orden.',
                             ),
                             const SizedBox(height: 12),
                             FilledButton.icon(
