@@ -14,12 +14,27 @@ export const localWebCors: RequestHandler = (req, res, next) => {
     const method = req.get('Access-Control-Request-Method');
     const headers = (req.get('Access-Control-Request-Headers') ?? '')
       .toLowerCase().split(',').map(h => h.trim()).filter(Boolean);
+    // Los encabezados adicionales se autorizan solo para la carga PDF
+    // del entorno SIL demo. No se amplía CORS para el resto de la API.
+    const reportUpload = process.env.VITALIA_SIL_DEMO === 'YES' &&
+      /^\/api\/sil\/orders\/[a-f0-9-]{36}\/report$/.test(req.path);
+    const allowed = ['authorization', 'content-type'];
+    if (reportUpload) allowed.push(
+      'x-report-filename',
+      'x-report-branch-code',
+      'x-report-authorized-professional',
+      'x-report-patient-identifier',
+      'x-report-authorization-ref',
+      'x-report-authorized-at',
+      'x-report-patient-confirmed',
+      'x-report-externally-authorized',
+    );
     if (!['GET', 'POST'].includes(method ?? '') ||
-        headers.some(h => !['authorization', 'content-type'].includes(h))) {
+        headers.some(h => !allowed.includes(h))) {
       res.status(403).end(); return;
     }
     res.set('Access-Control-Allow-Methods', 'GET, POST');
-    res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    res.set('Access-Control-Allow-Headers', allowed.join(', '));
     res.status(204).end(); return;
   }
   next();
