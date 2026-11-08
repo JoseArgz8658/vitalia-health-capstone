@@ -329,6 +329,24 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
       req.params.id as string,res.locals.account.id);
     res.status(201).json({publication:published});
   });
+  router.get('/orders/:id/medical-request/file',async(req,res)=>{
+    if(!['operador_laboratorio','validador_laboratorio']
+      .includes(res.locals.account.role)){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    if(!uuid.safeParse(req.params.id).success){
+      res.status(404).json({error:{code:'NOT_FOUND'}});return;
+    }
+    const file=await service.downloadMedicalRequest(
+      req.params.id as string,res.locals.account.id);
+    res.set('Cache-Control','private, no-store');
+    res.set('X-Content-Type-Options','nosniff');
+    res.set('Content-Type','application/pdf');
+    res.set('Content-Disposition',"attachment; filename*=UTF-8''"+
+      encodeURIComponent(file.fileName));
+    res.set('Content-Length',String(file.bytes.length));
+    res.send(file.bytes);
+  });
   router.get('/orders/:id',async(req,res)=>{
     if(!uuid.safeParse(req.params.id).success) {
       res.status(404).json({error:{code:'NOT_FOUND'}});return;
