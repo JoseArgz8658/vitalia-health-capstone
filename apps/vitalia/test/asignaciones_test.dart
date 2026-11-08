@@ -452,6 +452,32 @@ void main() {
     api.close();
   });
 
+  test('chat educativo paciente usa solo ruta de su informe', () async {
+    var calls = 0;
+    final api = await session('paciente', (request) async {
+      calls++;
+      expect(request.method, 'POST');
+      expect(request.url.path, '/api/sil/patient/reports/$id/chat');
+      expect(request.headers['Authorization'], startsWith('Bearer '));
+      expect(jsonDecode(request.body)['question'], '¿Qué es la glicemia?');
+      return http.Response(
+        '{"response":{"answer":"Explicación educativa del concepto.","approved":false}}',
+        200,
+      );
+    });
+    final reply = await api.silRequest('/patient/reports/$id/chat',
+        body: {'question': '¿Qué es la glicemia?'});
+    expect((reply['response'] as Map)['approved'], isFalse);
+    expect(calls, 1);
+    await expectLater(
+      api.silRequest('/patient/reports/$id/chat?other=1',
+          body: {'question': '¿Qué es la glicemia?'}),
+      throwsA(isA<AuthFailure>()),
+    );
+    expect(calls, 1);
+    api.close();
+  });
+
   test('API recibe PDF externo mediante POST binario autenticado', () async {
     var called = false;
     final api = await session('operador_laboratorio', (request) async {
