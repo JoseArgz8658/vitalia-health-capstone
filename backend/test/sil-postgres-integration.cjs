@@ -32,6 +32,9 @@ async function main() {
     const catalogVersion=await db.query(
       "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='027_sil_catalog'");
     assert.equal(catalogVersion.rowCount,1,'Migración 027 ausente');
+    const orderNumberVersion=await db.query(
+      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='028_sil_order_numbers'");
+    assert.equal(orderNumberVersion.rowCount,1,'Migración 028 ausente');
     await db.query(
       `INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code)
        VALUES($1,$2,'synthetic-test-only','paciente'),
@@ -83,6 +86,10 @@ async function main() {
     const multi=await sil.createOrder(patientId,actorId,['hemograma','perfil_lipidico']);
     multiOrderId=multi.id;
     assert.deepEqual(multi.examCodes,['hemograma','perfil_lipidico']);
+    assert.match(multi.orderNumber,/^VH-[0-9]{6,}$/);
+    const summaryBefore=await sil.summary();
+    assert.ok(summaryBefore.summary.total>=3);
+    assert.ok(summaryBefore.summary.pendingSample>=1);
     await sil.registerSample(multiOrderId,'MULTI-'+randomUUID().slice(0,30));
     const multiRecorded=await sil.simulateAnalyzer(multiOrderId);
     assert.equal(multiRecorded.count,9);
@@ -93,6 +100,12 @@ async function main() {
     await assert.rejects(sil.simulateAnalyzer(multiOrderId),SilConflictError);
     const page=await sil.listOrders(20,0);
     assert.ok(page.orders.some(item=>item.id===multiOrderId));
+    const match=await sil.listOrders(20,0,'results_recorded',
+      'sil-ci-'+patientId+'@example.invalid');
+    assert.ok(match.orders.some(item=>item.id===multiOrderId));
+    assert.ok(match.total>=1);
+    const selected=await sil.getOrder(multiOrderId);
+    assert.equal(selected.order.orderNumber,multi.orderNumber);
     const catalog=await sil.catalog();
     assert.equal(catalog.exams.length,6);
     console.log('PRUEBA CATÁLOGO: 6 prestaciones, orden combinada y 9 analitos.');
