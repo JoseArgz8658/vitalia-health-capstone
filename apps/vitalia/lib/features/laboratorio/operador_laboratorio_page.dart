@@ -168,12 +168,21 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     final codes = (selected['exams'] as List? ?? [])
         .map((item) => (item as Map)['code'])
         .toSet();
+    final prior = <String, String>{};
+    if (order['status'] == 'review_rejected') {
+      for (final item in (selected['results'] as List? ?? [])) {
+        final value = item as Map;
+        prior['${value['examCode']}::${value['analyte']}'] =
+            '${value['numericValue']}';
+      }
+    }
     for (final exam in _catalog) {
       if (!codes.contains(exam['code'])) continue;
       for (final analyte in (exam['analytes'] as List? ?? [])) {
         final name = (analyte as Map)['analyte'] as String;
         final code = exam['code'] as String;
-        _manualControllers['$code::$name'] = TextEditingController();
+        _manualControllers['$code::$name'] =
+            TextEditingController(text: prior['$code::$name'] ?? '');
       }
     }
     setState(() {
@@ -181,7 +190,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       _barcodeController.clear();
       _receiptNoteController.clear();
       _containerCode = pending.isEmpty ? null : (pending.first as Map)['code'] as String;
-      _section = order['status'] == 'results_recorded' ? 4 : 3;
+      _section = ['results_recorded', 'review_rejected', 'review_approved']
+          .contains(order['status']) ? 4 : 3;
     });
   }
 
@@ -236,8 +246,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
 
   Future<void> _recordManual() => _run(() async {
     final order = _selected?['order'] as Map?;
-    if (order == null || order['status'] != 'sampled') {
-      throw const AuthFailure('La orden debe tener todas sus muestras recibidas.');
+    if (order == null || !['sampled', 'review_rejected'].contains(order['status'])) {
+      throw const AuthFailure('La orden no está habilitada para ingresar o corregir resultados.');
     }
     final values = <Map<String, dynamic>>[];
     for (final entry in _manualControllers.entries) {
@@ -304,6 +314,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     'registered' => 'Pendiente de muestra',
     'sampled' => 'Pendiente de resultados',
     'results_recorded' => 'Pendiente de revisión',
+    'review_rejected' => 'Devuelta para corrección',
+    'review_approved' => 'Revisión interna aprobada',
     _ => 'Sin estado',
   };
 
@@ -479,6 +491,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             DropdownMenuItem(value: 'registered', child: Text('Pendiente de muestra')),
             DropdownMenuItem(value: 'sampled', child: Text('Pendiente de resultados')),
             DropdownMenuItem(value: 'results_recorded', child: Text('Pendiente de revisión')),
+            DropdownMenuItem(value: 'review_rejected', child: Text('Devueltas para corrección')),
+            DropdownMenuItem(value: 'review_approved', child: Text('Revisión aprobada')),
           ],
           onChanged: (value) {
             setState(() {
@@ -626,6 +640,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     'sample_received' => 'Muestra recibida',
     'results_simulated' => 'Resultados de prueba generados',
     'results_manual' => 'Resultados ingresados manualmente',
+    'results_corrected' => 'Resultados corregidos y reenviados',
+    'review_approved' => 'Revisión interna aprobada',
+    'review_rejected' => 'Orden devuelta con observaciones',
     _ => code,
   };
 
@@ -645,7 +662,11 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                     dense: true,
                     leading: const Icon(Icons.history),
                     title: Text(_auditAction((item as Map)['action'] as String)),
-                    subtitle: Text('${item['actorEmail']} · ${_date(item['createdAt'])}'),
+                    subtitle: Text(
+                      '${item['actorEmail']} · ${_date(item['createdAt'])}'
+                      '${(item['details'] as Map?)?['note'] == null
+                          ? '' : ' · ${(item['details'] as Map)['note']}'}',
+                    ),
                   ),
               ],
             ),
@@ -771,7 +792,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               ),
             ]),
           ],
-          if (status == 'results_recorded') ...[
+          if (['results_recorded','review_rejected','review_approved'].contains(status)) ...[
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () => setState(() => _section = 4),
@@ -849,7 +870,19 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           if (status == 'registered')
             const Text('Primero se deben registrar todos los tubos requeridos '
                 'en la sección Muestras.'),
-          if (status == 'sampled') _manualFields(data),
+          if (status == 'sampled' || status == 'review_rejected') ...[
+            if (status == 'review_rejected') ...[
+              Text(
+                'Devuelta por el responsable de revisión. Corrige los valores '
+                'y registra nuevamente la orden.',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              if (data['latestReview'] is Map)
+                Text('Motivo: ${(data['latestReview'] as Map)['details']?['note'] ?? 'Sin motivo disponible'}'),
+              const SizedBox(height: 15),
+            ],
+            _manualFields(data),
+          ],
           if (results.isNotEmpty)
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
@@ -884,8 +917,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             ),
           if (results.isNotEmpty) ...[
             const SizedBox(height: 14),
-            const Text('Los resultados registrados están pendientes de revisión '
-                'y no se publican en el acceso del paciente.'),
+            const Text('Los resultados registrados permanecen en el sistema '
+                'interno y no se publican en el acceso del paciente.'),
           ],
         ]),
         icon: Icons.fact_check_outlined,
