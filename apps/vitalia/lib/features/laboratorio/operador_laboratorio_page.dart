@@ -30,9 +30,20 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     (Icons.fact_check_outlined, 'Resultados'),
     (Icons.picture_as_pdf_outlined, 'Informes PDF'),
     (Icons.badge_outlined, 'Ficha paciente DEMO'),
+    (Icons.assignment_add_outlined, 'Recibir solicitud'),
   ];
 
   final _patientController = TextEditingController();
+  final _requestPatientEmail = TextEditingController(
+    text:'paciente.sil@example.invalid');
+  final _requestDocumentReference = TextEditingController();
+  final _requestPrescriberName = TextEditingController();
+  XFile? _requestPdf;
+  Map<String,dynamic>? _requestPreview;
+  String? _requestBranchCode;
+  DateTime? _requestDate;
+  final _requestExamCodes=<String>{};
+  bool _requestHumanConfirmed=false;
   final _searchController = TextEditingController();
   final _barcodeController = TextEditingController();
   final _receiptNoteController = TextEditingController();
@@ -88,6 +99,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   @override
   void dispose() {
     _patientController.dispose();
+    _requestPatientEmail.dispose();
+    _requestDocumentReference.dispose();
+    _requestPrescriberName.dispose();
     _searchController.dispose();
     _barcodeController.dispose();
     _receiptNoteController.dispose();
@@ -249,6 +263,92 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           .contains(order['status']) ? 4 : 3;
     });
   }
+
+  Future<void> _selectMedicalRequestPdf() async {
+    try{
+      final file=await openFile(acceptedTypeGroups:const [
+        XTypeGroup(label:'Solicitud médica ficticia PDF',
+          extensions:['pdf'],mimeTypes:['application/pdf']),
+      ]);
+      if(file==null||!mounted)return;
+      final length=await file.length();
+      if(length<8||length>2*1024*1024){
+        setState(()=>_error='La solicitud debe ser un PDF ficticio de hasta 2 MiB.');
+        return;
+      }
+      setState((){
+        _requestPdf=file;
+        _requestPreview=null;
+        _requestHumanConfirmed=false;
+        _requestExamCodes.clear();
+        _error=null;
+      });
+    }catch(_){
+      if(mounted)setState(()=>_error='No se pudo abrir la solicitud PDF.');
+    }
+  }
+
+  Future<void> _previewMedicalRequest() => _run(() async {
+    final file=_requestPdf;
+    if(file==null)throw const AuthFailure('Selecciona una solicitud PDF de prueba.');
+    final result=await widget.api.silPreviewMedicalRequest(
+      email:_requestPatientEmail.text.trim().toLowerCase(),
+      fileName:file.name,bytes:await file.readAsBytes(),
+    );
+    if(!mounted)return;
+    final preview=Map<String,dynamic>.from(result['preview'] as Map);
+    final suggestions=(preview['suggestedExams'] as List? ?? []);
+    setState((){
+      _requestPreview=preview;
+      _requestExamCodes..clear()..addAll(suggestions.map(
+        (item)=>(item as Map)['code'] as String));
+      _requestHumanConfirmed=false;
+      _message=preview['previewToken']!=null
+        ? 'Identidad DEMO cotejada con el documento. Revisa las prestaciones '
+          'y los datos del solicitante antes de crear la orden.'
+        : 'No se pudo cotejar la identidad. No se creará una orden.';
+    });
+  });
+
+  Future<void> _registerFromMedicalRequest() => _run(() async {
+    final preview=_requestPreview;
+    if(preview==null||preview['previewToken'] is! String){
+      throw const AuthFailure('Primero analiza una solicitud con identidad comprobada.');
+    }
+    if(!_requestHumanConfirmed){
+      throw const AuthFailure('El operador debe confirmar todas las comprobaciones.');
+    }
+    if(_requestBranchCode==null||_requestDate==null||
+       _requestExamCodes.isEmpty){
+      throw const AuthFailure('Selecciona sucursal, fecha y prestaciones solicitadas.');
+    }
+    final identity=preview['patient'] as Map;
+    final result=await widget.api.silRequest('/medical-requests/confirm',body:{
+      'previewToken':preview['previewToken'],
+      'patientId':identity['id'],
+      'branchCode':_requestBranchCode,
+      'examCodes':_requestExamCodes.toList()..sort(),
+      'documentReference':_requestDocumentReference.text.trim(),
+      'prescriberName':_requestPrescriberName.text.trim(),
+      'requestDate':_requestDate!.toIso8601String().substring(0,10),
+      'verified':true,
+    });
+    if(!mounted)return;
+    final order=Map<String,dynamic>.from(result['order'] as Map);
+    final id=order['id'] as String;
+    _requestPreview=null;
+    _requestPdf=null;
+    _requestHumanConfirmed=false;
+    _requestExamCodes.clear();
+    _requestDocumentReference.clear();
+    _requestPrescriberName.clear();
+    _requestDate=null;
+    await _openOrder(id);
+    await _refreshAll();
+    if(mounted)setState(()=>_message=
+      'Solicitud ficticia asociada a ${order['orderNumber']}. '
+      'Continúa con las muestras requeridas.');
+  });
 
   Future<void> _createOrder() => _run(() async {
     final email = _patientController.text.trim().toLowerCase();
@@ -860,6 +960,169 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     icon: Icons.assignment_outlined,
   );
 
+  Widget _medicalRequestView() => _panel(
+    'Recepción de solicitud de exámenes',
+    'Vincula una solicitud médica ficticia a una orden interna. '
+    'Los datos del paciente deben constar en una ficha previamente registrada.',
+    Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+      Text('1. Identificar paciente y cargar solicitud',
+        style:Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height:8),
+      TextField(
+        controller:_requestPatientEmail,
+        enabled:!_busy && _requestPreview==null,
+        decoration:const InputDecoration(
+          labelText:'Correo de la cuenta ficticia del paciente',
+          border:OutlineInputBorder(),
+          helperText:'El correo localiza la ficha; no confirma por sí solo la identidad.',
+        ),
+      ),
+      const SizedBox(height:12),
+      Wrap(spacing:10,runSpacing:8,children:[
+        OutlinedButton.icon(
+          onPressed:_busy?null:_selectMedicalRequestPdf,
+          icon:const Icon(Icons.attach_file),
+          label:Text(_requestPdf?.name??'Seleccionar solicitud PDF'),
+        ),
+        FilledButton.tonalIcon(
+          onPressed:_busy||_requestPdf==null?null:_previewMedicalRequest,
+          icon:const Icon(Icons.document_scanner_outlined),
+          label:const Text('Revisar texto de la solicitud'),
+        ),
+      ]),
+      const SizedBox(height:10),
+      const Text('El sistema detecta prestaciones del catálogo por texto '
+        'y coteja identificador DEMO, nombres y fecha de nacimiento. '
+        'No verifica firmas ni habilitación profesional. '
+        'Un PDF escaneado sin texto deberá procesarse con OCR en una versión posterior.'),
+      if(_requestPreview!=null)...[
+        const Divider(height:28),
+        Text('2. Comprobación de identidad',
+          style:Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height:8),
+        Text('Paciente: ${(_requestPreview!['patient'] as Map)['givenNames']} '
+          '${(_requestPreview!['patient'] as Map)['familyNames']} '
+          '(${(_requestPreview!['patient'] as Map)['identifier']})'),
+        const SizedBox(height:6),
+        for(final check in <(String,bool)>[
+          ('Identificador ficticio',(_requestPreview!['identity'] as Map)['identifierMatches']==true),
+          ('Nombres',(_requestPreview!['identity'] as Map)['givenNamesMatch']==true),
+          ('Apellidos',(_requestPreview!['identity'] as Map)['familyNamesMatch']==true),
+          ('Fecha de nacimiento',(_requestPreview!['identity'] as Map)['birthDateMatches']==true),
+        ])
+          Padding(padding:const EdgeInsets.only(bottom:5),
+            child:Row(children:[
+              Icon(check.$2?Icons.check_circle:Icons.error_outline,
+                color:check.$2?Colors.green:Theme.of(context).colorScheme.error,
+                size:20),
+              const SizedBox(width:8),
+              Text(check.$1),
+            ])),
+        for(final warning in (_requestPreview!['warnings'] as List? ?? []))
+          Padding(padding:const EdgeInsets.symmetric(vertical:3),
+            child:Text(warning.toString(),style:TextStyle(
+              color:Theme.of(context).colorScheme.error))),
+        if(_requestPreview!['previewToken']!=null)...[
+          const Divider(height:30),
+          Text('3. Revisar solicitud y prestaciones',
+            style:Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height:12),
+          DropdownButtonFormField<String>(
+            value:_requestBranchCode,
+            isExpanded:true,
+            decoration:const InputDecoration(
+              labelText:'Sucursal que recibe la solicitud',
+              border:OutlineInputBorder()),
+            items:[
+              for(final branch in _branches)
+                DropdownMenuItem<String>(
+                  value:branch['code'] as String,
+                  child:Text('${branch['laboratoryName']} · ${branch['branchName']}',
+                    overflow:TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged:_busy?null:(value)=>
+              setState(()=>_requestBranchCode=value),
+          ),
+          const SizedBox(height:12),
+          TextField(
+            controller:_requestPrescriberName,
+            maxLength:120,
+            decoration:const InputDecoration(
+              labelText:'Profesional solicitante según documento',
+              helperText:'Transcribir del original. No comprueba matrícula ni firma.',
+              border:OutlineInputBorder()),
+          ),
+          const SizedBox(height:12),
+          TextField(
+            controller:_requestDocumentReference,
+            maxLength:100,
+            decoration:const InputDecoration(
+              labelText:'Número o referencia de solicitud',
+              border:OutlineInputBorder()),
+          ),
+          const SizedBox(height:12),
+          OutlinedButton.icon(
+            onPressed:_busy?null:() async {
+              final date=await showDatePicker(
+                context:context,firstDate:DateTime(2000),
+                lastDate:DateTime.now(),
+                initialDate:_requestDate??DateTime.now(),
+                helpText:'Fecha indicada en la solicitud médica',
+              );
+              if(mounted&&date!=null)setState(()=>_requestDate=date);
+            },
+            icon:const Icon(Icons.event),
+            label:Text(_requestDate==null?'Elegir fecha de solicitud':
+              '${_requestDate!.day.toString().padLeft(2,'0')}/'
+              '${_requestDate!.month.toString().padLeft(2,'0')}/'
+              '${_requestDate!.year}'),
+          ),
+          const SizedBox(height:14),
+          Text('Prestaciones solicitadas (revisar en el PDF)',
+            style:Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height:8),
+          Wrap(spacing:8,runSpacing:7,children:[
+            for(final exam in _catalog)
+              FilterChip(
+                label:Text(exam['name'] as String),
+                selected:_requestExamCodes.contains(exam['code']),
+                onSelected:_busy?null:(value)=>setState((){
+                  final code=exam['code'] as String;
+                  if(value && _requestExamCodes.length<6)
+                    _requestExamCodes.add(code);
+                  if(!value)_requestExamCodes.remove(code);
+                  _requestHumanConfirmed=false;
+                }),
+              ),
+          ]),
+          const SizedBox(height:12),
+          CheckboxListTile(
+            value:_requestHumanConfirmed,
+            onChanged:_busy?null:(value)=>
+              setState(()=>_requestHumanConfirmed=value??false),
+            controlAffinity:ListTileControlAffinity.leading,
+            title:const Text(
+              'Confirmo que cotejé el PDF original, los datos de identidad, '
+              'el profesional solicitante, la fecha y las prestaciones '
+              'seleccionadas. Todos los datos son ficticios.'),
+          ),
+          const SizedBox(height:12),
+          Align(alignment:Alignment.centerLeft,
+            child:FilledButton.icon(
+              onPressed:_busy||!_requestHumanConfirmed||
+                  _requestExamCodes.isEmpty?null:_registerFromMedicalRequest,
+              icon:const Icon(Icons.assignment_turned_in_outlined),
+              label:const Text('Crear orden interna desde la solicitud'),
+            )),
+        ] else
+          const Text('No es posible crear una orden mientras existan discrepancias '
+            'de identidad. Revisa la ficha y el documento original.'),
+      ],
+    ]),
+    icon:Icons.assignment_add_outlined,
+  );
+
   Widget _newOrderView() => _panel(
     'Nueva orden de exámenes',
     'Selecciona un paciente existente y las prestaciones que se realizarán.',
@@ -933,6 +1196,14 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 6),
       Text('Paciente: ${order['patientEmail'] ?? '—'}'),
+      if(_selected?['medicalRequest'] is Map) ...[
+        Text('Solicitud recibida: '
+          '${(_selected!['medicalRequest'] as Map)['documentReference']}'),
+        Text('Procedencia: '
+          '${(_selected!['medicalRequest'] as Map)['branchName']}'),
+        Text('Profesional solicitante indicado: '
+          '${(_selected!['medicalRequest'] as Map)['prescriberName']}'),
+      ],
       Text('Creación: ${_date(order['createdAt'])}'),
       Text('Estado: ${_statusLabel(order['status'] as String?)}'),
       const SizedBox(height: 8),
@@ -943,6 +1214,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
 
   String _auditAction(String code) => switch (code) {
     'order_created' => 'Orden registrada',
+    'medical_request_received' => 'Solicitud médica ficticia recibida',
     'sample_received' => 'Muestra recibida',
     'results_simulated' => 'Resultados de prueba generados',
     'results_manual' => 'Resultados registrados por operador',
@@ -1563,7 +1835,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     3 => _samplesView(),
     4 => _resultsView(),
     5 => _reportsView(),
-    _ => _demoPatientView(),
+    6 => _demoPatientView(),
+    _ => _medicalRequestView(),
   };
 
   Widget _content() {
