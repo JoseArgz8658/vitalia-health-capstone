@@ -38,6 +38,9 @@ async function main() {
     const traceVersion=await db.query(
       "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='029_sil_traceability'");
     assert.equal(traceVersion.rowCount,1,'Migración 029 ausente');
+    const reviewVersion=await db.query(
+      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='030_sil_review_workflow'");
+    assert.equal(reviewVersion.rowCount,1,'Migración 030 ausente');
     await db.query(
       `INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code)
        VALUES($1,$2,'synthetic-test-only','paciente'),
@@ -80,6 +83,16 @@ async function main() {
     assert.ok(complete.results.every(v=>v.entryMethod==='manual'));
     assert.deepEqual(complete.audit.map(v=>v.action),[
       'order_created','sample_received','results_manual']);
+    const approved=await sil.reviewOrder(orderId,actorId,'approve','Revisión interna de prueba.');
+    assert.equal(approved.status,'review_approved');
+    await assert.rejects(
+      sil.reviewOrder(orderId,actorId,'return','Segunda decisión no permitida.'),SilConflictError);
+    const afterApproval=await sil.getOrder(orderId);
+    assert.equal(afterApproval.order.status,'review_approved');
+    assert.equal(afterApproval.latestReview.actorEmail,
+      'sil-ci-'+actorId+'@example.invalid');
+    assert.deepEqual(afterApproval.audit.map(v=>v.action),[
+      'order_created','sample_received','results_manual','review_approved']);
     console.log('PRUEBA SIL: orden, tubo EDTA, 5 resultados manuales y auditoría.');
     // Segundo circuito, independiente: el simulador genera cinco resultados ficticios.
     const simulatedOrder=await sil.createOrder(patientId,actorId);
@@ -95,6 +108,24 @@ async function main() {
     assert.equal(simulatedRead.results.length,5);
     assert.equal(simulatedRead.order.synthetic,true);
     await assert.rejects(sil.simulateAnalyzer(simulatedOrderId,actorId),SilConflictError);
+    const returned=await sil.reviewOrder(simulatedOrderId,actorId,'return',
+      'Verificar los valores registrados antes de aprobar.');
+    assert.equal(returned.status,'review_rejected');
+    const corrected=await sil.recordManualResults(simulatedOrderId,[
+      {examCode:'hemograma',analyte:'Eritrocitos',numericValue:4.8},
+      {examCode:'hemograma',analyte:'Hematocrito',numericValue:40},
+      {examCode:'hemograma',analyte:'Hemoglobina',numericValue:13.3},
+      {examCode:'hemograma',analyte:'Leucocitos',numericValue:7},
+      {examCode:'hemograma',analyte:'Plaquetas',numericValue:248},
+    ],actorId);
+    assert.equal(corrected.count,5);
+    const corrections=await sil.getOrder(simulatedOrderId);
+    const changeEvent=corrections.audit.find(v=>v.action==='results_corrected');
+    assert.equal(changeEvent.details.previousResults.length,5);
+    assert.equal(corrections.latestReview.details.decision,'return');
+    assert.equal(corrections.order.status,'results_recorded');
+    await sil.reviewOrder(simulatedOrderId,actorId,'approve','Valores corregidos.');
+    assert.equal((await sil.getOrder(simulatedOrderId)).order.status,'review_approved');
     console.log('PRUEBA ANALIZADOR: muestra, 5 resultados sintéticos y segundo intento rechazado.');
 
     const multi=await sil.createOrder(patientId,actorId,['hemograma','perfil_lipidico']);
