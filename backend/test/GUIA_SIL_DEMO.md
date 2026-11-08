@@ -45,7 +45,11 @@ if (-not (Test-Path $secretPath)) {
 
 La estación de trabajo del operador ahora ofrece navegación por Resumen, Órdenes, Nueva orden, Muestras y Resultados. El resumen lee métricas agregadas de PostgreSQL; la tabla permite buscar correo/número VH-000001/UUID, filtrar por estado y avanzar por páginas de 20 registros.
 
-La migración `028_sil_order_numbers` añade un correlativo de orden legible y conserva los UUID como claves internas. **No activar el backend actualizado hasta completar también la migración 028 exclusivamente en `vitalia_dev`.** No ejecutar migraciones sobre la base principal.
+La migración `028_sil_order_numbers` añade un correlativo de orden legible y conserva los UUID como claves internas.
+
+La migración **`029_sil_traceability`** separa los tubos EDTA, suero y fluoruro por orden, mantiene registros anteriores como `historical`, agrega la cuenta responsable de la recepción, el origen del resultado y eventos de auditoría de las operaciones nuevas. No borra muestras ni resultados anteriores. Una orden nueva con hemograma y perfil lipídico necesita un tubo EDTA y uno de suero. El registro manual exige todos los analitos de las prestaciones solicitadas y toma las unidades del catálogo; no habilita validación clínica.
+
+**No iniciar el backend actualizado antes de aplicar la migración 029 exclusivamente en `vitalia_dev`.** **No activar el backend actualizado hasta completar también la migración 028 exclusivamente en `vitalia_dev`.** No ejecutar migraciones sobre la base principal.
 
 Las contraseñas se conservan en el archivo local. Al reiniciar Docker, las cuentas se mantienen en PostgreSQL y el script de inicio reutiliza los correos. Si se reconstruye la base aislada, se regeneran las mismas credenciales desde el archivo local, siempre que se vuelvan a aplicar las migraciones.
 
@@ -59,7 +63,7 @@ npm --prefix .\backend run build
 npm --prefix .\backend test
 ```
 
-**Detenerse si falla el compilador o las pruebas.** Después aplicar todas las migraciones, incluidas `027_sil_catalog` y `028_sil_order_numbers`, en `vitalia_dev` usando la misma red Docker aislada. No se debe cambiar `PGDATABASE` por `vitalia`.
+**Detenerse si falla el compilador o las pruebas.** Después aplicar todas las migraciones, incluidas `027_sil_catalog`, `028_sil_order_numbers` y `029_sil_traceability`, en `vitalia_dev` usando la misma red Docker aislada. No se debe cambiar `PGDATABASE` por `vitalia`.
 
 ```powershell
 $distPath = (Resolve-Path ".\backend\dist").Path
