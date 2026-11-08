@@ -1141,7 +1141,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             'de identidad. Revisa la ficha y el documento original.'),
       ],
     ]),
-    icon:Icons.assignment_add_outlined,
+    icon:Icons.assignment_outlined,
   );
 
   Widget _newOrderView() => _panel(
