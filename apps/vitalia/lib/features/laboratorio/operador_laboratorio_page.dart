@@ -621,32 +621,125 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     ],
   );
 
+  String _auditAction(String code) => switch (code) {
+    'order_created' => 'Orden registrada',
+    'sample_received' => 'Muestra recibida',
+    'results_simulated' => 'Resultados de prueba generados',
+    'results_manual' => 'Resultados ingresados manualmente',
+    _ => code,
+  };
+
+  Widget _auditTrail(Map<String, dynamic> data) {
+    final audit = data['audit'] as List? ?? [];
+    return _panel(
+      'Historial de actividad',
+      'Registro de acciones, fecha y cuenta responsable.',
+      audit.isEmpty
+          ? const Text('Sin eventos de auditoría para esta orden.')
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final item in audit)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    leading: const Icon(Icons.history),
+                    title: Text(_auditAction((item as Map)['action'] as String)),
+                    subtitle: Text('${item['actorEmail']} · ${_date(item['createdAt'])}'),
+                  ),
+              ],
+            ),
+      icon: Icons.history_outlined,
+    );
+  }
+
   Widget _samplesView() {
     final data = _selected;
     if (data == null) return _withoutOrder('Recepción de muestras');
     final order = Map<String, dynamic>.from(data['order'] as Map);
-    final sample = data['sample'] as Map?;
     final status = order['status'] as String?;
+    final samples = data['samples'] as List? ?? [];
+    final required = data['requiredContainers'] as List? ?? [];
+    final received = samples
+        .map((entry) => (entry as Map)['containerCode'])
+        .toSet();
+    final pending = required
+        .where((entry) => !received.contains((entry as Map)['code']))
+        .toList();
+
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _panel(
         'Recepción y seguimiento de muestras',
-        'Registro de una muestra sanguínea por orden en esta etapa.',
+        'Cada orden debe contar con los tubos requeridos antes de registrar resultados.',
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _orderHeader(order),
-          if (sample != null) ...[
-            const Divider(height: 30),
-            Text('Código de muestra: ${sample['barcode']}'),
-            Text('Recepción: ${_date(sample['registeredAt'])}'),
-            Text('Tipo: Sangre venosa'),
+          const Divider(height: 30),
+          Text('Tubos requeridos', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final container in required)
+              Chip(
+                avatar: Icon(
+                  received.contains((container as Map)['code'])
+                      ? Icons.check_circle_outline
+                      : Icons.hourglass_empty,
+                  size: 17,
+                ),
+                label: Text('${container['label']} · '
+                    '${received.contains(container['code']) ? 'Recibido' : 'Pendiente'}'),
+              ),
+          ]),
+          if (samples.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('Recepciones registradas',
+                style: Theme.of(context).textTheme.titleMedium),
+            for (final entry in samples)
+              ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.inventory_2_outlined),
+                title: Text('${(entry as Map)['barcode']} · ${entry['containerLabel']}'),
+                subtitle: Text('${_date(entry['registeredAt'])} · '
+                    '${entry['receivedBy'] ?? 'Registro anterior'}'
+                    '${entry['receiptNote'] == null ? '' : ' · ${entry['receiptNote']}'}'),
+              ),
           ],
-          if (status == 'registered') ...[
-            const SizedBox(height: 20),
+          if (status == 'registered' && pending.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            DropdownButtonFormField<String>(
+              value: _containerCode,
+              decoration: const InputDecoration(
+                labelText: 'Tipo de tubo pendiente',
+                border: OutlineInputBorder(),
+              ),
+              items: [
+                for (final container in pending)
+                  DropdownMenuItem(
+                    value: (container as Map)['code'] as String,
+                    child: Text(container['label'] as String),
+                  ),
+              ],
+              onChanged: _busy ? null : (value) => setState(() => _containerCode = value),
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: _barcodeController,
               enabled: !_busy,
+              textCapitalization: TextCapitalization.characters,
               decoration: const InputDecoration(
                 labelText: 'Código de muestra',
                 hintText: 'LAB-2026-001',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _receiptNoteController,
+              maxLength: 300,
+              maxLines: 2,
+              enabled: !_busy,
+              decoration: const InputDecoration(
+                labelText: 'Observación de recepción (opcional)',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -656,23 +749,27 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               child: FilledButton.icon(
                 onPressed: _busy ? null : _receiveSample,
                 icon: const Icon(Icons.inventory_2_outlined),
-                label: const Text('Registrar recepción'),
+                label: const Text('Registrar recepción del tubo'),
               ),
             ),
           ],
           if (status == 'sampled') ...[
-            const SizedBox(height: 20),
-            const Text('Los datos del catálogo se utilizarán para registrar '
-                'resultados de prueba de los exámenes solicitados.'),
+            const SizedBox(height: 18),
+            const Text('Los tubos requeridos están registrados. Puedes ingresar '
+                'los resultados manualmente o generar resultados de prueba.'),
             const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.icon(
+            Wrap(spacing: 12, runSpacing: 10, children: [
+              FilledButton.icon(
+                onPressed: _busy ? null : () => setState(() => _section = 4),
+                icon: const Icon(Icons.edit_note_outlined),
+                label: const Text('Ingresar resultados manualmente'),
+              ),
+              OutlinedButton.icon(
                 onPressed: _busy ? null : _processSample,
                 icon: const Icon(Icons.science_outlined),
-                label: const Text('Procesar resultados de prueba'),
+                label: const Text('Generar resultados de prueba'),
               ),
-            ),
+            ]),
           ],
           if (status == 'results_recorded') ...[
             const SizedBox(height: 12),
@@ -685,6 +782,54 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         ]),
         icon: Icons.science_outlined,
       ),
+      const SizedBox(height: 14),
+      _auditTrail(data),
+    ]);
+  }
+
+  Widget _manualFields(Map<String, dynamic> data) {
+    final selectedCodes = (data['exams'] as List? ?? [])
+        .map((item) => (item as Map)['code']).toSet();
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Text('Registro manual de resultados',
+          style: Theme.of(context).textTheme.titleLarge),
+      const SizedBox(height: 6),
+      const Text('Ingresa todos los valores del catálogo. '
+          'La unidad y la referencia se toman del sistema y no se editan.'),
+      const SizedBox(height: 16),
+      for (final exam in _catalog)
+        if (selectedCodes.contains(exam['code'])) ...[
+          Text(exam['name'] as String,
+              style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Wrap(spacing: 12, runSpacing: 12, children: [
+            for (final analyte in (exam['analytes'] as List? ?? []))
+              SizedBox(
+                width: 245,
+                child: TextField(
+                  controller: _manualControllers[
+                      '${exam['code']}::${(analyte as Map)['analyte']}'],
+                  enabled: !_busy,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true, signed: true),
+                  decoration: InputDecoration(
+                    labelText: '${analyte['analyte']}',
+                    helperText: 'Unidad: ${analyte['unit']}',
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ),
+          ]),
+          const SizedBox(height: 18),
+        ],
+      Align(
+        alignment: Alignment.centerLeft,
+        child: FilledButton.icon(
+          onPressed: _busy || _manualControllers.isEmpty ? null : _recordManual,
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('Registrar resultados'),
+        ),
+      ),
     ]);
   }
 
@@ -692,46 +837,62 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     final data = _selected;
     if (data == null) return _withoutOrder('Resultados');
     final order = Map<String, dynamic>.from(data['order'] as Map);
+    final status = order['status'] as String?;
     final results = data['results'] as List? ?? [];
-    return _panel(
-      'Resultados de la orden',
-      'Consulta interna. La validación y publicación clínica no están habilitadas.',
-      Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _orderHeader(order),
-        const SizedBox(height: 18),
-        if (results.isEmpty)
-          const Text('No hay resultados registrados para esta orden.')
-        else
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
-              columns: const [
-                DataColumn(label: Text('Examen')),
-                DataColumn(label: Text('Analito')),
-                DataColumn(label: Text('Valor')),
-                DataColumn(label: Text('Unidad')),
-                DataColumn(label: Text('Referencia de prueba')),
-              ],
-              rows: results.map((item) {
-                final row = item as Map;
-                return DataRow(cells: [
-                  DataCell(Text(_examName('${row['examCode'] ?? ''}'))),
-                  DataCell(Text('${row['analyte']}')),
-                  DataCell(Text('${row['numericValue']}')),
-                  DataCell(Text('${row['unit']}')),
-                  DataCell(Text(
-                    '${row['referenceMin'] ?? '—'} – ${row['referenceMax'] ?? '—'}',
-                  )),
-                ]);
-              }).toList(),
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _panel(
+        'Resultados de la orden',
+        'Consulta interna. La revisión y publicación clínica no están habilitadas.',
+        Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _orderHeader(order),
+          const SizedBox(height: 18),
+          if (status == 'registered')
+            const Text('Primero se deben registrar todos los tubos requeridos '
+                'en la sección Muestras.'),
+          if (status == 'sampled') _manualFields(data),
+          if (results.isNotEmpty)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: const [
+                  DataColumn(label: Text('Examen')),
+                  DataColumn(label: Text('Analito')),
+                  DataColumn(label: Text('Valor')),
+                  DataColumn(label: Text('Unidad')),
+                  DataColumn(label: Text('Origen')),
+                  DataColumn(label: Text('Referencia de prueba')),
+                ],
+                rows: results.map((item) {
+                  final row = item as Map;
+                  final source = switch (row['entryMethod']) {
+                    'manual' => 'Manual',
+                    'simulated' => 'Prueba automática',
+                    _ => 'Registro anterior',
+                  };
+                  return DataRow(cells: [
+                    DataCell(Text(_examName('${row['examCode'] ?? ''}'))),
+                    DataCell(Text('${row['analyte']}')),
+                    DataCell(Text('${row['numericValue']}')),
+                    DataCell(Text('${row['unit']}')),
+                    DataCell(Text(source)),
+                    DataCell(Text(
+                      '${row['referenceMin'] ?? '—'} – ${row['referenceMax'] ?? '—'}',
+                    )),
+                  ]);
+                }).toList(),
+              ),
             ),
-          ),
-        const SizedBox(height: 14),
-        const Text('Los resultados de prueba aún no constituyen informes '
-            'clínicos validados ni son visibles para pacientes.'),
-      ]),
-      icon: Icons.fact_check_outlined,
-    );
+          if (results.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            const Text('Los resultados registrados están pendientes de revisión '
+                'y no se publican en el acceso del paciente.'),
+          ],
+        ]),
+        icon: Icons.fact_check_outlined,
+      ),
+      const SizedBox(height: 14),
+      _auditTrail(data),
+    ]);
   }
 
   Widget _bodyForSection() => switch (_section) {
