@@ -4,7 +4,7 @@
 // Nunca imprime contraseñas ni elimina las cuentas al reiniciarse.
 const express=require('express');
 const {Pool}=require('pg');
-const {randomUUID,randomBytes}=require('node:crypto');
+const {randomUUID}=require('node:crypto');
 const {createAuthRouter}=require('../dist/auth/router');
 const {createSilRouter}=require('../dist/sil/router');
 const {createSilService}=require('../dist/sil/service');
@@ -24,11 +24,12 @@ async function main(){
   const operatorPassword=process.env.VITALIA_SIL_OPERATOR_PASSWORD;
   const adminPassword=process.env.VITALIA_SIL_ADMIN_PASSWORD;
   const validatorPassword=process.env.VITALIA_SIL_VALIDATOR_PASSWORD;
-  if(!operatorPassword || !adminPassword || !validatorPassword ||
+  const patientPassword=process.env.VITALIA_SIL_PATIENT_PASSWORD;
+  if(!operatorPassword || !adminPassword || !validatorPassword || !patientPassword ||
      operatorPassword.length<16 || adminPassword.length<16 ||
-     validatorPassword.length<16 ||
-     new Set([operatorPassword,adminPassword,validatorPassword]).size!==3) {
-    throw new Error('Configura tres contraseñas locales distintas de al menos 16 caracteres.');
+     validatorPassword.length<16 || patientPassword.length<16 ||
+     new Set([operatorPassword,adminPassword,validatorPassword,patientPassword]).size!==4) {
+    throw new Error('Configura cuatro contraseñas locales distintas de al menos 16 caracteres.');
   }
   const db=new Pool({host:'postgres',port:5432,database:'vitalia_dev',
     user:'vitalia',password:process.env.PGPASSWORD,max:3,
@@ -69,9 +70,9 @@ async function main(){
     if(version.rows.length!==1)
       throw new Error('Falta la migración 027_sil_catalog.');
     const reviewVersion=await db.query(
-      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='030_sil_review_workflow'");
+      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='031_sil_external_reports'");
     if(reviewVersion.rows.length!==1)
-      throw new Error('Falta la migración 030_sil_review_workflow.');
+      throw new Error('Falta la migración 031_sil_external_reports.');
     const operatorEmail='operador.sil@example.invalid';
     const adminEmail='admin.sil@example.invalid';
     const validatorEmail='validador.sil@example.invalid';
@@ -79,15 +80,8 @@ async function main(){
     await ensureAccount(operatorEmail,'operador_laboratorio',operatorPassword);
     await ensureAccount(adminEmail,'administrador',adminPassword);
     await ensureAccount(validatorEmail,'validador_laboratorio',validatorPassword);
-    const patient=await db.query(
-      'SELECT id,role_code FROM public.vitalia_accounts WHERE email=$1',[patientEmail]);
-    let patientId;
-    if(patient.rows.length) {
-      if(patient.rows[0].role_code!=='paciente') throw new Error('Rol paciente inesperado.');
-      patientId=patient.rows[0].id;
-    } else {
-      patientId=await ensureAccount(patientEmail,'paciente',randomBytes(32).toString('hex'));
-    }
+    const patientId=await ensureAccount(
+      patientEmail,'paciente',patientPassword);
 
     const authenticate=await createCredentialAuthenticator(db);
     const auth={
