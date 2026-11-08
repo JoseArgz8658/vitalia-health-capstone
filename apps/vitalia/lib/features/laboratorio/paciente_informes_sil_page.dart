@@ -139,7 +139,11 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       setState(() {
         final turns = _conversations.putIfAbsent(reportId, () => []);
         turns.add({'role': 'user', 'text': question});
-        turns.add({'role': 'assistant', 'text': answer});
+        turns.add({
+          'role': 'assistant',
+          'text': answer,
+          'source': response['source'] as String? ?? 'catalogo',
+        });
         if (turns.length > 20) turns.removeRange(0, turns.length - 20);
         _question.clear();
       });
@@ -190,7 +194,21 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                     : Theme.of(context).colorScheme.surface,
                 child: Padding(
                   padding: const EdgeInsets.all(12),
-                  child: Text(turn['text'] ?? ''),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (turn['role'] == 'assistant') ...[
+                        Text(
+                          turn['source'] == 'modelo_local'
+                              ? 'Modelo de IA local'
+                              : 'Biblioteca educativa de Vitalia',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                        const SizedBox(height: 5),
+                      ],
+                      Text(turn['text'] ?? ''),
+                    ],
+                  ),
                 ),
               ),
             ),
