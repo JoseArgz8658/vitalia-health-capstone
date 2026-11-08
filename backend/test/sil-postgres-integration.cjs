@@ -17,7 +17,7 @@ async function main() {
   const db = new Pool({host:'postgres',port:5432,database:'vitalia_dev',
     user:'vitalia',password:process.env.PGPASSWORD,max:2,
     connectionTimeoutMillis:5000,statement_timeout:10000});
-  const patientId = randomUUID(), actorId = randomUUID();
+  const patientId = randomUUID(), actorId = randomUUID(), outsiderPatientId=randomUUID();
   let orderId=null;
   let simulatedOrderId=null;
   let multiOrderId=null;
@@ -48,9 +48,11 @@ async function main() {
     await db.query(
       `INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code)
        VALUES($1,$2,'synthetic-test-only','paciente'),
-             ($3,$4,'synthetic-test-only','administrador')`,
+             ($3,$4,'synthetic-test-only','administrador'),
+             ($5,$6,'synthetic-test-only','paciente')`,
       [patientId,'sil-ci-'+patientId+'@example.invalid',
-       actorId,'sil-ci-'+actorId+'@example.invalid']);
+       actorId,'sil-ci-'+actorId+'@example.invalid',
+       outsiderPatientId,'sil-ci-'+outsiderPatientId+'@example.invalid']);
     const sil=createSilService(db);
     await assert.rejects(sil.createOrder(actorId,actorId),SilNotFoundError);
     const order=await sil.createOrder(patientId,actorId);
@@ -195,8 +197,8 @@ async function main() {
     const own=await sil.listPatientReports(patientId);
     assert.equal(own.reports.length,1);
     assert.equal(own.reports[0].id,receivedPdf.id);
-    assert.equal((await sil.listPatientReports(actorId)).reports.length,0);
-    await assert.rejects(sil.downloadPatientReport(actorId,receivedPdf.id),SilNotFoundError);
+    assert.equal((await sil.listPatientReports(outsiderPatientId)).reports.length,0);
+    await assert.rejects(sil.downloadPatientReport(outsiderPatientId,receivedPdf.id),SilNotFoundError);
     const privatePdf=await sil.downloadPatientReport(patientId,receivedPdf.id);
     assert.deepEqual(privatePdf.bytes,fakePdf);
     assert.equal(privatePdf.fileName,'informe-demo.pdf');
@@ -218,8 +220,8 @@ async function main() {
         await db.query('DELETE FROM public.vitalia_sil_orders WHERE id=$1',[id]);
       }
       // La migración 017 crea roles automáticamente por trigger; primero eliminar dependientes.
-      await db.query('DELETE FROM public.vitalia_account_roles WHERE account_id=ANY($1::uuid[])',[[patientId,actorId]]);
-      await db.query('DELETE FROM public.vitalia_accounts WHERE id=ANY($1::uuid[])',[[patientId,actorId]]);
+      await db.query('DELETE FROM public.vitalia_account_roles WHERE account_id=ANY($1::uuid[])',[[patientId,actorId,outsiderPatientId]]);
+      await db.query('DELETE FROM public.vitalia_accounts WHERE id=ANY($1::uuid[])',[[patientId,actorId,outsiderPatientId]]);
       const remaining=await db.query(
         `SELECT
           (SELECT COUNT(*)::int FROM public.vitalia_sil_orders WHERE id=ANY($1::uuid[])) AS orders,
