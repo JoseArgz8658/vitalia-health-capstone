@@ -37,6 +37,10 @@ function setup(role) {
     registerSample: jest.fn(async () => ({id: actorId})),
     recordResults: jest.fn(async () => ({orderId:actorId,status:'results_recorded'})),
     recordManualResults: jest.fn(async () => ({orderId:actorId,status:'results_recorded'})),
+    previewResultsFile: jest.fn(async()=>({
+      state:'ready',items:[],warnings:[],generatedBy:'ai_draft',confirmed:false,
+      previewToken:actorId,
+    })),
     simulateAnalyzer: jest.fn(async () => ({orderId:actorId,count:9})),
     getOrder: jest.fn(async () => ({order:{id:actorId},exams:[],results:[]})),
     reviewOrder: jest.fn(async (_order,_actor,decision) => ({orderId:actorId,decision})),
@@ -114,6 +118,30 @@ describe('SIL: permisos y catálogo multiprestación', () => {
     expect(service.recordManualResults).toHaveBeenCalledTimes(1);
     await authorized(request(app).post('/api/sil/orders/'+actorId+'/results'))
       .send({results:[{...results[0],numericValue:NaN}]}).expect(400);
+  });
+  test('solo operador carga PDF a vista previa sin persistir resultados',async()=>{
+    const operator=setup('operador_laboratorio');
+    const payload=Buffer.from('%PDF-1.4\\n%%EOF');
+    const path='/api/sil/orders/'+actorId+'/results/preview';
+    const response=await authorized(request(operator.app).post(path)
+      .set('Content-Type','application/pdf')).send(payload).expect(200);
+    expect(response.body.preview.confirmed).toBe(false);
+    expect(operator.service.previewResultsFile).toHaveBeenCalledWith(
+      actorId,expect.any(Buffer),actorId);
+    expect(operator.service.recordManualResults).not.toHaveBeenCalled();
+    await authorized(request(operator.app).post(path)
+      .send({fileName:'fake.pdf'})).expect(400);
+    const validator=setup('validador_laboratorio');
+    await authorized(request(validator.app).post(path)
+      .set('Content-Type','application/pdf')).send(payload).expect(403);
+    const patient=setup('paciente');
+    await authorized(request(patient.app).post(path)
+      .set('Content-Type','application/pdf')).send(payload).expect(403);
+    const results=[{examCode:'glicemia',analyte:'Glucosa',numericValue:91}];
+    await authorized(request(operator.app).post('/api/sil/orders/'+actorId+'/results')
+      .send({results,previewToken:actorId})).expect(201);
+    expect(operator.service.recordManualResults).toHaveBeenLastCalledWith(
+      actorId,results,actorId,actorId);
   });
   test('operador no puede duplicar prestaciones',async () => {
     const {app,service}=setup('operador_laboratorio');
