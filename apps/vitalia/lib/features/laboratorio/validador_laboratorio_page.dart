@@ -295,6 +295,22 @@ class _ValidadorLaboratorioPageState extends State<ValidadorLaboratorioPage> {
     subtitle: 'Consulta de resultados registrados, sin acceso a crear órdenes ni muestras.',
   );
 
+  DataRow _resultRow(Map row) {
+    final value = (row['numericValue'] as num?)?.toDouble();
+    final min = (row['referenceMin'] as num?)?.toDouble();
+    final max = (row['referenceMax'] as num?)?.toDouble();
+    final outside = value != null &&
+        ((min != null && value < min) || (max != null && value > max));
+    return DataRow(cells: [
+      DataCell(Text('${row['examCode']}')),
+      DataCell(Text('${row['analyte']}')),
+      DataCell(Text('${row['numericValue']}')),
+      DataCell(Text('${row['unit']}')),
+      DataCell(Text('${min ?? '—'} – ${max ?? '—'}')),
+      DataCell(Text(outside ? 'Revisar valor' : '—')),
+    ]);
+  }
+
   Widget _detailView() {
     final data = _detail;
     if (data == null) {
@@ -349,25 +365,7 @@ class _ValidadorLaboratorioPageState extends State<ValidadorLaboratorioPage> {
               DataColumn(label: Text('Referencia de prueba')),
               DataColumn(label: Text('Observación')),
             ],
-            rows: [
-              for (final item in results)
-                (() {
-                  final row = item as Map;
-                  final value = (row['numericValue'] as num?)?.toDouble();
-                  final min = (row['referenceMin'] as num?)?.toDouble();
-                  final max = (row['referenceMax'] as num?)?.toDouble();
-                  final outside = value != null &&
-                      ((min != null && value < min) || (max != null && value > max));
-                  return DataRow(cells: [
-                    DataCell(Text('${row['examCode']}')),
-                    DataCell(Text('${row['analyte']}')),
-                    DataCell(Text('${row['numericValue']}')),
-                    DataCell(Text('${row['unit']}')),
-                    DataCell(Text('${min ?? '—'} – ${max ?? '—'}')),
-                    DataCell(Text(outside ? 'Revisar valor' : '—')),
-                  ]);
-                })(),
-            ],
+            rows: [for (final item in results) _resultRow(item as Map)],
           ),
         ),
         const SizedBox(height: 16),
