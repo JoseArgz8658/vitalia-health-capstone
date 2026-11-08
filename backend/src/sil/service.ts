@@ -1,6 +1,6 @@
 import {SIL_ANALYZER_ID} from './analyzer';
 import {randomUUID} from 'node:crypto';
-import {type Pool} from 'pg';
+import {type Pool,type PoolClient} from 'pg';
 
 export class SilConflictError extends Error {}
 export class SilNotFoundError extends Error {}
@@ -13,7 +13,20 @@ export interface SilResultInput {
   referenceMax?: number | null;
 }
 
+export interface SilManualInput {
+  examCode:string;
+  analyte:string;
+  numericValue:number;
+}
 export function createSilService(db: Pool) {
+  async function appendAudit(client:PoolClient,orderId:string,actorId:string,
+    action:'order_created'|'sample_received'|'results_simulated'|'results_manual',
+    details:Record<string,string|number>) {
+    await client.query(
+      `INSERT INTO public.vitalia_sil_audit
+       (id,order_id,actor_id,action,details) VALUES($1,$2,$3,$4,$5::jsonb)`,
+      [randomUUID(),orderId,actorId,action,JSON.stringify(details)]);
+  }
   return {
     async catalog() {
       const [exams,analytes] = await Promise.all([
@@ -55,6 +68,7 @@ export function createSilService(db: Pool) {
             `INSERT INTO public.vitalia_sil_order_exams(order_id,exam_code) VALUES($1,$2)`,
             [id,code]);
         }
+        await appendAudit(client,id,actorId,'order_created',{exams:examCodes.length});
         await client.query('COMMIT');
         return {...result.rows[0],examCodes};
       } catch(error) {
@@ -123,28 +137,60 @@ export function createSilService(db: Pool) {
         pageArgs);
       return {orders:result.rows,limit,offset,total:count.rows[0].total};
     },
-    async registerSample(orderId: string, barcode: string) {
-      const client = await db.connect();
-      let failed = false;
+    async registerSample(orderId:string,barcode:string,containerCode:string,
+      actorId:string,receiptNote?:string) {
+      const client=await db.connect();
+      let failed=false;
       try {
         await client.query('BEGIN');
-        const updated = await client.query(
-          `UPDATE public.vitalia_sil_orders SET status='sampled'
-           WHERE id=$1 AND status='registered' RETURNING id`,[orderId]);
-        if (!updated.rows.length) throw new SilConflictError();
-        const id = randomUUID();
-        await client.query(
-          `INSERT INTO public.vitalia_sil_samples(id,order_id,barcode)
-           VALUES($1,$2,$3)`,[id,orderId,barcode]);
+        const order=await client.query<{status:string}>(
+          `SELECT status FROM public.vitalia_sil_orders WHERE id=$1 FOR UPDATE`,[orderId]);
+        if(!order.rows.length) throw new SilNotFoundError();
+        if(order.rows[0].status!=='registered') throw new SilConflictError();
+        const required=await client.query<{containerCode:string}>(
+          `SELECT DISTINCT m.container_code AS "containerCode"
+           FROM public.vitalia_sil_order_exams e
+           JOIN public.vitalia_sil_exam_containers m ON m.exam_code=e.exam_code
+           WHERE e.order_id=$1`,[orderId]);
+        if(!required.rows.some(row=>row.containerCode===containerCode))
+          throw new SilConflictError();
+        const id=randomUUID();
+        const inserted=await client.query<{registeredAt:Date}>(
+          `INSERT INTO public.vitalia_sil_samples
+           (id,order_id,barcode,container_code,received_by,receipt_note)
+           VALUES($1,$2,$3,$4,$5,$6) RETURNING registered_at AS "registeredAt"`,
+          [id,orderId,barcode,containerCode,actorId,receiptNote??null]);
+        const outstanding=await client.query<{pending:number}>(
+          `SELECT COUNT(*)::int AS pending
+           FROM (
+             SELECT DISTINCT m.container_code
+             FROM public.vitalia_sil_order_exams e
+             JOIN public.vitalia_sil_exam_containers m ON m.exam_code=e.exam_code
+             WHERE e.order_id=$1
+           ) required
+           WHERE NOT EXISTS (
+             SELECT 1 FROM public.vitalia_sil_samples s
+             WHERE s.order_id=$1 AND s.container_code=required.container_code
+           )`,[orderId]);
+        const status=outstanding.rows[0].pending===0?'sampled':'registered';
+        if(status==='sampled'){
+          await client.query(
+            `UPDATE public.vitalia_sil_orders SET status='sampled'
+             WHERE id=$1 AND status='registered'`,[orderId]);
+        }
+        await appendAudit(client,orderId,actorId,'sample_received',
+          {container:containerCode,remaining:outstanding.rows[0].pending});
         await client.query('COMMIT');
-        return {id,orderId,barcode};
-      } catch (error) {
-        try { await client.query('ROLLBACK'); } catch {failed=true;}
-        if ((error as {code?:string}).code==='23505') throw new SilConflictError();
+        return {id,orderId,barcode,containerCode,status,
+          registeredAt:inserted.rows[0].registeredAt};
+      }catch(error){
+        try{await client.query('ROLLBACK');}catch{failed=true;}
+        if((error as {code?:string}).code==='23505') throw new SilConflictError();
         throw error;
-      } finally {client.release(failed);}
+      }finally{client.release(failed);}
     },
-    async recordResults(orderId: string, results: SilResultInput[]) {
+    async recordResults(orderId:string,results:SilResultInput[],
+      actorId:string,source:'manual'|'simulated'='simulated') {
       const client = await db.connect();
       let failed = false;
       try {
@@ -161,11 +207,13 @@ export function createSilService(db: Pool) {
         for (const item of results) {
           await client.query(
             `INSERT INTO public.vitalia_sil_results
-             (id,order_id,exam_code,analyte,numeric_value,unit,reference_min,reference_max)
-             VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
+             (id,order_id,exam_code,analyte,numeric_value,unit,reference_min,reference_max,entry_method)
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
             [randomUUID(),orderId,item.examCode??'hemograma',item.analyte,
-              item.numericValue,item.unit,item.referenceMin??null,item.referenceMax??null]);
+              item.numericValue,item.unit,item.referenceMin??null,item.referenceMax??null,source]);
         }
+        await appendAudit(client,orderId,actorId,
+          source==='manual'?'results_manual':'results_simulated',{count:results.length});
         await client.query('COMMIT');
         return {orderId,status:'results_recorded',count:results.length,synthetic:true};
       } catch (error) {
@@ -174,7 +222,35 @@ export function createSilService(db: Pool) {
         throw error;
       } finally {client.release(failed);}
     },
-    async simulateAnalyzer(orderId: string) {
+    async recordManualResults(orderId:string,values:SilManualInput[],actorId:string) {
+      const expected=await db.query<{
+        examCode:string;analyte:string;unit:string;
+        referenceMin:number|null;referenceMax:number|null;
+      }>(
+        `SELECT e.exam_code AS "examCode",a.analyte,a.unit,
+           a.reference_min::float8 AS "referenceMin",
+           a.reference_max::float8 AS "referenceMax"
+         FROM public.vitalia_sil_order_exams e
+         JOIN public.vitalia_sil_exam_analytes a ON a.exam_code=e.exam_code
+         WHERE e.order_id=$1 ORDER BY e.exam_code,a.analyte`,[orderId]);
+      if(!expected.rows.length || values.length!==expected.rows.length)
+        throw new SilConflictError();
+      const provided=new Map<string,number>();
+      for(const value of values){
+        const key=value.examCode+'\u0000'+value.analyte;
+        if(provided.has(key))throw new SilConflictError();
+        provided.set(key,value.numericValue);
+      }
+      const records:SilResultInput[]=[];
+      for(const item of expected.rows){
+        const key=item.examCode+'\u0000'+item.analyte;
+        const value=provided.get(key);
+        if(value===undefined)throw new SilConflictError();
+        records.push({...item,numericValue:value});
+      }
+      return this.recordResults(orderId,records,actorId,'manual');
+    },
+    async simulateAnalyzer(orderId: string,actorId:string) {
       // Solo plantillas sintéticas del catálogo. No conecta con equipos médicos.
       const data=await db.query<{
         examCode:string;analyte:string;unit:string;numericValue:number;
@@ -188,7 +264,7 @@ export function createSilService(db: Pool) {
          JOIN public.vitalia_sil_exam_analytes a ON a.exam_code=e.exam_code
          WHERE e.order_id=$1 ORDER BY e.exam_code,a.analyte`,[orderId]);
       if (!data.rows.length) throw new SilConflictError();
-      const recorded=await this.recordResults(orderId,data.rows);
+      const recorded=await this.recordResults(orderId,data.rows,actorId,'simulated');
       const requested=new Set(data.rows.map(item=>item.examCode));
       const analyzerId=requested.size===1&&requested.has('hemograma')
         ? SIL_ANALYZER_ID : 'simulador-paneles-v1';
