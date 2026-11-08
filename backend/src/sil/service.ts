@@ -349,7 +349,7 @@ export function createSilService(db: Pool) {
       fileName:string;issuingLaboratory:string;authorizationReference:string;
       externallyAuthorizedAt:string;patientMatchConfirmed:true;
     },bytes:Buffer) {
-      if(bytes.length<8 || bytes.length>2*1024*1024)
+      if(!input.patientMatchConfirmed || bytes.length<8 || bytes.length>2*1024*1024)
         throw new SilConflictError();
       identifyDocument(bytes,'application/pdf',input.fileName);
       const date=new Date(input.externallyAuthorizedAt);
