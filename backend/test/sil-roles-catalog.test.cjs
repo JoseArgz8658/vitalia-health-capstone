@@ -22,6 +22,12 @@ function setup(role) {
   };
   const service = {
     catalog: jest.fn(async () => ({exams: []})),
+    branches: jest.fn(async () => ({branches:[{code:'perez-vitacura',
+      branchName:'Vitacura',laboratoryName:'Laboratorio Pérez (ficticio)'}]})),
+    patientProfileDemo: jest.fn(async () => ({patient:{id:patientId,
+      email:'paciente.sil@example.invalid',syntheticIdentifier:'DEMO-0001'}})),
+    savePatientProfileDemo: jest.fn(async () => ({patient:{id:patientId,
+      email:'paciente.sil@example.invalid',syntheticIdentifier:'DEMO-0001'}})),
     summary: jest.fn(async () => ({summary:{total:2,pendingSample:1,pendingResults:1,pendingReview:0,patients:1}})),
     listOrders: jest.fn(async () => ({orders: []})),
     findPatientByEmail: jest.fn(async (email) => ({id: patientId, email})),
@@ -162,13 +168,51 @@ describe('SIL: permisos y catálogo multiprestación', () => {
     expect(service.reviewOrder).toHaveBeenCalledWith(
       actorId,actorId,'return','Revisar valores del hemograma.');
   });
+  test('el operador usa solo sucursales y fichas sintéticas',async () => {
+    const operator=setup('operador_laboratorio');
+    const branches=await authorized(request(operator.app)
+      .get('/api/sil/branches')).expect(200);
+    expect(branches.body.branches[0].code).toBe('perez-vitacura');
+    await authorized(request(operator.app)
+      .get('/api/sil/patients/profile')
+      .query({email:'paciente.sil@example.invalid'})).expect(200);
+    const demo={
+      email:'paciente.sil@example.invalid',
+      syntheticIdentifier:'DEMO-0001',
+      givenNames:'Paciente Ficticio',
+      familyNames:'Prueba',
+      birthDate:'1990-01-01',
+      sexForReference:'not_specified',
+      contactPhoneDemo:'000000000',
+      syntheticConfirmed:true,
+    };
+    await authorized(request(operator.app)
+      .post('/api/sil/patients/profile')).send(demo).expect(200);
+    expect(operator.service.savePatientProfileDemo).toHaveBeenCalled();
+    await authorized(request(operator.app)
+      .post('/api/sil/patients/profile'))
+      .send({...demo,email:'persona@gmail.com'}).expect(400);
+    await authorized(request(operator.app)
+      .post('/api/sil/patients/profile'))
+      .send({...demo,syntheticIdentifier:'11111111-1'}).expect(400);
+    await authorized(request(operator.app)
+      .post('/api/sil/patients/profile'))
+      .send({...demo,syntheticConfirmed:false}).expect(400);
+    await authorized(request(setup('validador_laboratorio').app)
+      .post('/api/sil/patients/profile')).send(demo).expect(403);
+    await authorized(request(setup('paciente').app)
+      .get('/api/sil/patients/profile')
+      .query({email:'paciente.sil@example.invalid'})).expect(403);
+  });
   test('operador incorpora informe PDF externo y lo publica con confirmación',async () => {
     const {app,service}=setup('operador_laboratorio');
     const pdf=Buffer.from('%PDF-1.4\\n%%EOF');
     const res=await authorized(request(app).post('/api/sil/orders/'+actorId+'/report'))
       .set('Content-Type','application/pdf')
       .set('x-report-filename','informe.pdf')
-      .set('x-report-issuer','Laboratorio ejemplo')
+      .set('x-report-branch-code','perez-vitacura')
+      .set('x-report-authorized-professional','Profesional Ficticio')
+      .set('x-report-patient-identifier','DEMO-0001')
       .set('x-report-authorization-ref','LAB-REFERENCIA-01')
       .set('x-report-authorized-at','2026-11-01T12:00:00Z')
       .set('x-report-patient-confirmed','true')
@@ -188,7 +232,9 @@ describe('SIL: permisos y catálogo multiprestación', () => {
     await authorized(request(app).post('/api/sil/orders/'+actorId+'/report'))
       .set('Content-Type','application/pdf')
       .set('x-report-filename','informe.pdf')
-      .set('x-report-issuer','Laboratorio ejemplo')
+      .set('x-report-branch-code','perez-vitacura')
+      .set('x-report-authorized-professional','Profesional Ficticio')
+      .set('x-report-patient-identifier','DEMO-0001')
       .set('x-report-authorization-ref','REF-01')
       .set('x-report-authorized-at','2026-11-01')
       .set('x-report-externally-authorized','true')
