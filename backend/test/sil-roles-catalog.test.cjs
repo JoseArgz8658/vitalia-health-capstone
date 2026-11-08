@@ -43,6 +43,7 @@ function setup(role) {
     attachExternalReport: jest.fn(async () => ({id:actorId,status:'report_attached'})),
     publishExternalReport: jest.fn(async () => ({status:'report_published'})),
     listPatientReports: jest.fn(async () => ({reports:[{id:actorId}]})),
+    askPatientReport: jest.fn(async () => ({answer:'Concepto educativo de prueba.',source:'catalogo',approved:false})),
     downloadPatientReport: jest.fn(async () => ({
       fileName:'informe.pdf',bytes:Buffer.from('%PDF-1.4\\n%%EOF'),
     })),
@@ -256,6 +257,23 @@ describe('SIL: permisos y catálogo multiprestación', () => {
     await authorized(request(setup('administrador').app)
       .get('/api/sil/patient/reports')).expect(403);
     await authorized(request(patient.app).get('/api/sil/orders')).expect(403);
+  });
+  test('paciente consulta IA solo sobre su informe publicado con sesión',async () => {
+    const patient=setup('paciente');
+    const path='/api/sil/patient/reports/'+actorId+'/chat';
+    const answer=await authorized(request(patient.app).post(path))
+      .send({question:'¿Qué es la glicemia?'}).expect(200);
+    expect(answer.body.response.answer).toContain('educativo');
+    expect(patient.service.askPatientReport).toHaveBeenCalledWith(
+      actorId,actorId,'¿Qué es la glicemia?');
+    await authorized(request(patient.app).post(path))
+      .send({question:'a'}).expect(400);
+    await authorized(request(patient.app).post(path))
+      .send({question:'¿Qué es la glicemia?',patientId}).expect(400);
+    await authorized(request(setup('operador_laboratorio').app).post(path))
+      .send({question:'¿Qué es la glicemia?'}).expect(403);
+    await request(patient.app).post(path)
+      .send({question:'¿Qué es la glicemia?'}).expect(401);
   });
   test('se requiere token de sesión para consultar',async () => {
     const {app}=setup('operador_laboratorio');
