@@ -18,7 +18,12 @@ export const localWebCors: RequestHandler = (req, res, next) => {
     // del entorno SIL demo. No se amplía CORS para el resto de la API.
     const reportUpload = process.env.VITALIA_SIL_DEMO === 'YES' &&
       /^\/api\/sil\/orders\/[a-f0-9-]{36}\/report$/.test(req.path);
+    const medicalRequestUpload=process.env.VITALIA_SIL_DEMO==='YES' &&
+      req.path==='/api/sil/medical-requests/preview';
     const allowed = ['authorization', 'content-type'];
+    if(medicalRequestUpload)allowed.push(
+      'x-request-patient-email','x-request-filename',
+    );
     if (reportUpload) allowed.push(
       'x-report-filename',
       'x-report-branch-code',
