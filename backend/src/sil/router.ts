@@ -44,13 +44,19 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
   router.get('/catalog',async(_req,res)=>{
     res.json(await service.catalog());
   });
+  router.get('/summary',async(_req,res)=>{
+    res.json(await service.summary());
+  });
   router.get('/orders',async(req,res)=>{
     const data=z.object({
       limit:z.coerce.number().int().min(1).max(50).default(20),
       offset:z.coerce.number().int().min(0).max(10000).default(0),
+      status:z.enum(['registered','sampled','results_recorded']).optional(),
+      search:z.string().trim().min(1).max(100).optional(),
     }).strict().safeParse(req.query);
     if(!data.success) {res.status(400).json({error:{code:'INVALID_PAGE'}});return;}
-    res.json(await service.listOrders(data.data.limit,data.data.offset));
+    res.json(await service.listOrders(
+      data.data.limit,data.data.offset,data.data.status,data.data.search));
   });
   router.post('/orders',async(req,res)=>{
     const data=z.object({
