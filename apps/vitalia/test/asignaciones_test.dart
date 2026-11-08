@@ -478,6 +478,56 @@ void main() {
     api.close();
   });
 
+  test('lectura de solicitud médica envía PDF sin crear una orden', () async {
+    var calls=0;
+    final api=await session('operador_laboratorio',(request) async {
+      calls++;
+      expect(request.method,'POST');
+      expect(request.url.path,'/api/sil/medical-requests/preview');
+      expect(request.headers['content-type'],'application/pdf');
+      expect(request.headers['x-request-patient-email'],
+        'paciente.sil%40example.invalid');
+      expect(request.headers['x-request-filename'],'solicitud-demo.pdf');
+      expect(request.bodyBytes,isNotEmpty);
+      return http.Response('{"preview":{"confirmed":false,'
+        '"state":"requires_operator_review",'
+        '"previewToken":"$id","suggestedExams":[]}}',200);
+    });
+    final preview=await api.silPreviewMedicalRequest(
+      email:'paciente.sil@example.invalid',
+      fileName:'solicitud-demo.pdf',
+      bytes:Uint8List.fromList([37,80,68,70,45,49,46,52,10,37,37,69,79,70]),
+    );
+    expect((preview['preview'] as Map)['confirmed'],isFalse);
+    expect(calls,1);
+    api.close();
+  });
+
+  test('confirmación manual de solicitud utiliza ruta autenticada', () async {
+    var calls=0;
+    final api=await session('operador_laboratorio',(request) async {
+      calls++;
+      expect(request.url.path,'/api/sil/medical-requests/confirm');
+      expect(request.method,'POST');
+      final payload=jsonDecode(request.body) as Map;
+      expect(payload['verified'],isTrue);
+      expect(payload['patientId'],id);
+      expect(payload['examCodes'],['glicemia','hba1c']);
+      return http.Response('{"order":{"id":"$id","status":"registered"}}',201);
+    });
+    final reply=await api.silRequest('/medical-requests/confirm',body:{
+      'previewToken':id,'patientId':id,'branchCode':'perez-las-condes',
+      'examCodes':['glicemia','hba1c'],
+      'documentReference':'SOL-DEMO-01',
+      'prescriberName':'Profesional Ficticio',
+      'requestDate':'2026-11-01',
+      'verified':true,
+    });
+    expect((reply['order'] as Map)['status'],'registered');
+    expect(calls,1);
+    api.close();
+  });
+
   test('previsualizar PDF de resultados exige sesión y no guarda datos', () async {
     var calls=0;
     final api=await session('operador_laboratorio',(request) async {
