@@ -41,7 +41,9 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     }
     const reportAction=req.method==='POST' &&
       (/^\/orders\/[a-f0-9-]{36}\/report(?:\/publish)?$/.test(req.path));
-    if(reportAction && process.env.VITALIA_SIL_DEMO!=='YES'){
+    const previewAction=req.method==='POST' &&
+      /^\/orders\/[a-f0-9-]{36}\/results\/preview$/.test(req.path);
+    if((reportAction||previewAction) && process.env.VITALIA_SIL_DEMO!=='YES'){
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
     }
     const reviewAction=req.method==='POST' &&
@@ -173,8 +175,21 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
       data.data.receiptNote);
     res.status(201).json({sample});
   });
+  router.post('/orders/:id/results/preview',
+    express.raw({type:'application/pdf',limit:'2mb'}),async(req,res)=>{
+    if(!uuid.safeParse(req.params.id).success ||
+       !Buffer.isBuffer(req.body)){
+      res.status(400).json({error:{code:'INVALID_PDF_PREVIEW'}});return;
+    }
+    const preview=await service.previewResultsFile(
+      req.params.id as string,req.body,res.locals.account.id);
+    res.json({preview});
+  });
   router.post('/orders/:id/results',async(req,res)=>{
-    const data=z.object({results:z.array(resultSchema).min(1).max(30)}).strict()
+    const data=z.object({
+      results:z.array(resultSchema).min(1).max(30),
+      previewToken:uuid.optional(),
+    }).strict()
       .superRefine((value,ctx)=>{
         const names=value.results.map(v=>`${v.examCode}:${v.analyte.toLowerCase()}`);
         if(new Set(names).size!==names.length)
@@ -183,8 +198,11 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     if(!uuid.safeParse(req.params.id).success||!data.success) {
       res.status(400).json({error:{code:'INVALID_RESULTS'}});return;
     }
-    const recorded=await service.recordManualResults(req.params.id as string,
-      data.data.results,res.locals.account.id);
+    const recorded=data.data.previewToken
+      ? await service.recordManualResults(req.params.id as string,
+        data.data.results,res.locals.account.id,data.data.previewToken)
+      : await service.recordManualResults(req.params.id as string,
+        data.data.results,res.locals.account.id);
     res.status(201).json({result:recorded});
   });
   router.post('/orders/:id/simulate',async(req,res)=>{
