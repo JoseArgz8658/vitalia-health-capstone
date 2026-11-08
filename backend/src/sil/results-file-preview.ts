@@ -131,12 +131,17 @@ export function createSilResultsFilePreview(db:Pick<Pool,'query'>,options:{
       }
       // Un número aislado en el documento no prueba que corresponda a este analito.
       // Exigimos que nombre y cifra aparezcan juntos en al menos una línea de texto.
-      const names=[item.analyte,row.nombre];
+      const names=[item.analyte,row.nombre].filter(
+        (name):name is string=>name!==null);
       const compact=(raw:string)=>raw.normalize('NFD').replace(/[\u0300-\u036f]/g,'')
         .toLowerCase().replace(/[^a-z0-9.,+-]/g,'');
+      const normalizedValue=row.valor!.replace(',','.');
+      const regexEscape=(value:string)=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      const valueToken=new RegExp(
+        `(^|[^0-9.,])${regexEscape(row.valor!)}(?=$|[^0-9.,])`);
       const sourceContainsPair=text.split(/\r?\n/).some(line=>
         names.some(name=>compact(line).includes(compact(name)))&&
-        line.includes(row.valor!));
+        valueToken.test(line));
       if(!sourceContainsPair){
         item.warning='No se pudo comprobar el analito junto a su cifra en el PDF. Revisa manualmente.';
         continue;
