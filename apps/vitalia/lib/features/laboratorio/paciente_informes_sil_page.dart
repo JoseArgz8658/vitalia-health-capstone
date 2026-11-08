@@ -27,6 +27,17 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
   bool _loading = true;
   String? _downloading;
   String? _error;
+  final _question = TextEditingController();
+  final Map<String, List<Map<String, String>>> _conversations = {};
+  String? _activeChatReport;
+  String? _chatBusyReport;
+  String? _chatError;
+
+  @override
+  void dispose() {
+    _question.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -95,6 +106,132 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     } finally {
       if (mounted) setState(() => _downloading = null);
     }
+  }
+
+  void _toggleChat(String reportId) {
+    if (_chatBusyReport != null) return;
+    setState(() {
+      _activeChatReport = _activeChatReport == reportId ? null : reportId;
+      _question.clear();
+      _chatError = null;
+    });
+  }
+
+  Future<void> _askChat(String reportId) async {
+    final question = _question.text.trim();
+    if (_chatBusyReport != null || question.length < 3 || question.length > 400)
+      return;
+    setState(() {
+      _chatBusyReport = reportId;
+      _chatError = null;
+    });
+    try {
+      final result = await widget.api.silRequest(
+        '/patient/reports/$reportId/chat',
+        body: {'question': question},
+      );
+      if (!mounted || !widget.api.hasSession) return;
+      final response = Map<String, dynamic>.from(result['response'] as Map);
+      final answer = response['answer'] as String?;
+      if (answer == null || answer.isEmpty) {
+        throw const AuthFailure('El asistente no entregó una respuesta válida.');
+      }
+      setState(() {
+        final turns = _conversations.putIfAbsent(reportId, () => []);
+        turns.add({'role': 'user', 'text': question});
+        turns.add({'role': 'assistant', 'text': answer});
+        if (turns.length > 20) turns.removeRange(0, turns.length - 20);
+        _question.clear();
+      });
+    } on AuthFailure catch (error) {
+      if (!mounted) return;
+      if (error.status == 401) {
+        widget.onExpired();
+      } else {
+        setState(() => _chatError = error.message);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _chatError =
+          'No se pudo completar la consulta educativa. Prueba nuevamente.');
+      }
+    } finally {
+      if (mounted) setState(() => _chatBusyReport = null);
+    }
+  }
+
+  Widget _chatPanel(Map<String, dynamic> report) {
+    final id = report['id'] as String;
+    final turns = _conversations[id] ?? const <Map<String, String>>[];
+    final working = _chatBusyReport == id;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Divider(height: 30),
+        Text('Asistente educativo — IA local',
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 6),
+        const Text(
+          'Pregunta qué significa un examen o para qué se mide. '
+          'El asistente conoce las prestaciones de esta orden, pero '
+          'todavía NO lee los valores del PDF. No realiza diagnósticos '
+          'ni prescribe tratamientos.',
+        ),
+        const SizedBox(height: 12),
+        for (final turn in turns) ...[
+          Align(
+            alignment: turn['role'] == 'user'
+                ? Alignment.centerRight : Alignment.centerLeft,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 700),
+              child: Card(
+                color: turn['role'] == 'user'
+                    ? Theme.of(context).colorScheme.primaryContainer
+                    : Theme.of(context).colorScheme.surface,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(turn['text'] ?? ''),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 5),
+        ],
+        if (_chatError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            child: Text(_chatError!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ),
+        TextField(
+          controller: _question,
+          maxLength: 400,
+          maxLines: 2,
+          enabled: _chatBusyReport == null,
+          decoration: const InputDecoration(
+            labelText: 'Consulta educativa sobre este examen',
+            hintText: '¿Qué es la glicemia?',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: _chatBusyReport == null ? () => _askChat(id) : null,
+            icon: const Icon(Icons.chat_bubble_outline),
+            label: Text(working ? 'Consultando…' : 'Preguntar al asistente'),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Orientación educativa, no validada clínicamente. '
+          'Para conocer tus cifras consulta el PDF original. '
+          'El historial de esta conversación no se guarda en la base de datos.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
   }
 
   String _date(Object? source) {
@@ -185,6 +322,20 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                                     ? 'Preparando descarga…' : 'Descargar PDF'),
                               ),
                             ),
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: OutlinedButton.icon(
+                                onPressed: _chatBusyReport != null
+                                    ? null : () => _toggleChat(report['id'] as String),
+                                icon: const Icon(Icons.smart_toy_outlined),
+                                label: Text(_activeChatReport == report['id']
+                                    ? 'Cerrar asistente educativo'
+                                    : 'Consultar con IA educativa'),
+                              ),
+                            ),
+                            if (_activeChatReport == report['id'])
+                              _chatPanel(report),
                           ],
                         ),
                       ),
