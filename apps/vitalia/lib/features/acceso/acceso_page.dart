@@ -10,9 +10,11 @@ class AccesoPage extends StatefulWidget {
     this.onAuthenticated,
     this.notice,
     this.adminMode = false,
+    this.laboratoryMode = false,
   });
   final AuthApi? api;
   final bool adminMode;
+  final bool laboratoryMode;
   final String? notice;
   final ValueChanged<Map<String, dynamic>>? onAuthenticated;
   @override
@@ -48,7 +50,9 @@ class _AccesoPageState extends State<AccesoPage> {
       final user = await widget.api!.login(
         _correo.text,
         _clave.text,
-        mode: widget.adminMode
+        mode: widget.laboratoryMode
+            ? 'operador_laboratorio'
+            : widget.adminMode
             ? 'administrador'
             : _professionalMode
             ? 'profesional'
@@ -131,7 +135,9 @@ class _AccesoPageState extends State<AccesoPage> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            widget.adminMode
+                            widget.laboratoryMode
+                                ? 'Acceso del laboratorio'
+                                : widget.adminMode
                                 ? 'Acceso de administración'
                                 : _professionalMode
                                 ? 'Acceso de profesionales'
@@ -139,7 +145,7 @@ class _AccesoPageState extends State<AccesoPage> {
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
-                          if (!widget.adminMode)
+                          if (!widget.adminMode && !widget.laboratoryMode)
                             TextButton.icon(
                               onPressed: _busy
                                   ? null
@@ -227,7 +233,7 @@ class _AccesoPageState extends State<AccesoPage> {
                               ],
                             ),
                           ),
-                          if (!widget.adminMode && !_professionalMode)
+                          if (!widget.adminMode && !widget.laboratoryMode && !_professionalMode)
                             TextButton(
                               onPressed: _busy || widget.api == null
                                   ? null
@@ -238,6 +244,14 @@ class _AccesoPageState extends State<AccesoPage> {
                                       ),
                                     ),
                               child: const Text('Crear cuenta de paciente'),
+                            ),
+                          if (!widget.adminMode && !widget.laboratoryMode)
+                            TextButton.icon(
+                              onPressed: _busy
+                                  ? null
+                                  : () => Navigator.of(context).pushNamed('/laboratorio'),
+                              icon: const Icon(Icons.science_outlined),
+                              label: const Text('Acceso del personal de laboratorio'),
                             ),
                           TextButton(
                             onPressed: () => showDialog<void>(
