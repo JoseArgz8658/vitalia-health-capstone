@@ -2,6 +2,7 @@ import 'assistant_failure_message.dart';
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -48,7 +49,7 @@ class AuthApi {
   }) async {
     final uri = Uri.tryParse(path);
     final validPath = RegExp(
-      r'^/(?:catalog|summary|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results|review))?)?|patients)$',
+      r'^/(?:catalog|summary|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results|review|report(?:/publish)?))?)?|patients|patient/reports(?:/[a-f0-9-]{36}/file)?)$',
     );
     final allowedParams = uri?.path == '/patients'
         ? <String>{'email'}
@@ -105,6 +106,105 @@ class AuthApi {
       );
     } catch (_) {
       throw const AuthFailure('No fue posible conectar con el laboratorio.');
+    }
+  }
+
+  /// Solo flujo de demostración postanalítica: adjuntar PDF ya autorizado fuera de Vitalia.
+  Future<Map<String, dynamic>> silUploadReport({
+    required String orderId,
+    required String fileName,
+    required String issuer,
+    required String authorizationReference,
+    required DateTime authorizedAt,
+    required Uint8List bytes,
+  }) async {
+    if (!RegExp(r'^[a-f0-9-]{36}$').hasMatch(orderId) ||
+        bytes.isEmpty || bytes.length > 2 * 1024 * 1024 ||
+        !fileName.toLowerCase().endsWith('.pdf') ||
+        fileName.length > 120 || issuer.trim().length < 3 ||
+        authorizationReference.trim().length < 3) {
+      throw const AuthFailure('Revisa los datos del informe PDF (máximo 2 MiB).');
+    }
+    final token = _token;
+    if (token == null || expiresAt == null ||
+        !expiresAt!.isAfter(DateTime.now())) {
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+    }
+    try {
+      final response = await _client.post(
+        _base.resolve('/api/sil/orders/$orderId/report'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/pdf',
+          'x-report-filename': Uri.encodeComponent(fileName),
+          'x-report-issuer': Uri.encodeComponent(issuer.trim()),
+          'x-report-authorization-ref':
+              Uri.encodeComponent(authorizationReference.trim()),
+          'x-report-authorized-at': authorizedAt.toUtc().toIso8601String(),
+          'x-report-patient-confirmed': 'true',
+          'x-report-externally-authorized': 'true',
+        },
+        body: bytes,
+      ).timeout(const Duration(seconds: 30));
+      if (_token != token || response.statusCode == 401) {
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+      }
+      if (response.statusCode != 201) {
+        throw AuthFailure(switch (response.statusCode) {
+          400 => 'PDF inválido o datos de autorización externa incompletos.',
+          403 => 'Tu cuenta no puede adjuntar informes.',
+          409 => 'La orden no permite adjuntar otro informe.',
+          413 => 'El PDF supera el límite de 2 MiB.',
+          _ => 'No se pudo adjuntar el informe.',
+        }, response.statusCode);
+      }
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } on AuthFailure {
+      rethrow;
+    } on TimeoutException {
+      throw const AuthFailure('La carga tardó demasiado. Consulta la orden antes de repetir.');
+    } catch (_) {
+      throw const AuthFailure('No fue posible adjuntar el PDF.');
+    }
+  }
+
+  Future<Uint8List> silDownloadReport(String reportId) async {
+    if (!RegExp(r'^[a-f0-9-]{36}$').hasMatch(reportId)) {
+      throw const AuthFailure('Identificador de informe inválido.');
+    }
+    final token = _token;
+    if (token == null || expiresAt == null ||
+        !expiresAt!.isAfter(DateTime.now())) {
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+    }
+    try {
+      final response = await _client.get(
+        _base.resolve('/api/sil/patient/reports/$reportId/file'),
+        headers: {'Authorization': 'Bearer $token'},
+      ).timeout(const Duration(seconds: 30));
+      if (_token != token || response.statusCode == 401) {
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+      }
+      if (response.statusCode != 200) {
+        throw AuthFailure(response.statusCode == 404
+            ? 'El informe no está disponible en tu cuenta.'
+            : 'No fue posible descargar el informe.', response.statusCode);
+      }
+      if (response.bodyBytes.length > 2 * 1024 * 1024 ||
+          response.headers['content-type']?.startsWith('application/pdf') != true) {
+        throw const AuthFailure('El archivo recibido no es un PDF válido.');
+      }
+      return response.bodyBytes;
+    } on AuthFailure {
+      rethrow;
+    } on TimeoutException {
+      throw const AuthFailure('La descarga tardó demasiado.');
+    } catch (_) {
+      throw const AuthFailure('No fue posible descargar el informe.');
     }
   }
 
