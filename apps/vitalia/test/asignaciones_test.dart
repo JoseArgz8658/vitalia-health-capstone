@@ -316,22 +316,22 @@ void main() {
         );
       }
       if (req.url.path.endsWith('/branches')) {
-         return http.Response(
-           jsonEncode({
-             'branches': [
-               {
-                 'code': 'perez-vitacura',
-                 'branchName': 'Sucursal Vitacura',
-                 'commune': 'Vitacura',
-                 'laboratoryCode': 'perez-demo',
-                 'laboratoryName': 'Laboratorio Pérez (ficticio)',
-               },
-             ],
-           }),
-           200,
-         );
-       }
-       if (req.url.path.endsWith('/summary')) {
+        return http.Response(
+          jsonEncode({
+            'branches': [
+              {
+                'code': 'perez-vitacura',
+                'branchName': 'Sucursal Vitacura',
+                'commune': 'Vitacura',
+                'laboratoryCode': 'perez-demo',
+                'laboratoryName': 'Laboratorio Pérez (ficticio)',
+              },
+            ],
+          }),
+          200,
+        );
+      }
+      if (req.url.path.endsWith('/summary')) {
         return http.Response(
           '{"summary":{"total":0,"pendingSample":0,"pendingResults":0,"pendingReview":0,"patients":0}}',
           200,
