@@ -24,6 +24,7 @@ function setup(role) {
     })),
     registerSample: jest.fn(async () => ({id: actorId})),
     recordResults: jest.fn(async () => ({orderId:actorId,status:'results_recorded'})),
+    recordManualResults: jest.fn(async () => ({orderId:actorId,status:'results_recorded'})),
     simulateAnalyzer: jest.fn(async () => ({orderId:actorId,count:9})),
     getOrder: jest.fn(async () => ({order:{id:actorId},exams:[],results:[]})),
   };
@@ -72,6 +73,27 @@ describe('SIL: permisos y catálogo multiprestación', () => {
       .send({patientId,examCodes:['hemograma','perfil_lipidico']}).expect(201);
     expect(service.createOrder).toHaveBeenCalledWith(patientId,actorId,
       ['hemograma','perfil_lipidico']);
+  });
+  test('recepción de tubo requiere código permitido y registra actor',async () => {
+    const {app,service}=setup('operador_laboratorio');
+    await authorized(request(app).post('/api/sil/orders/'+actorId+'/sample'))
+      .send({barcode:'EDTA-0001',containerCode:'edta'}).expect(201);
+    expect(service.registerSample).toHaveBeenCalledWith(
+      actorId,'EDTA-0001','edta',actorId,undefined);
+    await authorized(request(app).post('/api/sil/orders/'+actorId+'/sample'))
+      .send({barcode:'BAD-0001',containerCode:'historical'}).expect(400);
+  });
+  test('solo operador puede registrar valores manuales sin unidades suministradas',async () => {
+    const {app,service}=setup('operador_laboratorio');
+    const results=[{examCode:'hemograma',analyte:'Hemoglobina',numericValue:13.2}];
+    await authorized(request(app).post('/api/sil/orders/'+actorId+'/results'))
+      .send({results}).expect(201);
+    expect(service.recordManualResults).toHaveBeenCalledWith(actorId,results,actorId);
+    await authorized(request(app).post('/api/sil/orders/'+actorId+'/results'))
+      .send({results:[{...results[0],unit:'g/dL'}]}).expect(400);
+    expect(service.recordManualResults).toHaveBeenCalledTimes(1);
+    await authorized(request(app).post('/api/sil/orders/'+actorId+'/results'))
+      .send({results:[{...results[0],numericValue:NaN}]}).expect(400);
   });
   test('operador no puede duplicar prestaciones',async () => {
     const {app,service}=setup('operador_laboratorio');
