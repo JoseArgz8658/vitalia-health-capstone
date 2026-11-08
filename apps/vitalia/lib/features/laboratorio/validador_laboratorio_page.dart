@@ -177,6 +177,17 @@ class _ValidadorLaboratorioPageState extends State<ValidadorLaboratorioPage> {
         '${two(d.hour)}:${two(d.minute)}';
   }
 
+  String _auditLabel(String value) => switch (value) {
+    'order_created' => 'Orden registrada',
+    'sample_received' => 'Muestra recibida',
+    'results_manual' => 'Resultados ingresados manualmente',
+    'results_simulated' => 'Resultados de prueba generados',
+    'results_corrected' => 'Valores corregidos por operador',
+    'review_approved' => 'Revisión interna aprobada',
+    'review_rejected' => 'Orden devuelta con observaciones',
+    _ => value,
+  };
+
   String _status(String? value) => switch (value) {
     'results_recorded' => 'Pendiente de revisión',
     'review_approved' => 'Revisión aprobada',
@@ -405,7 +416,7 @@ class _ValidadorLaboratorioPageState extends State<ValidadorLaboratorioPage> {
             dense: true,
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.history),
-            title: Text('${(event as Map)['action']}'),
+            title: Text(_auditLabel((event as Map)['action'] as String)),
             subtitle: Text('${event['actorEmail']} · ${_date(event['createdAt'])}'
                 '${(event['details'] as Map?)?['note'] == null
                     ? '' : ' · ${(event['details'] as Map)['note']}'}'),
