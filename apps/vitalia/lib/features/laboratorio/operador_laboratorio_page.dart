@@ -59,6 +59,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   String? _resultsPreviewStatus;
   List<String> _resultsPreviewWarnings = [];
   final Map<String, String> _resultsRowWarnings = {};
+  final Map<String, String> _aiPrefilledValues = {};
   bool _resultsReviewed = false;
   String? _containerCode;
   final _selectedExams = <String>{'hemograma'};
@@ -207,6 +208,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     _resultsPreviewStatus = null;
     _resultsPreviewWarnings = [];
     _resultsRowWarnings.clear();
+    _aiPrefilledValues.clear();
     _resultsReviewed = false;
     final codes = (selected['exams'] as List? ?? [])
         .map((item) => (item as Map)['code'])
@@ -447,9 +449,18 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     });
   });
 
+  void _clearAiSuggestedFields() {
+    for(final entry in _aiPrefilledValues.entries) {
+      final controller=_manualControllers[entry.key];
+      if(controller!=null && controller.text==entry.value)controller.clear();
+    }
+    _aiPrefilledValues.clear();
+  }
+
   void _discardResultsPdf() {
     if(_busy)return;
     setState((){
+      _clearAiSuggestedFields();
       _resultsPdf=null;
       _resultsPreviewToken=null;
       _resultsPreviewStatus=null;
@@ -473,6 +484,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         return;
       }
       setState((){
+        _clearAiSuggestedFields();
         _resultsPdf=file;
         _resultsPreviewToken=null;
         _resultsPreviewStatus=null;
@@ -497,10 +509,11 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       orderId:order['id'] as String,
       bytes:await file.readAsBytes(),
     );
-    if(!mounted)return;
+    if(!mounted || (_selected?['order'] as Map?)?['id']!=order['id'])return;
     final preview=Map<String,dynamic>.from(response['preview'] as Map);
     final token=preview['previewToken'] as String?;
     final warnings=<String,String>{};
+    _clearAiSuggestedFields();
     var filled=0;
     for(final raw in (preview['items'] as List? ?? [])){
       final item=raw as Map;
@@ -512,6 +525,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       final value=item['suggestedValue'];
       if(value is num && controller.text.trim().isEmpty){
         controller.text=value.toString();
+        _aiPrefilledValues[key]=controller.text;
         filled++;
       }
     }
