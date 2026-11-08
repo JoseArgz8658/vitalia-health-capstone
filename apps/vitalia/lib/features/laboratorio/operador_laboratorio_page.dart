@@ -36,6 +36,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
 
   List<Map<String, dynamic>> _catalog = [];
   List<Map<String, dynamic>> _orders = [];
+  List<Map<String, dynamic>> _recentOrders = [];
+  int _listRequestId = 0;
   Map<String, dynamic>? _summary;
   Map<String, dynamic>? _selected;
   String? _error;
@@ -67,12 +69,16 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     try {
       final catalog = await widget.api.silRequest('/catalog');
       final summary = await widget.api.silRequest('/summary');
+      final recent = await widget.api.silRequest('/orders?limit=5&offset=0');
       if (!mounted) return;
       setState(() {
         _catalog = (catalog['exams'] as List? ?? [])
             .map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
         _summary = Map<String, dynamic>.from(summary['summary'] as Map);
+        _recentOrders = (recent['orders'] as List? ?? [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
       });
       await _refreshOrders();
     } on AuthFailure catch (error) {
@@ -85,6 +91,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   }
 
   Future<void> _refreshOrders() async {
+    final requestId = ++_listRequestId;
     try {
       final params = <String, String>{
         'limit': '$_pageSize',
@@ -95,7 +102,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       };
       final query = Uri(queryParameters: params).query;
       final response = await widget.api.silRequest('/orders?$query');
-      if (!mounted) return;
+      if (!mounted || requestId != _listRequestId) return;
       setState(() {
         _orders = (response['orders'] as List? ?? [])
             .map((item) => Map<String, dynamic>.from(item as Map))
@@ -287,13 +294,13 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   }
 
   Widget _ordersTable({bool recent = false}) {
-    if (_orders.isEmpty) {
+    final rows = recent ? _recentOrders : _orders;
+    if (rows.isEmpty) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 16),
         child: Text('No hay órdenes que coincidan con la búsqueda.'),
       );
     }
-    final rows = recent ? _orders.take(5).toList() : _orders;
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
