@@ -1,4 +1,5 @@
 import {SIL_ANALYZER_ID} from './analyzer';
+import {createSilPatientEducation} from './patient-education';
 import {randomUUID,createHash} from 'node:crypto';
 import {identifyDocument} from '../documents/file-validation';
 import {type Pool,type PoolClient} from 'pg';
@@ -20,6 +21,7 @@ export interface SilManualInput {
   numericValue:number;
 }
 export function createSilService(db: Pool) {
+  const education=createSilPatientEducation(db);
   async function appendAudit(client:PoolClient,orderId:string,actorId:string,
     action:'order_created'|'sample_received'|'results_simulated'|'results_manual'|
       'results_corrected'|'review_approved'|'review_rejected'|
@@ -31,6 +33,7 @@ export function createSilService(db: Pool) {
       [randomUUID(),orderId,actorId,action,JSON.stringify(details)]);
   }
   return {
+    askPatientReport:education.ask,
     async catalog() {
       const [exams,analytes,containers] = await Promise.all([
         db.query<{code:string;name:string;sampleType:string}>(
