@@ -33,6 +33,14 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     res.locals.account=account;
     next();
   });
+  router.get('/patients',async(req,res)=>{
+    if(res.locals.account.role!=='operador_laboratorio'){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    const parsed=z.object({email:z.email().max(254)}).strict().safeParse(req.query);
+    if(!parsed.success){res.status(400).json({error:{code:'INVALID_PATIENT'}});return;}
+    res.json({patient:await service.findPatientByEmail(parsed.data.email.toLowerCase())});
+  });
   router.get('/catalog',async(_req,res)=>{
     res.json(await service.catalog());
   });
