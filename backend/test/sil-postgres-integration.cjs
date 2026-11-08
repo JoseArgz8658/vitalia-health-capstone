@@ -80,7 +80,7 @@ async function main() {
     assert.ok(complete.results.every(v=>v.entryMethod==='manual'));
     assert.deepEqual(complete.audit.map(v=>v.action),[
       'order_created','sample_received','results_manual']);
-    console.log('PRUEBA SIL: orden, muestra, 2 resultados y transiciones correctas.');
+    console.log('PRUEBA SIL: orden, tubo EDTA, 5 resultados manuales y auditoría.');
     // Segundo circuito, independiente: el simulador genera cinco resultados ficticios.
     const simulatedOrder=await sil.createOrder(patientId,actorId);
     simulatedOrderId=simulatedOrder.id;
