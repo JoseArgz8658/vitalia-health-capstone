@@ -132,7 +132,7 @@ export function createSilResultsFilePreview(db:Pick<Pool,'query'>,options:{
       // Un número aislado en el documento no prueba que corresponda a este analito.
       // Exigimos que nombre y cifra aparezcan juntos en al menos una línea de texto.
       const names=[item.analyte,row.nombre];
-      const compact=raw=>raw.normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      const compact=(raw:string)=>raw.normalize('NFD').replace(/[\u0300-\u036f]/g,'')
         .toLowerCase().replace(/[^a-z0-9.,+-]/g,'');
       const sourceContainsPair=text.split(/\r?\n/).some(line=>
         names.some(name=>compact(line).includes(compact(name)))&&
