@@ -47,7 +47,7 @@ class AuthApi {
     Map<String, dynamic>? body,
   }) async {
     final validPath = RegExp(
-      r'^/orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results))?)?$',
+      r'^/(?:catalog|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results))?)?)$',
     );
     if (!validPath.hasMatch(path)) {
       throw const AuthFailure('Ruta de laboratorio inválida.');
