@@ -447,6 +447,18 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     });
   });
 
+  void _discardResultsPdf() {
+    if(_busy)return;
+    setState((){
+      _resultsPdf=null;
+      _resultsPreviewToken=null;
+      _resultsPreviewStatus=null;
+      _resultsPreviewWarnings=[];
+      _resultsRowWarnings.clear();
+      _resultsReviewed=false;
+    });
+  }
+
   Future<void> _selectResultsPdf() async {
     try {
       final file=await openFile(acceptedTypeGroups:const [
@@ -520,6 +532,11 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     if (order == null || !['sampled', 'review_rejected'].contains(order['status'])) {
       throw const AuthFailure('La orden no está habilitada para ingresar o corregir resultados.');
     }
+    if(_resultsPreviewStatus=='identity_mismatch') {
+      throw const AuthFailure(
+        'No se puede usar un PDF de otro paciente. Descarta el archivo '
+        'y continúa con un registro manual desde una fuente correcta.');
+    }
     if(_resultsPreviewToken!=null && !_resultsReviewed) {
       throw const AuthFailure(
         'Confirma que revisaste cada valor con el PDF original.');
@@ -554,19 +571,6 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       setState(() => _message = assisted
         ? 'Resultados del PDF revisados y registrados por el operador. Pendientes de revisión.'
         : 'Resultados manuales registrados. Pendientes de revisión profesional.');
-    }
-  });
-
-  Future<void> _processSample() => _run(() async {
-    final order = _selected?['order'] as Map?;
-    if (order == null) throw const AuthFailure('Selecciona una orden.');
-    final id = order['id'] as String;
-    await widget.api.silRequest('/orders/$id/simulate', body: {});
-    await _openOrder(id);
-    await _refreshAll();
-    if (mounted) {
-      setState(() => _message =
-          'Resultados de prueba registrados. Pendientes de revisión profesional.');
     }
   });
 
@@ -1123,6 +1127,12 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           icon:const Icon(Icons.document_scanner_outlined),
           label:const Text('Analizar archivo con IA'),
         ),
+        if(_resultsPdf!=null)
+          TextButton.icon(
+            onPressed:_busy?null:_discardResultsPdf,
+            icon:const Icon(Icons.close),
+            label:const Text('Descartar PDF / seguir manual'),
+          ),
       ]),
       if(_resultsPreviewStatus!=null) ...[
         const SizedBox(height: 12),
