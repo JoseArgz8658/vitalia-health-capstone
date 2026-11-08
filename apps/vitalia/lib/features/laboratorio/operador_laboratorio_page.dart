@@ -720,6 +720,11 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       appBar: AppBar(
         title: const Text('Vitalia Health'),
         actions: [
+          IconButton(
+            tooltip: 'Actualizar datos del laboratorio',
+            onPressed: _busy || _loading ? null : _refreshAll,
+            icon: const Icon(Icons.refresh),
+          ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 10),
             child: Center(child: Text('Operador de laboratorio')),
