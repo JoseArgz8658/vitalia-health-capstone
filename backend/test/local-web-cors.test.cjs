@@ -60,6 +60,33 @@ describe('origen local de Flutter', () => {
       else process.env.VITALIA_SIL_DEMO=old;
     }
   });
+  test('la recepción de solicitudes permite solo sus encabezados en demo', async()=>{
+    const old=process.env.VITALIA_SIL_DEMO;
+    const path='/api/sil/medical-requests/preview';
+    const headers='authorization,content-type,x-request-patient-email,x-request-filename';
+    try{
+      process.env.VITALIA_SIL_DEMO='YES';
+      const ok=await request(createApp()).options(path)
+        .set('Origin','http://localhost:5173')
+        .set('Access-Control-Request-Method','POST')
+        .set('Access-Control-Request-Headers',headers);
+      expect(ok.status).toBe(204);
+      expect(ok.headers['access-control-allow-headers'])
+        .toContain('x-request-patient-email');
+      expect((await request(createApp()).options('/api/auth/me')
+        .set('Origin','http://localhost:5173')
+        .set('Access-Control-Request-Method','POST')
+        .set('Access-Control-Request-Headers',headers)).status).toBe(403);
+      process.env.VITALIA_SIL_DEMO='NO';
+      expect((await request(createApp()).options(path)
+        .set('Origin','http://localhost:5173')
+        .set('Access-Control-Request-Method','POST')
+        .set('Access-Control-Request-Headers',headers)).status).toBe(403);
+    }finally{
+      if(old===undefined)delete process.env.VITALIA_SIL_DEMO;
+      else process.env.VITALIA_SIL_DEMO=old;
+    }
+  });
   test('conserva clientes sin Origin', async () => {
     expect((await request(createApp()).get('/api/health')).status).toBe(200);
   });
