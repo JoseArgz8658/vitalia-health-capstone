@@ -581,7 +581,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                   const SizedBox(height: 24),
                   Text(
                     'Vitalia Health · Gestión '
-                    'postanalítica de órdenes, muestras y resultados · Entorno de demostración.',
+                    'postanalítica de órdenes, muestras y resultados.',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall,
                   ),
