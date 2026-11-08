@@ -44,6 +44,19 @@ if (-not (Test-Path $secretPath)) {
 # Get-Content $secretPath
 ```
 
+## IA educativa en el portal del paciente (SIL demo)
+
+El portal **Mis informes** muestra un botón `Consultar con IA educativa` por cada informe publicado. La conversación está restringida a la cuenta propietaria del PDF mediante sesión, identificador de informe y estado publicado.
+
+**Alcance actual:** el asistente utiliza **los nombres de las prestaciones registradas en la orden**, no analiza todavía los bytes ni los valores del PDF. Responde preguntas generales sobre conceptos como *glicemia* o *hemoglobina glicosilada (HbA1c)* aprovechando el motor educativo y su biblioteca de definiciones. Ante preguntas por cifras, diagnóstico o tratamiento, advierte que no cuenta con resultados numéricos verificados y remite al documento original. **No afirmar que la IA leyó los valores del informe.**
+
+La ruta `POST /api/sil/patient/reports/:id/chat` solo funciona para cuentas paciente en el modo aislado `VITALIA_SIL_DEMO=YES`. No acepta IDs de paciente suministrados por el cliente. Hasta 12 consultas al modelo por informe cada 15 minutos y una consulta concurrente por paciente/informe. No se almacena el historial de preguntas en PostgreSQL; la interfaz mantiene solo la conversación abierta.
+
+- Las preguntas conceptuales sencillas admitidas por la biblioteca funcionan mediante la ruta de evidencia del asistente **incluso sin Ollama**. Para consultas abiertas que requieren generación, debe existir un servicio Ollama local accesible **desde el contenedor demo**; si no, el backend responde `503 ASSISTANT_UNAVAILABLE` sin inventar contenido.
+- La IA existente conserva sus reglas de seguridad: no diagnósticos, no tratamientos, no conclusiones clínicas ni cifras generadas.
+- **Siguiente fase**: lectura y extracción real del PDF, contrastada y aprobada por personal autorizado, antes de habilitar consultas de resultados numéricos. El hecho de que el PDF esté publicado no significa que sus cifras hayan sido extraídas y verificadas por la IA.
+- No usar exámenes de pacientes reales en este entorno.
+
 ## Catálogo laboratorio/sucursales y ficha sintética (migración 033)
 
 La migración **`033_sil_branches_patient_demo`** añade un catálogo de laboratorio ficticio **Laboratorio Pérez** y tres sucursales de demostración: Vitacura, Las Condes y Providencia. La lista se consulta por API, no se envía una razón social arbitraria desde el navegador. Es un *ejemplo de una sola empresa*, no un sistema multiempresa ni un módulo de sucursales reales.
