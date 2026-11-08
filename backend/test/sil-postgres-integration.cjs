@@ -45,6 +45,9 @@ async function main() {
     const externalReportsVersion=await db.query(
       "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='031_sil_external_reports'");
     assert.equal(externalReportsVersion.rowCount,1,'Migración 031 ausente');
+    const auditFixVersion=await db.query(
+      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='032_sil_audit_download'");
+    assert.equal(auditFixVersion.rowCount,1,'Migración 032 ausente');
     await db.query(
       `INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code)
        VALUES($1,$2,'synthetic-test-only','paciente'),
