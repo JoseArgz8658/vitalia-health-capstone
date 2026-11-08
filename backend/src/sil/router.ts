@@ -23,7 +23,10 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     if(!['administrador','operador_laboratorio','validador_laboratorio'].includes(account.role)) {
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
     }
-    if(req.method!=='GET' && account.role!=='operador_laboratorio') {
+    const reviewAction=req.method==='POST' &&
+      /^\/orders\/[a-f0-9-]{36}\/review$/.test(req.path);
+    if((reviewAction && account.role!=='validador_laboratorio') ||
+       (!reviewAction && req.method!=='GET' && account.role!=='operador_laboratorio')) {
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
     }
     res.locals.account=account;
@@ -47,7 +50,7 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     const data=z.object({
       limit:z.coerce.number().int().min(1).max(50).default(20),
       offset:z.coerce.number().int().min(0).max(10000).default(0),
-      status:z.enum(['registered','sampled','results_recorded']).optional(),
+      status:z.enum(['registered','sampled','results_recorded','review_rejected','review_approved']).optional(),
       search:z.string().trim().min(1).max(100).optional(),
     }).strict().safeParse(req.query);
     if(!data.success) {res.status(400).json({error:{code:'INVALID_PAGE'}});return;}
@@ -105,6 +108,19 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     const result=await service.simulateAnalyzer(req.params.id as string,
       res.locals.account.id);
     res.status(201).json({result});
+  });
+  router.post('/orders/:id/review',async(req,res)=>{
+    const data=z.object({
+      decision:z.enum(['approve','return']),
+      note:z.string().trim().max(500).default(''),
+    }).strict().refine(value=>value.decision!=='return'||value.note.length>=10)
+      .safeParse(req.body);
+    if(!uuid.safeParse(req.params.id).success||!data.success){
+      res.status(400).json({error:{code:'INVALID_REVIEW'}});return;
+    }
+    const review=await service.reviewOrder(req.params.id as string,
+      res.locals.account.id,data.data.decision,data.data.note);
+    res.status(201).json({review});
   });
   router.get('/orders/:id',async(req,res)=>{
     if(!uuid.safeParse(req.params.id).success) {
