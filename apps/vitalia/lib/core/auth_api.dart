@@ -49,7 +49,7 @@ class AuthApi {
   }) async {
     final uri = Uri.tryParse(path);
     final validPath = RegExp(
-      r'^/(?:catalog|branches|summary|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results|review|report(?:/publish)?))?)?|patients(?:/profile)?|patient/reports(?:/[a-f0-9-]{36}/(?:file|chat))?)$',
+      r'^/(?:catalog|branches|summary|medical-requests/(?:confirm)|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results|review|report(?:/publish)?))?)?|patients(?:/profile)?|patient/reports(?:/[a-f0-9-]{36}/(?:file|chat))?)$',
     );
     final allowedParams = (uri?.path == '/patients' || uri?.path == '/patients/profile')
         ? <String>{'email'}
@@ -112,6 +112,58 @@ class AuthApi {
     } catch (_) {
       throw const AuthFailure('No fue posible conectar con el laboratorio.');
     }
+  }
+
+  /// Prelectura de solicitud médica ficticia: no crea órdenes.
+  Future<Map<String,dynamic>> silPreviewMedicalRequest({
+    required String email,
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    final address=email.trim().toLowerCase();
+    if(!address.endsWith('@example.invalid')||
+       !fileName.toLowerCase().endsWith('.pdf')||
+       fileName.length>120 || fileName.length<5 ||
+       bytes.length<8 || bytes.length>2*1024*1024){
+      throw const AuthFailure('Utiliza un PDF ficticio válido, máximo 2 MiB.');
+    }
+    final token=_token;
+    if(token==null||expiresAt==null||!expiresAt!.isAfter(DateTime.now())){
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+    }
+    try {
+      final response=await _client.post(
+        _base.resolve('/api/sil/medical-requests/preview'),
+        headers:{
+          'Authorization':'Bearer $token',
+          'Content-Type':'application/pdf',
+          'x-request-patient-email':Uri.encodeComponent(address),
+          'x-request-filename':Uri.encodeComponent(fileName),
+        },
+        body:bytes,
+      ).timeout(const Duration(seconds:35));
+      if(_token!=token||response.statusCode==401){
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+      }
+      if(response.statusCode>=400){
+        throw AuthFailure(switch(response.statusCode){
+          400=>'PDF inválido o faltan datos del paciente.',
+          403=>'Tu cuenta no tiene permiso para recibir solicitudes.',
+          404=>'No existe la cuenta de paciente indicada.',
+          409=>'La ficha del paciente está incompleta o el documento es inválido.',
+          413=>'El archivo supera los 2 MiB.',
+          _=>'No fue posible leer la solicitud médica de prueba.',
+        },response.statusCode);
+      }
+      return jsonDecode(response.body) as Map<String,dynamic>;
+    } on AuthFailure {rethrow;}
+      on TimeoutException {
+        throw const AuthFailure('La lectura demoró demasiado. Reintenta con un PDF de texto.');
+      } catch (_) {
+        throw const AuthFailure('No fue posible conectar con la lectura de solicitudes.');
+      }
   }
 
   /// Solo DEMO: analiza un PDF ficticio y devuelve sugerencias.
