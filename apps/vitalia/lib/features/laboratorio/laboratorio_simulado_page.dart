@@ -103,7 +103,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
   Future<void> _create() => _run(() async {
     final id = _patient.text.trim();
     if (!RegExp(r'^[a-fA-F0-9-]{36}$').hasMatch(id)) {
-      throw const AuthFailure('Introduce el UUID válido de un paciente ficticio.');
+      throw const AuthFailure('Ingresa el identificador válido de un paciente registrado.');
     }
     final response = await widget.api.silRequest('/orders', body: {
       'patientId': id,
@@ -131,7 +131,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
     await _load(_orderId!);
     if (mounted) {
       setState(() => _message =
-          'Resultados ficticios registrados. No están validados ni publicados.');
+          'Resultados de prueba registrados. No están validados ni publicados.');
     }
   });
 
@@ -195,7 +195,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
     final theme = Theme.of(context);
     return _panel(
       'Resultados del hemograma',
-      'Datos sintéticos del analizador. No constituyen un informe clínico.',
+      'Resultados del analizador de demostración. No constituyen un informe clínico.',
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -244,7 +244,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Vitalia SIL Simple'),
+        title: const Text('Vitalia Health'),
         actions: [
           if (widget.onLogout != null)
             TextButton.icon(
@@ -267,7 +267,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                   Text('Panel del laboratorio', style: theme.textTheme.headlineMedium),
                   const SizedBox(height: 6),
                   Text(
-                    'Órdenes, recepción de muestras y análisis simulado de hemograma.',
+                    'Órdenes, recepción de muestras y resultados de hemograma.',
                     style: theme.textTheme.bodyLarge,
                   ),
                   const SizedBox(height: 16),
@@ -283,9 +283,9 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                           SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              'ENTORNO DE DEMOSTRACIÓN · Laboratorio ficticio. '
-                              'No utiliza muestras reales, no emite informes '
-                              'clínicos y no notifica pacientes.',
+                              'ENTORNO DE DEMOSTRACIÓN · Datos de pruebas internas. '
+                              'Los resultados de simulación no están validados; no se emiten informes '
+                              'clínicos ni se notifica a pacientes.',
                             ),
                           ),
                         ],
@@ -325,7 +325,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                     final wide = constraints.maxWidth >= 760;
                     final createPanel = _panel(
                       'Nueva orden',
-                      'Se requiere una cuenta de paciente ficticio existente.',
+                      'Se requiere un paciente registrado en el sistema.',
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -462,14 +462,14 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                           if (_status == 'sampled') ...[
                             const SizedBox(height: 14),
                             const Text(
-                              'El analizador simulado generará cinco '
-                              'resultados predeterminados y ficticios.',
+                              'El analizador de demostración generará cinco '
+                              'resultados de prueba predeterminados.',
                             ),
                             const SizedBox(height: 12),
                             FilledButton.icon(
                               onPressed: _busy ? null : _simulate,
                               icon: const Icon(Icons.science_outlined),
-                              label: const Text('Ejecutar simulador'),
+                              label: const Text('Procesar muestra de demostración'),
                             ),
                           ],
                         ],
@@ -480,8 +480,8 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                   ],
                   const SizedBox(height: 24),
                   Text(
-                    'Vitalia SIL Simple · Prototipo académico de gestión '
-                    'postanalítica. No conectado a analizadores reales.',
+                    'Vitalia Health · Gestión '
+                    'postanalítica de órdenes, muestras y resultados · Entorno de demostración.',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall,
                   ),
