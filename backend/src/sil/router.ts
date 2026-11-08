@@ -9,6 +9,7 @@ const resultSchema = z.object({
   analyte:z.string().trim().min(1).max(100),
   numericValue:z.number().finite().min(-1000000000).max(1000000000),
   unit:z.string().trim().min(1).max(30),
+  examCode:z.string().regex(/^[a-z0-9_]{3,40}$/).optional(),
   referenceMin:z.number().finite().nullable().optional(),
   referenceMax:z.number().finite().nullable().optional(),
 }).strict().refine(v=>v.referenceMin==null||v.referenceMax==null||
@@ -22,17 +23,39 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
       isSessionToken(parts[1])?parts[1]:null;
     const account=token?await auth.find(token):null;
     if(!account) {res.status(401).json({error:{code:'UNAUTHORIZED'}});return;}
-    // MVP con un único laboratorio ficticio; sin delegación entre instituciones.
-    if(account.role!=='administrador') {
+    // Un único laboratorio en este MVP, con separación real de funciones.
+    if(!['administrador','operador_laboratorio','validador_laboratorio'].includes(account.role)) {
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    if(req.method!=='GET' && account.role!=='operador_laboratorio') {
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
     }
     res.locals.account=account;
     next();
   });
+  router.get('/catalog',async(_req,res)=>{
+    res.json(await service.catalog());
+  });
+  router.get('/orders',async(req,res)=>{
+    const data=z.object({
+      limit:z.coerce.number().int().min(1).max(50).default(20),
+      offset:z.coerce.number().int().min(0).max(10000).default(0),
+    }).strict().safeParse(req.query);
+    if(!data.success) {res.status(400).json({error:{code:'INVALID_PAGE'}});return;}
+    res.json(await service.listOrders(data.data.limit,data.data.offset));
+  });
   router.post('/orders',async(req,res)=>{
-    const data=z.object({patientId:uuid,examCode:z.literal('hemograma')}).strict().safeParse(req.body);
+    const data=z.object({
+      patientId:uuid,
+      examCode:z.literal('hemograma').optional(),
+      examCodes:z.array(z.string().regex(/^[a-z0-9_]{3,40}$/))
+        .min(1).max(6).optional(),
+    }).strict().refine(v=>(v.examCode!==undefined)!==(v.examCodes!==undefined))
+      .refine(v=>!v.examCodes||new Set(v.examCodes).size===v.examCodes.length)
+      .safeParse(req.body);
     if(!data.success) {res.status(400).json({error:{code:'INVALID_ORDER'}});return;}
-    const order=await service.createOrder(data.data.patientId,res.locals.account.id);
+    const codes=data.data.examCodes??['hemograma'];
+    const order=await service.createOrder(data.data.patientId,res.locals.account.id,codes);
     res.status(201).json({order});
   });
   router.post('/orders/:id/sample',async(req,res)=>{
@@ -46,7 +69,7 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
   router.post('/orders/:id/results',async(req,res)=>{
     const data=z.object({results:z.array(resultSchema).min(1).max(30)}).strict()
       .superRefine((value,ctx)=>{
-        const names=value.results.map(v=>v.analyte.toLowerCase());
+        const names=value.results.map(v=>`${v.examCode??'hemograma'}:${v.analyte.toLowerCase()}`);
         if(new Set(names).size!==names.length)
           ctx.addIssue({code:'custom',message:'Analitos duplicados.'});
       }).safeParse(req.body);
