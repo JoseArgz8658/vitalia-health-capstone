@@ -416,4 +416,23 @@ void main() {
     auth.close();
   });
 
+  test('API impide rutas arbitrarias del portal SIL', () async {
+    var calls = 0;
+    final api = await session('paciente', (request) async {
+      calls++;
+      if (request.url.path == '/api/sil/patient/reports') {
+        return http.Response('{"reports":[]}', 200);
+      }
+      return http.Response('{}', 404);
+    });
+    final listed = await api.silRequest('/patient/reports');
+    expect(listed['reports'], isEmpty);
+    await expectLater(
+      api.silRequest('/patient/reports?patientId=$id'),
+      throwsA(isA<AuthFailure>()),
+    );
+    expect(calls, 1);
+    api.close();
+  });
+
 }
