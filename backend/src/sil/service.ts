@@ -43,11 +43,11 @@ export function createSilService(db: Pool) {
         if(enabled.rows.length!==examCodes.length ||
            new Set(examCodes).size!==examCodes.length) throw new SilNotFoundError();
         const id = randomUUID();
-        const result = await client.query<{id:string;status:string}>(
+        const result = await client.query<{id:string;status:string;orderNumber:string}>(
           `INSERT INTO public.vitalia_sil_orders(id,patient_id,created_by,exam_code)
            SELECT $1,a.id,$3,$4 FROM public.vitalia_accounts a
            WHERE a.id=$2 AND a.role_code='paciente'
-           RETURNING id,status`,
+           RETURNING id,status,'VH-' || lpad(order_number::text,6,'0') AS "orderNumber"`,
           [id,patientId,actorId,examCodes[0]]);
         if (!result.rows.length) throw new SilNotFoundError();
         for(const code of examCodes) {
@@ -69,9 +69,46 @@ export function createSilService(db: Pool) {
       if(!result.rows.length) throw new SilNotFoundError();
       return result.rows[0];
     },
-    async listOrders(limit=20,offset=0) {
+    async summary() {
+      const result=await db.query<{
+        total:number;pendingSample:number;pendingResults:number;
+        pendingReview:number;patients:number;
+      }>(
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE status='registered')::int AS "pendingSample",
+           COUNT(*) FILTER (WHERE status='sampled')::int AS "pendingResults",
+           COUNT(*) FILTER (WHERE status='results_recorded')::int AS "pendingReview",
+           COUNT(DISTINCT patient_id)::int AS patients
+         FROM public.vitalia_sil_orders`);
+      return {summary:result.rows[0]};
+    },
+    async listOrders(limit=20,offset=0,status?:'registered'|'sampled'|'results_recorded',
+      search='') {
+      const clauses:string[]=[];
+      const params:Array<string|number>=[];
+      if(status) {
+        params.push(status);
+        clauses.push(`o.status=$${params.length}`);
+      }
+      if(search) {
+        params.push('%'+search.toLowerCase()+'%');
+        const p='$'+params.length;
+        // Buscar el correo, identificador legible o UUID completo.
+        clauses.push(`(a.email ILIKE ${p} OR
+          ('VH-' || lpad(o.order_number::text,6,'0')) ILIKE ${p} OR
+          o.id::text ILIKE ${p})`);
+      }
+      const where=clauses.length?'WHERE '+clauses.join(' AND '):'';
+      const count=await db.query<{total:number}>(
+        `SELECT COUNT(*)::int AS total FROM public.vitalia_sil_orders o
+         JOIN public.vitalia_accounts a ON a.id=o.patient_id ${where}`,params);
+      const pageArgs=[...params,limit,offset];
+      const limitIndex=pageArgs.length-1;
+      const offsetIndex=pageArgs.length;
       const result=await db.query(
-        `SELECT o.id,o.patient_id AS "patientId",a.email AS "patientEmail",
+        `SELECT o.id,'VH-' || lpad(o.order_number::text,6,'0') AS "orderNumber",
+           o.patient_id AS "patientId",a.email AS "patientEmail",
            o.status,o.created_at AS "createdAt",
            COALESCE(array_agg(DISTINCT e.exam_code) FILTER (WHERE e.exam_code IS NOT NULL),
              ARRAY[]::text[]) AS "examCodes",
@@ -80,9 +117,11 @@ export function createSilService(db: Pool) {
          FROM public.vitalia_sil_orders o
          JOIN public.vitalia_accounts a ON a.id=o.patient_id
          LEFT JOIN public.vitalia_sil_order_exams e ON e.order_id=o.id
+         ${where}
          GROUP BY o.id,a.email
-         ORDER BY o.created_at DESC,o.id DESC LIMIT $1 OFFSET $2`,[limit,offset]);
-      return {orders:result.rows,limit,offset};
+         ORDER BY o.order_number DESC LIMIT $${limitIndex} OFFSET $${offsetIndex}`,
+        pageArgs);
+      return {orders:result.rows,limit,offset,total:count.rows[0].total};
     },
     async registerSample(orderId: string, barcode: string) {
       const client = await db.connect();
@@ -158,7 +197,8 @@ export function createSilService(db: Pool) {
     },
     async getOrder(orderId: string) {
       const order = await db.query(
-        `SELECT id,patient_id AS "patientId",exam_code AS "examCode",
+        `SELECT id,'VH-' || lpad(order_number::text,6,'0') AS "orderNumber",
+          patient_id AS "patientId",exam_code AS "examCode",
           status,synthetic,created_at AS "createdAt"
          FROM public.vitalia_sil_orders WHERE id=$1`,[orderId]);
       if (!order.rows.length) throw new SilNotFoundError();
