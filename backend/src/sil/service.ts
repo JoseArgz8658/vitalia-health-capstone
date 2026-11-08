@@ -1,6 +1,7 @@
 import {SIL_ANALYZER_ID} from './analyzer';
 import {createSilPatientEducation} from './patient-education';
 import {createSilResultsFilePreview} from './results-file-preview';
+import {createSilMedicalRequestIntake} from './medical-request-intake';
 import {randomUUID,createHash} from 'node:crypto';
 import {identifyDocument} from '../documents/file-validation';
 import {type Pool,type PoolClient} from 'pg';
@@ -24,6 +25,7 @@ export interface SilManualInput {
 export function createSilService(db: Pool) {
   const education=createSilPatientEducation(db);
   const previewResultsFile=createSilResultsFilePreview(db);
+  const medicalIntake=createSilMedicalRequestIntake(db);
   // Comprobante temporal asociado a cuenta y orden; no se confía en un
   // booleano enviado por el navegador para certificar el uso de IA.
   const previewReceipts=new Map<string,{orderId:string;actorId:string;expiresAt:number}>();
@@ -53,6 +55,8 @@ export function createSilService(db: Pool) {
   }
   return {
     askPatientReport:education.ask,
+    previewMedicalRequest:medicalIntake.preview,
+    confirmMedicalRequest:medicalIntake.confirm,
     previewResultsFile:previewAndReceipt,
     async catalog() {
       const [exams,analytes,containers] = await Promise.all([
@@ -160,6 +164,10 @@ export function createSilService(db: Pool) {
         const previouslyIssued=await client.query(
           `SELECT 1 FROM public.vitalia_sil_external_reports
            WHERE patient_id=$1 LIMIT 1`,[id]);
+        const existingRequests=await client.query(
+          `SELECT 1 FROM public.vitalia_sil_medical_requests_demo
+           WHERE patient_id=$1 LIMIT 1`,[id]);
+        if(existingRequests.rows.length)throw new SilConflictError();
         if(previouslyIssued.rows.length)throw new SilConflictError();
         await client.query(
           `INSERT INTO public.vitalia_sil_patient_profiles_demo(
@@ -583,7 +591,7 @@ export function createSilService(db: Pool) {
          JOIN public.vitalia_accounts a ON a.id=o.patient_id
          WHERE o.id=$1`,[orderId]);
       if (!order.rows.length) throw new SilNotFoundError();
-      const [exams,samples,required,results,audit,report] = await Promise.all([
+      const [exams,samples,required,results,audit,report,medicalRequest] = await Promise.all([
         db.query(
           `SELECT c.code,c.name,c.sample_type AS "sampleType"
            FROM public.vitalia_sil_order_exams e
@@ -631,11 +639,24 @@ export function createSilService(db: Pool) {
            FROM public.vitalia_sil_external_reports r
            LEFT JOIN public.vitalia_sil_branches b ON b.code=r.origin_branch_code
            WHERE r.order_id=$1`,[orderId]),
+        db.query(
+          `SELECT r.id,r.file_name AS "fileName",
+             r.document_reference AS "documentReference",
+             r.prescriber_name AS "prescriberName",
+             r.request_date::text AS "requestDate",
+             r.pdf_sha256 AS sha256,
+             r.origin_branch_code AS "branchCode",
+             b.display_name AS "branchName",
+             r.received_at AS "receivedAt"
+           FROM public.vitalia_sil_medical_requests_demo r
+           JOIN public.vitalia_sil_branches b ON b.code=r.origin_branch_code
+           WHERE r.order_id=$1`,[orderId]),
       ]);
       return {order:order.rows[0],exams:exams.rows,
         sample:samples.rows[0]??null,samples:samples.rows,
         requiredContainers:required.rows,results:results.rows,audit:audit.rows,
         externalReport:report.rows[0]??null,
+        medicalRequest:medicalRequest.rows[0]??null,
         latestReview:audit.rows.filter(item=>
           item.action==='review_approved'||item.action==='review_rejected').at(-1)??null};
     },
