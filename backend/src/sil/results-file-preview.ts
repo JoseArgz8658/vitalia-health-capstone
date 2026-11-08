@@ -135,7 +135,6 @@ export function createSilResultsFilePreview(db:Pick<Pool,'query'>,options:{
         (name):name is string=>name!==null);
       const compact=(raw:string)=>raw.normalize('NFD').replace(/[\u0300-\u036f]/g,'')
         .toLowerCase().replace(/[^a-z0-9.,+-]/g,'');
-      const normalizedValue=row.valor!.replace(',','.');
       const regexEscape=(value:string)=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
       const valueToken=new RegExp(
         `(^|[^0-9.,])${regexEscape(row.valor!)}(?=$|[^0-9.,])`);
