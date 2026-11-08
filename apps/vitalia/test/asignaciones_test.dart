@@ -444,13 +444,17 @@ void main() {
       expect(request.url.path, '/api/sil/orders/$id/report');
       expect(request.headers['content-type'], 'application/pdf');
       expect(request.headers['x-report-patient-confirmed'], 'true');
+      expect(request.headers['x-report-branch-code'], 'perez-vitacura');
+      expect(request.headers['x-report-patient-identifier'], 'DEMO-0001');
       expect(request.bodyBytes, isNotEmpty);
       return http.Response('{"report":{"status":"report_attached"}}', 201);
     });
     final result = await api.silUploadReport(
       orderId: id,
       fileName: 'informe.pdf',
-      issuer: 'Laboratorio ejemplo',
+      branchCode: 'perez-vitacura',
+      authorizedProfessionalName: 'Profesional Ficticio',
+      patientIdentifierFromPdf: 'DEMO-0001',
       authorizationReference: 'AUT-TEST-001',
       authorizedAt: DateTime.utc(2026, 11, 1),
       bytes: Uint8List.fromList([37, 80, 68, 70, 45, 49, 46, 52, 10, 37, 37, 69, 79, 70]),
