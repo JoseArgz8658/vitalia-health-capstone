@@ -11,7 +11,7 @@ const service={
  simulateAnalyzer:jest.fn().mockResolvedValue({orderId:id,status:'results_recorded',count:5,synthetic:true,simulated:true,analyzerId:'simulador-hemograma-v1'}),
  getOrder:jest.fn().mockResolvedValue({order:{id,status:'registered'},sample:null,results:[]}),
 };
-function app(role='administrador',hasSession=true) {
+function app(role='operador_laboratorio',hasSession=true) {
  const auth={find:jest.fn().mockResolvedValue(hasSession?
   {id:'11111111-1111-4111-8111-111111111111',role}:null)};
  // SilServices es el último parámetro de createApp.
@@ -21,7 +21,7 @@ const bearer={Authorization:'Bearer '+token};
 beforeEach(()=>jest.clearAllMocks());
 test('acceso al SIL exige sesión válida',async()=>{
  expect((await request(app()).post('/api/sil/orders').send({patientId,examCode:'hemograma'})).status).toBe(401);
- expect((await request(app('administrador',false)).post('/api/sil/orders')
+ expect((await request(app('operador_laboratorio',false)).post('/api/sil/orders')
   .set(bearer).send({patientId,examCode:'hemograma'})).status).toBe(401);
  expect(service.createOrder).not.toHaveBeenCalled();
 });
@@ -30,11 +30,11 @@ test.each(['paciente','profesional'])('%s no puede registrar órdenes',async rol
   .send({patientId,examCode:'hemograma'})).status).toBe(403);
  expect(service.createOrder).not.toHaveBeenCalled();
 });
-test('administrador crea orden de hemograma sintético',async()=>{
+test('operador crea orden de hemograma sintético',async()=>{
  const res=await request(app()).post('/api/sil/orders').set(bearer)
   .send({patientId,examCode:'hemograma'});
  expect(res.status).toBe(201);
- expect(service.createOrder).toHaveBeenCalledWith(patientId,'11111111-1111-4111-8111-111111111111');
+ expect(service.createOrder).toHaveBeenCalledWith(patientId,'11111111-1111-4111-8111-111111111111',['hemograma']);
 });
 test('no admite adjudicar roles ni exámenes no soportados',async()=>{
  for(const value of [
@@ -71,17 +71,19 @@ test('rechaza analitos repetidos, valores inválidos y rangos invertidos',async(
    .set(bearer).send({results})).status).toBe(400);
  expect(service.recordResults).not.toHaveBeenCalled();
 });
-test('consulta admin ve estado y no expone datos a paciente',async()=>{
- expect((await request(app()).get('/api/sil/orders/'+id).set(bearer)).status).toBe(200);
+test('consulta de administración ve estado y no expone datos a paciente',async()=>{
+ expect((await request(app('administrador')).get('/api/sil/orders/'+id).set(bearer)).status).toBe(200);
  expect((await request(app('paciente')).get('/api/sil/orders/'+id).set(bearer)).status).toBe(403);
 });
 
-test('solo administrador puede simular resultados ficticios',async()=>{
+test('solo operador puede simular resultados de prueba',async()=>{
  const accepted=await request(app()).post('/api/sil/orders/'+id+'/simulate')
   .set(bearer).send({});
  expect(accepted.status).toBe(201);
  expect(accepted.body.result.simulated).toBe(true);
  expect(service.simulateAnalyzer).toHaveBeenCalledWith(id);
+ expect((await request(app('administrador')).post('/api/sil/orders/'+id+'/simulate')
+  .set(bearer).send({})).status).toBe(403);
  expect((await request(app('paciente')).post('/api/sil/orders/'+id+'/simulate')
   .set(bearer).send({})).status).toBe(403);
 });
