@@ -2,6 +2,7 @@ import '../features/incorporacion/activar_invitacion_page.dart';
 import '../features/asignaciones/asignaciones_page.dart';
 import '../features/laboratorio/operador_laboratorio_page.dart';
 import '../features/laboratorio/validador_laboratorio_page.dart';
+import '../features/laboratorio/paciente_informes_sil_page.dart';
 import '../features/laboratorio/administracion_laboratorio_page.dart';
 import '../features/perfil/perfil_page.dart';
 import 'dart:async';
@@ -139,6 +140,17 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
           settings: settings,
           builder: (_) => ActivarInvitacionPage(api: AuthApi(), ownsApi: true),
         );
+      if (settings.name == '/informes')
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => AccesoPage(
+            api: _api,
+            onAuthenticated: (user) {
+              _signedIn(user);
+              _navigator.currentState?.popUntil((r) => r.isFirst);
+            },
+          ),
+        );
       if (settings.name == '/laboratorio')
         return MaterialPageRoute<void>(
           settings: settings,
@@ -202,6 +214,15 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
         ? AdministracionLaboratorioPage(
             key: ValueKey(_user!['id']),
             email: _user!['email'] as String,
+            onLogout: _logout,
+          )
+        : _user!['role'] == 'paciente' &&
+            const bool.fromEnvironment('VITALIA_SIL_DEMO_MODE', defaultValue: false)
+        ? PacienteInformesSilPage(
+            key: ValueKey(_user!['id']),
+            api: _api,
+            email: _user!['email'] as String,
+            onExpired: _expired,
             onLogout: _logout,
           )
         : _user!['role'] == 'paciente'
