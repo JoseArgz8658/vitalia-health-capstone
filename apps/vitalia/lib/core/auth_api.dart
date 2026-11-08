@@ -46,11 +46,24 @@ class AuthApi {
     String path, {
     Map<String, dynamic>? body,
   }) async {
+    final uri = Uri.tryParse(path);
     final validPath = RegExp(
-      r'^/(?:catalog|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results))?)?)$',
+      r'^/(?:catalog|summary|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results))?)?|patients)$',
     );
-    if (!validPath.hasMatch(path) &&
-        !RegExp(r'^/patients\?email=[A-Za-z0-9%._@+~-]{3,254}$').hasMatch(path)) {
+    final allowedParams = uri?.path == '/patients'
+        ? <String>{'email'}
+        : uri?.path == '/orders'
+        ? <String>{'limit', 'offset', 'status', 'search'}
+        : <String>{};
+    final query = uri?.queryParametersAll ?? <String, List<String>>{};
+    if (uri == null ||
+        uri.hasScheme ||
+        uri.hasAuthority ||
+        uri.hasFragment ||
+        !validPath.hasMatch(uri.path) ||
+        query.keys.any((key) => !allowedParams.contains(key)) ||
+        query.values.any((values) => values.length != 1) ||
+        (uri.path == '/patients' && !query.containsKey('email'))) {
       throw const AuthFailure('Ruta de laboratorio inválida.');
     }
     final token = _token;
@@ -77,7 +90,7 @@ class AuthApi {
       if (response.statusCode >= 400) {
         throw AuthFailure(switch (response.statusCode) {
           400 => 'Datos inválidos. Comprueba el paciente, la orden o la muestra.',
-          403 => 'Solo el administrador del laboratorio puede realizar esta operación.',
+          403 => 'Tu perfil no tiene permiso para realizar esta operación.',
           404 => 'No existe la orden o el paciente indicado.',
           409 => 'La orden cambió de estado. Consulta su estado antes de continuar.',
           _ => 'No se pudo completar la operación de laboratorio.',
