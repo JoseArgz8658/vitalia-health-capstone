@@ -150,7 +150,10 @@ export function createSilService(db: Pool) {
          WHERE e.order_id=$1 ORDER BY e.exam_code,a.analyte`,[orderId]);
       if (!data.rows.length) throw new SilConflictError();
       const recorded=await this.recordResults(orderId,data.rows);
-      return {...recorded,analyzerId:SIL_ANALYZER_ID,simulated:true,
+      const requested=new Set(data.rows.map(item=>item.examCode));
+      const analyzerId=requested.size===1&&requested.has('hemograma')
+        ? SIL_ANALYZER_ID : 'simulador-paneles-v1';
+      return {...recorded,analyzerId,simulated:true,
         notice:'SIMULACIÓN: resultados de prueba, sin validez clínica.'};
     },
     async getOrder(orderId: string) {
