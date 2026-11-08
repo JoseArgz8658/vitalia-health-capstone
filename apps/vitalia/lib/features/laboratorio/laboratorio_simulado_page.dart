@@ -271,28 +271,6 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                     style: theme.textTheme.bodyLarge,
                   ),
                   const SizedBox(height: 16),
-                  Card(
-                    elevation: 0,
-                    color: theme.colorScheme.tertiaryContainer,
-                    child: const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.info_outline),
-                          SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              'ENTORNO DE DEMOSTRACIÓN · Datos de pruebas internas. '
-                              'Los resultados de simulación no están validados; no se emiten informes '
-                              'clínicos ni se notifica a pacientes.',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
                   Wrap(
                     spacing: 12,
                     runSpacing: 12,
