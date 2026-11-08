@@ -20,6 +20,7 @@ async function main() {
   const patientId = randomUUID(), actorId = randomUUID();
   let orderId=null;
   let simulatedOrderId=null;
+  let multiOrderId=null;
   let success=false, clean=false;
   try {
     const target=await db.query('SELECT current_database() AS db, current_user AS actor');
@@ -28,6 +29,9 @@ async function main() {
     const version=await db.query(
       "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='026_sil_orders'");
     assert.equal(version.rowCount,1,'Migración 026 ausente');
+    const catalogVersion=await db.query(
+      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='027_sil_catalog'");
+    assert.equal(catalogVersion.rowCount,1,'Migración 027 ausente');
     await db.query(
       `INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code)
        VALUES($1,$2,'synthetic-test-only','paciente'),
@@ -75,13 +79,32 @@ async function main() {
     assert.equal(simulatedRead.order.synthetic,true);
     await assert.rejects(sil.simulateAnalyzer(simulatedOrderId),SilConflictError);
     console.log('PRUEBA ANALIZADOR: muestra, 5 resultados sintéticos y segundo intento rechazado.');
+
+    const multi=await sil.createOrder(patientId,actorId,['hemograma','perfil_lipidico']);
+    multiOrderId=multi.id;
+    assert.deepEqual(multi.examCodes,['hemograma','perfil_lipidico']);
+    await sil.registerSample(multiOrderId,'MULTI-'+randomUUID().slice(0,30));
+    const multiRecorded=await sil.simulateAnalyzer(multiOrderId);
+    assert.equal(multiRecorded.count,9);
+    const multiRead=await sil.getOrder(multiOrderId);
+    assert.equal(multiRead.exams.length,2);
+    assert.equal(multiRead.results.length,9);
+    assert.equal(multiRead.results.filter(v=>v.examCode==='perfil_lipidico').length,4);
+    await assert.rejects(sil.simulateAnalyzer(multiOrderId),SilConflictError);
+    const page=await sil.listOrders(20,0);
+    assert.ok(page.orders.some(item=>item.id===multiOrderId));
+    const catalog=await sil.catalog();
+    assert.equal(catalog.exams.length,6);
+    console.log('PRUEBA CATÁLOGO: 6 prestaciones, orden combinada y 9 analitos.');
+
     success=true;
   } finally {
     try {
       // Borrar solamente registros identificados por UUID creados por esta ejecución.
-      for(const id of [orderId,simulatedOrderId].filter(Boolean)) {
+      for(const id of [orderId,simulatedOrderId,multiOrderId].filter(Boolean)) {
         await db.query('DELETE FROM public.vitalia_sil_results WHERE order_id=$1',[id]);
         await db.query('DELETE FROM public.vitalia_sil_samples WHERE order_id=$1',[id]);
+        await db.query('DELETE FROM public.vitalia_sil_order_exams WHERE order_id=$1',[id]);
         await db.query('DELETE FROM public.vitalia_sil_orders WHERE id=$1',[id]);
       }
       // La migración 017 crea roles automáticamente por trigger; primero eliminar dependientes.
@@ -91,7 +114,7 @@ async function main() {
         `SELECT
           (SELECT COUNT(*)::int FROM public.vitalia_sil_orders WHERE id=ANY($1::uuid[])) AS orders,
           (SELECT COUNT(*)::int FROM public.vitalia_accounts WHERE id=ANY($2::uuid[])) AS accounts`,
-        [[orderId,simulatedOrderId].filter(Boolean),[patientId,actorId]]);
+        [[orderId,simulatedOrderId,multiOrderId].filter(Boolean),[patientId,actorId]]);
       assert.equal(remaining.rows[0].orders,0);
       assert.equal(remaining.rows[0].accounts,0);
       clean=true;
