@@ -20,7 +20,8 @@ export interface SilManualInput {
 }
 export function createSilService(db: Pool) {
   async function appendAudit(client:PoolClient,orderId:string,actorId:string,
-    action:'order_created'|'sample_received'|'results_simulated'|'results_manual',
+    action:'order_created'|'sample_received'|'results_simulated'|'results_manual'|
+      'results_corrected'|'review_approved'|'review_rejected',
     details:Record<string,unknown>) {
     await client.query(
       `INSERT INTO public.vitalia_sil_audit
