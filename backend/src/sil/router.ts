@@ -4,6 +4,7 @@ import {z} from 'zod';
 import {type AuthServices} from '../auth/router';
 import {isSessionToken} from '../auth/sessions';
 import {SilConflictError,SilNotFoundError,type SilServices} from './service';
+import {SilEducationNotFound,SilEducationBusy,SilEducationUnavailable} from './patient-education';
 
 const uuid = z.uuid();
 const resultSchema = z.object({
@@ -21,9 +22,11 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     const account=token?await auth.find(token):null;
     if(!account) {res.status(401).json({error:{code:'UNAUTHORIZED'}});return;}
     // Informes publicados: el paciente solo puede leer sus propios documentos.
-    const patientRoute=req.method==='GET' &&
+    const patientRoute=(req.method==='GET' &&
       (req.path==='/patient/reports' ||
-       /^\/patient\/reports\/[a-f0-9-]{36}\/file$/.test(req.path));
+       /^\/patient\/reports\/[a-f0-9-]{36}\/file$/.test(req.path))) ||
+      (req.method==='POST' &&
+       /^\/patient\/reports\/[a-f0-9-]{36}\/chat$/.test(req.path));
     if(patientRoute){
       if(account.role!=='paciente' || process.env.VITALIA_SIL_DEMO!=='YES'){
         res.status(403).json({error:{code:'FORBIDDEN'}});return;
@@ -49,6 +52,17 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     }
     res.locals.account=account;
     next();
+  });
+  router.post('/patient/reports/:id/chat',async(req,res)=>{
+    const data=z.object({
+      question:z.string().trim().min(3).max(400),
+    }).strict().safeParse(req.body);
+    if(!uuid.safeParse(req.params.id).success||!data.success){
+      res.status(400).json({error:{code:'INVALID_QUESTION'}});return;
+    }
+    const answer=await service.askPatientReport(
+      res.locals.account.id,req.params.id as string,data.data.question);
+    res.json({response:answer});
   });
   router.get('/patient/reports',async(_req,res)=>{
     res.json(await service.listPatientReports(res.locals.account.id));
@@ -253,6 +267,9 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     res.json(await service.getOrder(req.params.id as string));
   });
   const errors:ErrorRequestHandler=(error,_req,res,next)=>{
+    if(error instanceof SilEducationNotFound) {res.status(404).json({error:{code:'NOT_FOUND'}});return;}
+    if(error instanceof SilEducationBusy) {res.status(429).json({error:{code:'ASSISTANT_RATE_LIMIT'}});return;}
+    if(error instanceof SilEducationUnavailable) {res.status(503).json({error:{code:'ASSISTANT_UNAVAILABLE'}});return;}
     if(error instanceof SilNotFoundError) {res.status(404).json({error:{code:'NOT_FOUND'}});return;}
     if(error instanceof SilConflictError) {res.status(409).json({error:{code:'INVALID_ORDER_STATE'}});return;}
     if(error instanceof DocumentInputError) {res.status(400).json({error:{code:'INVALID_REPORT'}});return;}
