@@ -46,6 +46,8 @@ if (-not (Test-Path $secretPath)) {
 
 ## Publicación postanalítica de PDF externo (MVP aislado)
 
+La migración **`032_sil_audit_download`** corrige la restricción de auditoría para admitir el evento `external_report_downloaded` al descargar el PDF desde el portal del paciente. Es incremental: no elimina ni reescribe informes existentes. Debe aplicarse después de `031` en `vitalia_dev`, antes de la prueba de integración de PDF.
+
 La migración **`031_sil_external_reports`** incorpora un circuito separado para informes PDF previamente autorizados **por un laboratorio externo**, sin utilizar el simulador de analitos. Una orden nueva se asocia con un paciente registrado y el operador accede a **Informes PDF**: selecciona un archivo de prueba de hasta 2 MiB, indica el laboratorio emisor, la referencia y fecha de la autorización externa y declara haber comprobado esa autorización y la asociación con el paciente. Tras un paso separado de confirmación, el PDF se publica exclusivamente en el acceso del paciente correspondiente.
 
 - **Seguridad:** el listado y la descarga verifican sesión `paciente`, propiedad del documento, publicación previa y hash SHA-256. El servidor entrega el PDF como adjunto, `no-store` y `nosniff`. Las operaciones quedan auditadas.
@@ -117,7 +119,7 @@ La migración `028_sil_order_numbers` añade un correlativo de orden legible y c
 
 La migración **`029_sil_traceability`** separa los tubos EDTA, suero y fluoruro por orden, mantiene registros anteriores como `historical`, agrega la cuenta responsable de la recepción, el origen del resultado y eventos de auditoría de las operaciones nuevas. No borra muestras ni resultados anteriores. Una orden nueva con hemograma y perfil lipídico necesita un tubo EDTA y uno de suero. El registro manual exige todos los analitos de las prestaciones solicitadas y toma las unidades del catálogo; no habilita validación clínica.
 
-**No iniciar el backend actualizado antes de aplicar la migración 031 exclusivamente en `vitalia_dev`.** No ejecutar migraciones sobre la base principal.
+**No iniciar el backend actualizado antes de aplicar la migración 032 exclusivamente en `vitalia_dev`.** No ejecutar migraciones sobre la base principal.
 
 Las contraseñas se conservan en el archivo local. Al reiniciar Docker, las cuentas se mantienen en PostgreSQL y el script de inicio reutiliza los correos. Si se reconstruye la base aislada, se regeneran las mismas credenciales desde el archivo local, siempre que se vuelvan a aplicar las migraciones.
 
@@ -131,7 +133,7 @@ npm --prefix .\backend run build
 npm --prefix .\backend test
 ```
 
-**Detenerse si falla el compilador o las pruebas.** Después aplicar todas las migraciones, incluidas `027_sil_catalog`, `028_sil_order_numbers`, `029_sil_traceability`, `030_sil_review_workflow` y `031_sil_external_reports`, en `vitalia_dev` usando la misma red Docker aislada. No se debe cambiar `PGDATABASE` por `vitalia`.
+**Detenerse si falla el compilador o las pruebas.** Después aplicar todas las migraciones, incluidas `027_sil_catalog`, `028_sil_order_numbers`, `029_sil_traceability`, `030_sil_review_workflow`, `031_sil_external_reports` y `032_sil_audit_download`, en `vitalia_dev` usando la misma red Docker aislada. No se debe cambiar `PGDATABASE` por `vitalia`.
 
 ```powershell
 $distPath = (Resolve-Path ".\backend\dist").Path
