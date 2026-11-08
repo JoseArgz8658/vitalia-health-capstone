@@ -3,7 +3,7 @@ import { type Pool } from 'pg';
 import { z } from 'zod';
 
 type Queryable = Pick<Pool, 'query'>;
-export type AccountRole = 'paciente' | 'profesional' | 'administrador';
+export type AccountRole = 'paciente' | 'profesional' | 'administrador' | 'operador_laboratorio' | 'validador_laboratorio';
 export interface AccountSummary {
   id: string; email: string; role: AccountRole; createdAt: Date;
 }
