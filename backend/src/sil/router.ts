@@ -1,4 +1,5 @@
-import {Router,type ErrorRequestHandler} from 'express';
+import express,{Router,type ErrorRequestHandler} from 'express';
+import {DocumentInputError} from '../documents/file-validation';
 import {z} from 'zod';
 import {type AuthServices} from '../auth/router';
 import {isSessionToken} from '../auth/sessions';
@@ -19,8 +20,25 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
       isSessionToken(parts[1])?parts[1]:null;
     const account=token?await auth.find(token):null;
     if(!account) {res.status(401).json({error:{code:'UNAUTHORIZED'}});return;}
+    // Informes publicados: el paciente solo puede leer sus propios documentos.
+    const patientRoute=req.method==='GET' &&
+      (req.path==='/patient/reports' ||
+       /^\/patient\/reports\/[a-f0-9-]{36}\/file$/.test(req.path));
+    if(patientRoute){
+      if(account.role!=='paciente' || process.env.VITALIA_SIL_DEMO!=='YES'){
+        res.status(403).json({error:{code:'FORBIDDEN'}});return;
+      }
+      res.locals.account=account;
+      next();
+      return;
+    }
     // Un único laboratorio en este MVP, con separación real de funciones.
     if(!['administrador','operador_laboratorio','validador_laboratorio'].includes(account.role)) {
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    const reportAction=req.method==='POST' &&
+      (/^\/orders\/[a-f0-9-]{36}\/report(?:\/publish)?$/.test(req.path));
+    if(reportAction && process.env.VITALIA_SIL_DEMO!=='YES'){
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
     }
     const reviewAction=req.method==='POST' &&
@@ -31,6 +49,23 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     }
     res.locals.account=account;
     next();
+  });
+  router.get('/patient/reports',async(_req,res)=>{
+    res.json(await service.listPatientReports(res.locals.account.id));
+  });
+  router.get('/patient/reports/:id/file',async(req,res)=>{
+    if(!uuid.safeParse(req.params.id).success){
+      res.status(404).json({error:{code:'NOT_FOUND'}});return;
+    }
+    const file=await service.downloadPatientReport(
+      res.locals.account.id,req.params.id as string);
+    res.set('Cache-Control','private, no-store');
+    res.set('X-Content-Type-Options','nosniff');
+    res.set('Content-Type','application/pdf');
+    res.set('Content-Disposition',"attachment; filename*=UTF-8''"+
+      encodeURIComponent(file.fileName));
+    res.set('Content-Length',String(file.bytes.length));
+    res.send(file.bytes);
   });
   router.get('/patients',async(req,res)=>{
     if(res.locals.account.role!=='operador_laboratorio'){
@@ -50,7 +85,8 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     const data=z.object({
       limit:z.coerce.number().int().min(1).max(50).default(20),
       offset:z.coerce.number().int().min(0).max(10000).default(0),
-      status:z.enum(['registered','sampled','results_recorded','review_rejected','review_approved']).optional(),
+      status:z.enum(['registered','sampled','results_recorded','review_rejected','review_approved',
+        'report_attached','report_published']).optional(),
       search:z.string().trim().min(1).max(100).optional(),
     }).strict().safeParse(req.query);
     if(!data.success) {res.status(400).json({error:{code:'INVALID_PAGE'}});return;}
@@ -122,6 +158,49 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
       res.locals.account.id,data.data.decision,data.data.note);
     res.status(201).json({review});
   });
+  router.post('/orders/:id/report',
+    express.raw({type:'application/pdf',limit:'2mb'}),async(req,res)=>{
+    if(!uuid.safeParse(req.params.id).success ||
+      !Buffer.isBuffer(req.body)){
+      res.status(400).json({error:{code:'INVALID_REPORT'}});return;
+    }
+    let input:unknown;
+    try{
+      input={
+        fileName:decodeURIComponent(req.get('x-report-filename')??''),
+        issuingLaboratory:decodeURIComponent(req.get('x-report-issuer')??''),
+        authorizationReference:decodeURIComponent(req.get('x-report-authorization-ref')??''),
+        externallyAuthorizedAt:req.get('x-report-authorized-at'),
+        patientMatchConfirmed:req.get('x-report-patient-confirmed')==='true',
+      };
+    }catch{
+      res.status(400).json({error:{code:'INVALID_REPORT'}});return;
+    }
+    const parsed=z.object({
+      fileName:z.string().regex(/^[^\\/\\x00-\\x1f]{1,115}\\.pdf$/i).max(120),
+      issuingLaboratory:z.string().trim().min(3).max(120),
+      authorizationReference:z.string().trim().min(3).max(120),
+      externallyAuthorizedAt:z.string().min(10).max(40),
+      patientMatchConfirmed:z.literal(true),
+    }).strict().safeParse(input);
+    if(!parsed.success || req.body.length>2*1024*1024 ||
+      req.get('x-report-externally-authorized')!=='true'){
+      res.status(400).json({error:{code:'INVALID_REPORT'}});return;
+    }
+    const report=await service.attachExternalReport(
+      req.params.id as string,res.locals.account.id,parsed.data,req.body);
+    res.status(201).json({report});
+  });
+  router.post('/orders/:id/report/publish',async(req,res)=>{
+    if(!uuid.safeParse(req.params.id).success ||
+      req.body===null || typeof req.body!=='object' ||
+      Array.isArray(req.body) || Object.keys(req.body).length!==0){
+      res.status(400).json({error:{code:'INVALID_PUBLICATION'}});return;
+    }
+    const published=await service.publishExternalReport(
+      req.params.id as string,res.locals.account.id);
+    res.status(201).json({publication:published});
+  });
   router.get('/orders/:id',async(req,res)=>{
     if(!uuid.safeParse(req.params.id).success) {
       res.status(404).json({error:{code:'NOT_FOUND'}});return;
@@ -131,6 +210,10 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
   const errors:ErrorRequestHandler=(error,_req,res,next)=>{
     if(error instanceof SilNotFoundError) {res.status(404).json({error:{code:'NOT_FOUND'}});return;}
     if(error instanceof SilConflictError) {res.status(409).json({error:{code:'INVALID_ORDER_STATE'}});return;}
+    if(error instanceof DocumentInputError) {res.status(400).json({error:{code:'INVALID_REPORT'}});return;}
+    if((error as {type?:string}).type==='entity.too.large'){
+      res.status(413).json({error:{code:'PAYLOAD_TOO_LARGE'}});return;
+    }
     next(error);
   };
   router.use(errors);
