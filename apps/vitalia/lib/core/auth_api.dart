@@ -48,7 +48,7 @@ class AuthApi {
   }) async {
     final uri = Uri.tryParse(path);
     final validPath = RegExp(
-      r'^/(?:catalog|summary|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results))?)?|patients)$',
+      r'^/(?:catalog|summary|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results|review))?)?|patients)$',
     );
     final allowedParams = uri?.path == '/patients'
         ? <String>{'email'}
