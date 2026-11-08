@@ -39,7 +39,7 @@ export function createSilMedicalRequestIntake(
     .toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
   const matchesName=(text:string,name:string)=>{
     const full=normalize(name);
-    return Boolean(full)&&text.includes(full);
+    return Boolean(full)&&(' '+text+' ').includes(' '+full+' ');
   };
   function prune(){
     const now=Date.now();
@@ -160,7 +160,8 @@ export function createSilMedicalRequestIntake(
     const date=new Date(input.requestDate+'T12:00:00Z');
     if(!Number.isFinite(date.getTime())||
        input.requestDate!==date.toISOString().slice(0,10)||
-       date.getTime()>Date.now())throw new SilConflictError();
+       input.requestDate>new Date().toISOString().slice(0,10))
+      throw new SilConflictError();
 
     const client=await db.connect();
     let failed=false;
