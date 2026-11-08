@@ -27,6 +27,7 @@ function setup(role) {
     recordManualResults: jest.fn(async () => ({orderId:actorId,status:'results_recorded'})),
     simulateAnalyzer: jest.fn(async () => ({orderId:actorId,count:9})),
     getOrder: jest.fn(async () => ({order:{id:actorId},exams:[],results:[]})),
+    reviewOrder: jest.fn(async (_order,_actor,decision) => ({orderId:actorId,decision})),
   };
   const app = express();
   app.use(express.json());
@@ -112,6 +113,42 @@ describe('SIL: permisos y catálogo multiprestación', () => {
     await authorized(request(app).post('/api/sil/orders/'+actorId+'/simulate'))
       .send({}).expect(403);
     expect(service.simulateAnalyzer).not.toHaveBeenCalled();
+  });
+  test('solo validador puede aprobar o devolver una orden',async () => {
+    const review={decision:'approve',note:'Valores comprobados en revisión interna.'};
+    const validator=setup('validador_laboratorio');
+    await authorized(request(validator.app).post('/api/sil/orders/'+actorId+'/review'))
+      .send(review).expect(201);
+    expect(validator.service.reviewOrder).toHaveBeenCalledWith(
+      actorId,actorId,'approve',review.note);
+
+    const operator=setup('operador_laboratorio');
+    await authorized(request(operator.app).post('/api/sil/orders/'+actorId+'/review'))
+      .send(review).expect(403);
+    const admin=setup('administrador');
+    await authorized(request(admin.app).post('/api/sil/orders/'+actorId+'/review'))
+      .send(review).expect(403);
+    expect(operator.service.reviewOrder).not.toHaveBeenCalled();
+    expect(admin.service.reviewOrder).not.toHaveBeenCalled();
+    await authorized(request(validator.app).post('/api/sil/orders/'+actorId+'/sample'))
+      .send({barcode:'TUBO-0001',containerCode:'edta'}).expect(403);
+  });
+  test('devolución requiere motivo suficiente y rechaza parámetros extra',async () => {
+    const {app,service}=setup('validador_laboratorio');
+    for(const payload of [
+      {decision:'return',note:''},
+      {decision:'return',note:'muy corto'},
+      {decision:'unknown',note:'Razón extensa'},
+      {decision:'approve',note:'ok',overrideStatus:'review_approved'},
+    ]) {
+      await authorized(request(app).post('/api/sil/orders/'+actorId+'/review'))
+        .send(payload).expect(400);
+    }
+    expect(service.reviewOrder).not.toHaveBeenCalled();
+    await authorized(request(app).post('/api/sil/orders/'+actorId+'/review'))
+      .send({decision:'return',note:'Revisar valores del hemograma.'}).expect(201);
+    expect(service.reviewOrder).toHaveBeenCalledWith(
+      actorId,actorId,'return','Revisar valores del hemograma.');
   });
   test('se requiere token de sesión para consultar',async () => {
     const {app}=setup('operador_laboratorio');
