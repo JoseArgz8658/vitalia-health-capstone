@@ -61,6 +61,20 @@ describe('IA educativa del SIL: separación de documentos y prestaciones',()=>{
     expect(answer.answer).toContain('orden');
     expect(model).not.toHaveBeenCalled();
   });
+  test('motor existente explica Glicemia y HbA1c sin llamar servicios externos',async()=>{
+    const {createExamAssistant}=require('../dist/exam-assistant/local-model');
+    const db=reportRows();
+    const service=createSilPatientEducation(db,createExamAssistant({
+      fetchImpl:async()=>{throw new Error('La ruta de conocimientos no debe conectar a Ollama');},
+    }));
+    const glucose=await service.ask(patient,report,'¿Qué es la glicemia?');
+    expect(glucose.answer).toMatch(/azucar|azúcar/i);
+    expect(glucose.answer).not.toMatch(/[0-9]/);
+    const a1c=await service.ask(patient,report,'¿Para qué se mide la HbA1c?');
+    expect(a1c.answer).toMatch(/promedio|glucosa/i);
+    expect(a1c.answer).not.toMatch(/[0-9]/);
+    expect(a1c.approved).toBe(false);
+  });
   test('fallo local de IA se declara, sin respuestas clínicas inventadas',async()=>{
     const model=jest.fn(async()=>{throw new AssistantModelError('transport');});
     const service=createSilPatientEducation(reportRows(),model);
