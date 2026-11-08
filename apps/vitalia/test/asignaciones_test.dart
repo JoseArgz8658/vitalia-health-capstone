@@ -528,6 +528,22 @@ void main() {
     api.close();
   });
 
+  test('descarga autenticada de solicitud original', () async {
+    var calls=0;
+    final bytes=Uint8List.fromList([37,80,68,70,45,49,46,52,10,37,37,69,79,70]);
+    final api=await session('operador_laboratorio',(request) async {
+      calls++;
+      expect(request.method,'GET');
+      expect(request.url.path,'/api/sil/orders/$id/medical-request/file');
+      expect(request.headers['authorization'],startsWith('Bearer '));
+      return http.Response.bytes(bytes,200,
+        headers:{'content-type':'application/pdf'});
+    });
+    expect(await api.silDownloadMedicalRequest(id),bytes);
+    expect(calls,1);
+    api.close();
+  });
+
   test('previsualizar PDF de resultados exige sesión y no guarda datos', () async {
     var calls=0;
     final api=await session('operador_laboratorio',(request) async {
