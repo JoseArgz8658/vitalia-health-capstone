@@ -1,7 +1,6 @@
 import {type Pool} from 'pg';
 import {type Extraction} from '../ai/contract';
-import {createExamAssistant,type ExamAssistant,AssistantModelError} from '../exam-assistant/local-model';
-import {notice} from '../exam-assistant/contract';
+import {createExamAssistant,type ExamAssistant} from '../exam-assistant/local-model';
 
 /**
  * Asistente educativo exclusivo del SIL local de prueba.
@@ -69,15 +68,15 @@ export function createSilPatientEducation(
           })),
         };
         const generated=await model({extraction,question,mode:'chat',history:[]});
-        const kind=generated.reply.kind;
         // La validación del modelo compartido bloquea afirmaciones clínicas y
         // respuestas con cifras no sustentadas; las categorías se conservan.
         return result(generated.reply.answer,
           generated.model==='knowledge-fast-path'||generated.model==='backend-policy'
             ? 'catalogo':'modelo_local');
       }catch(error) {
-        if(error instanceof AssistantModelError)throw new SilEducationUnavailable();
-        throw error;
+        // Fallo de transporte o respuesta no aceptada: no filtrar contenido
+        // de la excepción ni devolver texto clínico sin validar.
+        throw new SilEducationUnavailable();
       }finally{
         busy.delete(key);
       }
