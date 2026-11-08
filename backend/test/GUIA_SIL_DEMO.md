@@ -44,6 +44,46 @@ if (-not (Test-Path $secretPath)) {
 # Get-Content $secretPath
 ```
 
+## Publicación postanalítica de PDF externo (MVP aislado)
+
+La migración **`031_sil_external_reports`** incorpora un circuito separado para informes PDF previamente autorizados **por un laboratorio externo**, sin utilizar el simulador de analitos. Una orden nueva se asocia con un paciente registrado y el operador accede a **Informes PDF**: selecciona un archivo de prueba de hasta 2 MiB, indica el laboratorio emisor, la referencia y fecha de la autorización externa y declara haber comprobado esa autorización y la asociación con el paciente. Tras un paso separado de confirmación, el PDF se publica exclusivamente en el acceso del paciente correspondiente.
+
+- **Seguridad:** el listado y la descarga verifican sesión `paciente`, propiedad del documento, publicación previa y hash SHA-256. El servidor entrega el PDF como adjunto, `no-store` y `nosniff`. Las operaciones quedan auditadas.
+- **Límites:** los bytes del PDF se guardan en PostgreSQL **solo en el entorno de demostración aislado**; no hay verificación criptográfica de una firma externa, escaneo antimalware, integración con un repositorio clínico, análisis real de exámenes ni autorización clínica realizada por Vitalia. Usar exclusivamente PDF sintéticos; para producción se requiere almacenamiento privado externo, revisión de seguridad y acuerdos con el laboratorio.
+- **Notificación:** publicar permite ver el informe al acceder al portal, **no envía mensajes ni correos todavía**.
+- **Aislamiento:** las rutas de carga y lectura de PDF del SIL devuelven acceso denegado cuando `VITALIA_SIL_DEMO` no está activado.
+
+### Cuarta contraseña: paciente de pruebas
+
+El archivo `$HOME\.vitalia-sil-demo.env` debe incorporar una cuarta clave permanente, **sin sustituir las tres existentes**:
+
+```powershell
+$secretPath = Join-Path $HOME ".vitalia-sil-demo.env"
+if (-not (Test-Path $secretPath)) { throw "No existe el archivo local de contraseñas." }
+if (-not (Select-String -Path $secretPath -Pattern '^VITALIA_SIL_PATIENT_PASSWORD=' -Quiet)) {
+    $bytes = New-Object byte[] 24
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+        $patientSecret = [Convert]::ToBase64String($bytes)
+        Add-Content -Path $secretPath -Encoding ASCII -Value ("VITALIA_SIL_PATIENT_PASSWORD=" + $patientSecret)
+    } finally {
+        $rng.Dispose()
+        Remove-Variable patientSecret -ErrorAction SilentlyContinue
+    }
+}
+```
+
+El script de inicio reutiliza `paciente.sil@example.invalid` y actualiza solamente el hash para la nueva clave persistente. La nueva variable requiere **recrear exclusivamente** `vitalia-sil-demo` (no basta `docker start`). No revelar contraseñas por chat ni guardarlas en Git.
+
+Para abrir el portal aislado del paciente, lanzar Flutter con ambos parámetros:
+```powershell
+flutter run -d edge --web-hostname localhost --web-port 5173 `
+  --dart-define=VITALIA_API_URL=http://127.0.0.1:3101 `
+  --dart-define=VITALIA_SIL_DEMO_MODE=true
+```
+Entrar a `http://localhost:5173/#/informes` con `paciente.sil@example.invalid` y su clave del archivo local. Esta modalidad no reemplaza ni modifica el portal de documentos original; es una pantalla de demostración separada.
+
 ## Contraseña permanente del validador
 
 El archivo de secretos que ya existe **no se debe reemplazar**. Solo agrega una tercera contraseña si falta, sin mostrarla en consola ni en chats:
@@ -77,7 +117,7 @@ La migración `028_sil_order_numbers` añade un correlativo de orden legible y c
 
 La migración **`029_sil_traceability`** separa los tubos EDTA, suero y fluoruro por orden, mantiene registros anteriores como `historical`, agrega la cuenta responsable de la recepción, el origen del resultado y eventos de auditoría de las operaciones nuevas. No borra muestras ni resultados anteriores. Una orden nueva con hemograma y perfil lipídico necesita un tubo EDTA y uno de suero. El registro manual exige todos los analitos de las prestaciones solicitadas y toma las unidades del catálogo; no habilita validación clínica.
 
-**No iniciar el backend actualizado antes de aplicar la migración 030 exclusivamente en `vitalia_dev`.** No ejecutar migraciones sobre la base principal.
+**No iniciar el backend actualizado antes de aplicar la migración 031 exclusivamente en `vitalia_dev`.** No ejecutar migraciones sobre la base principal.
 
 Las contraseñas se conservan en el archivo local. Al reiniciar Docker, las cuentas se mantienen en PostgreSQL y el script de inicio reutiliza los correos. Si se reconstruye la base aislada, se regeneran las mismas credenciales desde el archivo local, siempre que se vuelvan a aplicar las migraciones.
 
@@ -91,7 +131,7 @@ npm --prefix .\backend run build
 npm --prefix .\backend test
 ```
 
-**Detenerse si falla el compilador o las pruebas.** Después aplicar todas las migraciones, incluidas `027_sil_catalog`, `028_sil_order_numbers`, `029_sil_traceability` y `030_sil_review_workflow`, en `vitalia_dev` usando la misma red Docker aislada. No se debe cambiar `PGDATABASE` por `vitalia`.
+**Detenerse si falla el compilador o las pruebas.** Después aplicar todas las migraciones, incluidas `027_sil_catalog`, `028_sil_order_numbers`, `029_sil_traceability`, `030_sil_review_workflow` y `031_sil_external_reports`, en `vitalia_dev` usando la misma red Docker aislada. No se debe cambiar `PGDATABASE` por `vitalia`.
 
 ```powershell
 $distPath = (Resolve-Path ".\backend\dist").Path
