@@ -57,6 +57,22 @@ export function createSilService(db: Pool) {
     askPatientReport:education.ask,
     previewMedicalRequest:medicalIntake.preview,
     confirmMedicalRequest:medicalIntake.confirm,
+    async downloadMedicalRequest(orderId:string,actorId:string){
+      const result=await db.query<{id:string;fileName:string;data:Buffer;sha256:string}>(
+        `SELECT id,file_name AS "fileName",pdf_data AS data,pdf_sha256 AS sha256
+         FROM public.vitalia_sil_medical_requests_demo WHERE order_id=$1`,
+        [orderId]);
+      if(!result.rows.length)throw new SilNotFoundError();
+      const item=result.rows[0];
+      if(item.data.length>2*1024*1024||
+         createHash('sha256').update(item.data).digest('hex')!==item.sha256)
+        throw new SilConflictError();
+      await db.query(
+        `INSERT INTO public.vitalia_sil_audit(id,order_id,actor_id,action,details)
+         VALUES($1,$2,$3,'medical_request_accessed',$4::jsonb)`,
+        [randomUUID(),orderId,actorId,JSON.stringify({requestId:item.id})]);
+      return {fileName:item.fileName,bytes:item.data};
+    },
     previewResultsFile:previewAndReceipt,
     async catalog() {
       const [exams,analytes,containers] = await Promise.all([
