@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../core/auth_api.dart';
 
-/// Interfaz local de un laboratorio ficticio. No publica resultados clínicos.
+/// Interfaz de demostración. No publica resultados clínicos.
 class LaboratorioSimuladoPage extends StatefulWidget {
   const LaboratorioSimuladoPage({
     super.key,
@@ -95,7 +95,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
 
   String get _nextAction => switch (_status) {
     'registered' => 'Registrar la muestra',
-    'sampled' => 'Ejecutar el analizador simulado',
+    'sampled' => 'Procesar muestra en demostración',
     'results_recorded' => 'Pendiente de revisión y validación',
     _ => 'Crear o consultar una orden',
   };
@@ -209,7 +209,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                 DataColumn(label: Text('Analito')),
                 DataColumn(label: Text('Resultado')),
                 DataColumn(label: Text('Unidad')),
-                DataColumn(label: Text('Intervalo ficticio')),
+                DataColumn(label: Text('Intervalo de referencia (prueba)')),
               ],
               rows: results.map((item) {
                 final value = item as Map;
