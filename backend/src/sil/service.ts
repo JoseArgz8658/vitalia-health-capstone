@@ -62,6 +62,13 @@ export function createSilService(db: Pool) {
         throw error;
       } finally {client.release(failed);}
     },
+    async findPatientByEmail(email: string) {
+      const result=await db.query<{id:string;email:string}>(
+        `SELECT id,email FROM public.vitalia_accounts
+         WHERE email=$1 AND role_code='paciente'`,[email]);
+      if(!result.rows.length) throw new SilNotFoundError();
+      return result.rows[0];
+    },
     async listOrders(limit=20,offset=0) {
       const result=await db.query(
         `SELECT o.id,o.patient_id AS "patientId",a.email AS "patientEmail",
