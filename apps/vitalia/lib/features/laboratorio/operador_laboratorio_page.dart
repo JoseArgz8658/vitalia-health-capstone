@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_selector/file_selector.dart';
 
 import '../../core/auth_api.dart';
@@ -30,7 +31,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     (Icons.fact_check_outlined, 'Resultados'),
     (Icons.picture_as_pdf_outlined, 'Informes PDF'),
     (Icons.badge_outlined, 'Ficha paciente DEMO'),
-    (Icons.assignment_add_outlined, 'Recibir solicitud'),
+    (Icons.assignment_outlined, 'Recibir solicitud'),
   ];
 
   final _patientController = TextEditingController();
@@ -263,6 +264,26 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           .contains(order['status']) ? 4 : 3;
     });
   }
+
+  Future<void> _downloadMedicalRequest() => _run(() async {
+    final order=_selected?['order'] as Map?;
+    final request=_selected?['medicalRequest'] as Map?;
+    if(order==null||request==null)
+      throw const AuthFailure('La orden no tiene solicitud PDF vinculada.');
+    final name=request['fileName'] as String;
+    final bytes=await widget.api.silDownloadMedicalRequest(order['id'] as String);
+    if(!mounted||!widget.api.hasSession)return;
+    final pdf=XFile.fromData(bytes,name:name,mimeType:'application/pdf');
+    if(kIsWeb){
+      await pdf.saveTo(name);
+    }else{
+      final target=await getSaveLocation(suggestedName:name);
+      if(target==null)return;
+      await pdf.saveTo(target.path);
+    }
+    if(mounted)setState(()=>
+      _message='Descarga de solicitud registrada en auditoría.');
+  });
 
   Future<void> _selectMedicalRequestPdf() async {
     try{
@@ -1203,6 +1224,12 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           '${(_selected!['medicalRequest'] as Map)['branchName']}'),
         Text('Profesional solicitante indicado: '
           '${(_selected!['medicalRequest'] as Map)['prescriberName']}'),
+        const SizedBox(height:8),
+        Align(alignment:Alignment.centerLeft,child:OutlinedButton.icon(
+          onPressed:_busy?null:_downloadMedicalRequest,
+          icon:const Icon(Icons.download_outlined),
+          label:const Text('Descargar solicitud original'),
+        )),
       ],
       Text('Creación: ${_date(order['createdAt'])}'),
       Text('Estado: ${_statusLabel(order['status'] as String?)}'),
