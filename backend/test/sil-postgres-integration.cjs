@@ -51,6 +51,9 @@ async function main() {
     const demoIdentityVersion=await db.query(
       "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='033_sil_branches_patient_demo'");
     assert.equal(demoIdentityVersion.rowCount,1,'Migración 033 ausente');
+    const medicalRequestVersion=await db.query(
+      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='034_sil_medical_requests_demo'");
+    assert.equal(medicalRequestVersion.rowCount,1,'Migración 034 ausente');
     await db.query(
       `INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code)
        VALUES($1,$2,'synthetic-test-only','paciente'),
