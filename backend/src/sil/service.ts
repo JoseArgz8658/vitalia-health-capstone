@@ -1,5 +1,6 @@
 import {SIL_ANALYZER_ID} from './analyzer';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
+import {identifyDocument} from '../documents/file-validation';
 import {type Pool,type PoolClient} from 'pg';
 
 export class SilConflictError extends Error {}
@@ -21,7 +22,8 @@ export interface SilManualInput {
 export function createSilService(db: Pool) {
   async function appendAudit(client:PoolClient,orderId:string,actorId:string,
     action:'order_created'|'sample_received'|'results_simulated'|'results_manual'|
-      'results_corrected'|'review_approved'|'review_rejected',
+      'results_corrected'|'review_approved'|'review_rejected'|
+      'external_report_attached'|'external_report_published'|'external_report_downloaded',
     details:Record<string,unknown>) {
     await client.query(
       `INSERT INTO public.vitalia_sil_audit
@@ -94,7 +96,7 @@ export function createSilService(db: Pool) {
     async summary() {
       const result=await db.query<{
         total:number;pendingSample:number;pendingResults:number;
-        pendingReview:number;returned:number;approved:number;patients:number;
+        pendingReview:number;returned:number;approved:number;attached:number;published:number;patients:number;
       }>(
         `SELECT
            COUNT(*)::int AS total,
@@ -103,12 +105,15 @@ export function createSilService(db: Pool) {
            COUNT(*) FILTER (WHERE status='results_recorded')::int AS "pendingReview",
            COUNT(*) FILTER (WHERE status='review_rejected')::int AS returned,
            COUNT(*) FILTER (WHERE status='review_approved')::int AS approved,
+           COUNT(*) FILTER (WHERE status='report_attached')::int AS attached,
+           COUNT(*) FILTER (WHERE status='report_published')::int AS published,
            COUNT(DISTINCT patient_id)::int AS patients
          FROM public.vitalia_sil_orders`);
       return {summary:result.rows[0]};
     },
     async listOrders(limit=20,offset=0,
-      status?:'registered'|'sampled'|'results_recorded'|'review_rejected'|'review_approved',
+      status?:'registered'|'sampled'|'results_recorded'|'review_rejected'|'review_approved'|
+        'report_attached'|'report_published',
       search='') {
       const clauses:string[]=[];
       const params:Array<string|number>=[];
@@ -340,6 +345,116 @@ export function createSilService(db: Pool) {
         throw error;
       }finally{client.release(failed);}
     },
+    async attachExternalReport(orderId:string,actorId:string,input:{
+      fileName:string;issuingLaboratory:string;authorizationReference:string;
+      externallyAuthorizedAt:string;patientMatchConfirmed:true;
+    },bytes:Buffer) {
+      if(bytes.length<8 || bytes.length>2*1024*1024)
+        throw new SilConflictError();
+      identifyDocument(bytes,'application/pdf',input.fileName);
+      const date=new Date(input.externallyAuthorizedAt);
+      if(!Number.isFinite(date.getTime()) || date.getTime()>Date.now())
+        throw new SilConflictError();
+      const client=await db.connect();
+      let failed=false;
+      try{
+        await client.query('BEGIN');
+        const order=await client.query<{status:string;patientId:string;synthetic:boolean}>(
+          `SELECT status,patient_id AS "patientId",synthetic
+             FROM public.vitalia_sil_orders WHERE id=$1 FOR UPDATE`,[orderId]);
+        if(!order.rows.length)throw new SilNotFoundError();
+        if(order.rows[0].status!=='registered' || !order.rows[0].synthetic)
+          throw new SilConflictError();
+        const id=randomUUID();
+        const checksum=createHash('sha256').update(bytes).digest('hex');
+        await client.query(
+          `INSERT INTO public.vitalia_sil_external_reports(
+            id,order_id,patient_id,file_name,pdf_data,pdf_sha256,
+            issuing_laboratory,external_authorization_ref,
+            externally_authorized_at,patient_match_confirmed,received_by)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,true,$10)`,
+          [id,orderId,order.rows[0].patientId,input.fileName,bytes,checksum,
+            input.issuingLaboratory,input.authorizationReference,date,actorId]);
+        await client.query(
+          `UPDATE public.vitalia_sil_orders SET status='report_attached' WHERE id=$1`,
+          [orderId]);
+        await appendAudit(client,orderId,actorId,'external_report_attached',{
+          reportId:id,fileSha256:checksum,issuer:input.issuingLaboratory,
+          authorizationReference:input.authorizationReference,
+          patientMatchConfirmed:true
+        });
+        await client.query('COMMIT');
+        return {id,orderId,status:'report_attached',fileName:input.fileName,
+          sha256:checksum};
+      }catch(error){
+        try{await client.query('ROLLBACK');}catch{failed=true;}
+        if((error as {code?:string}).code==='23505')throw new SilConflictError();
+        throw error;
+      }finally{client.release(failed);}
+    },
+    async publishExternalReport(orderId:string,actorId:string) {
+      const client=await db.connect();
+      let failed=false;
+      try{
+        await client.query('BEGIN');
+        const order=await client.query<{status:string}>(
+          `SELECT status FROM public.vitalia_sil_orders WHERE id=$1 FOR UPDATE`,[orderId]);
+        if(!order.rows.length)throw new SilNotFoundError();
+        if(order.rows[0].status!=='report_attached')throw new SilConflictError();
+        const report=await client.query<{id:string}>(
+          `UPDATE public.vitalia_sil_external_reports
+             SET published_at=CURRENT_TIMESTAMP,published_by=$2
+             WHERE order_id=$1 AND published_at IS NULL AND patient_match_confirmed
+             RETURNING id`,[orderId,actorId]);
+        if(!report.rows.length)throw new SilConflictError();
+        await client.query(
+          `UPDATE public.vitalia_sil_orders SET status='report_published' WHERE id=$1`,
+          [orderId]);
+        await appendAudit(client,orderId,actorId,'external_report_published',
+          {reportId:report.rows[0].id});
+        await client.query('COMMIT');
+        return {orderId,reportId:report.rows[0].id,status:'report_published'};
+      }catch(error){
+        try{await client.query('ROLLBACK');}catch{failed=true;}
+        throw error;
+      }finally{client.release(failed);}
+    },
+    async listPatientReports(patientId:string) {
+      const result=await db.query(
+        `SELECT r.id,r.file_name AS "fileName",
+           r.issuing_laboratory AS "issuingLaboratory",
+           r.externally_authorized_at AS "externallyAuthorizedAt",
+           r.published_at AS "publishedAt",
+           'VH-' || lpad(o.order_number::text,6,'0') AS "orderNumber",
+           r.pdf_sha256 AS sha256
+         FROM public.vitalia_sil_external_reports r
+         JOIN public.vitalia_sil_orders o ON o.id=r.order_id
+         WHERE r.patient_id=$1 AND r.published_at IS NOT NULL
+           AND o.status='report_published'
+         ORDER BY r.published_at DESC LIMIT 50`,[patientId]);
+      return {reports:result.rows};
+    },
+    async downloadPatientReport(patientId:string,reportId:string) {
+      const result=await db.query<{
+        id:string;orderId:string;fileName:string;data:Buffer;sha256:string
+      }>(
+        `SELECT r.id,r.order_id AS "orderId",r.file_name AS "fileName",
+                r.pdf_data AS data,r.pdf_sha256 AS sha256
+           FROM public.vitalia_sil_external_reports r
+           JOIN public.vitalia_sil_orders o ON o.id=r.order_id
+           WHERE r.id=$1 AND r.patient_id=$2 AND r.published_at IS NOT NULL
+           AND o.status='report_published'`,[reportId,patientId]);
+      if(!result.rows.length)throw new SilNotFoundError();
+      const item=result.rows[0];
+      if(item.data.length>2*1024*1024 ||
+        createHash('sha256').update(item.data).digest('hex')!==item.sha256)
+        throw new SilConflictError();
+      await db.query(
+        `INSERT INTO public.vitalia_sil_audit(id,order_id,actor_id,action,details)
+         VALUES($1,$2,$3,'external_report_downloaded',$4::jsonb)`,
+        [randomUUID(),item.orderId,patientId,JSON.stringify({reportId:item.id})]);
+      return {fileName:item.fileName,bytes:item.data};
+    },
     async getOrder(orderId: string) {
       const order = await db.query(
         `SELECT o.id,'VH-' || lpad(o.order_number::text,6,'0') AS "orderNumber",
@@ -350,7 +465,7 @@ export function createSilService(db: Pool) {
          JOIN public.vitalia_accounts a ON a.id=o.patient_id
          WHERE o.id=$1`,[orderId]);
       if (!order.rows.length) throw new SilNotFoundError();
-      const [exams,samples,required,results,audit] = await Promise.all([
+      const [exams,samples,required,results,audit,report] = await Promise.all([
         db.query(
           `SELECT c.code,c.name,c.sample_type AS "sampleType"
            FROM public.vitalia_sil_order_exams e
@@ -384,10 +499,19 @@ export function createSilService(db: Pool) {
            FROM public.vitalia_sil_audit e
            JOIN public.vitalia_accounts a ON a.id=e.actor_id
            WHERE e.order_id=$1 ORDER BY e.created_at,e.id`,[orderId]),
+        db.query(
+          `SELECT id,file_name AS "fileName",
+            issuing_laboratory AS "issuingLaboratory",
+            external_authorization_ref AS "authorizationReference",
+            externally_authorized_at AS "externallyAuthorizedAt",
+            received_at AS "receivedAt",published_at AS "publishedAt",
+            pdf_sha256 AS sha256
+           FROM public.vitalia_sil_external_reports WHERE order_id=$1`,[orderId]),
       ]);
       return {order:order.rows[0],exams:exams.rows,
         sample:samples.rows[0]??null,samples:samples.rows,
         requiredContainers:required.rows,results:results.rows,audit:audit.rows,
+        externalReport:report.rows[0]??null,
         latestReview:audit.rows.filter(item=>
           item.action==='review_approved'||item.action==='review_rejected').at(-1)??null};
     },
