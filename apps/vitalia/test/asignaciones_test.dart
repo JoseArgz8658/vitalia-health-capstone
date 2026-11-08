@@ -478,6 +478,28 @@ void main() {
     api.close();
   });
 
+  test('previsualizar PDF de resultados exige sesión y no guarda datos', () async {
+    var calls=0;
+    final api=await session('operador_laboratorio',(request) async {
+      calls++;
+      expect(request.method,'POST');
+      expect(request.url.path,'/api/sil/orders/$id/results/preview');
+      expect(request.headers['content-type'],'application/pdf');
+      expect(request.headers['authorization'],startsWith('Bearer '));
+      expect(request.bodyBytes,isNotEmpty);
+      return http.Response('{"preview":{"state":"needs_manual","items":[],'
+          '"warnings":["Revisión humana pendiente"],"previewToken":null,'
+          '"confirmed":false}}',200);
+    });
+    final result=await api.silPreviewResultsFile(
+      orderId:id,
+      bytes:Uint8List.fromList([37,80,68,70,45,49,46,52,10,37,37,69,79,70]),
+    );
+    expect((result['preview'] as Map)['confirmed'],isFalse);
+    expect(calls,1);
+    api.close();
+  });
+
   test('API recibe PDF externo mediante POST binario autenticado', () async {
     var called = false;
     final api = await session('operador_laboratorio', (request) async {
