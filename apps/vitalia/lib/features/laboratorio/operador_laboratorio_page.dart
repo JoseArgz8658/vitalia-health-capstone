@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:file_selector/file_selector.dart';
 
 import '../../core/auth_api.dart';
 
-/// Estación de trabajo del operador. No publica ni valida resultados clínicos.
+/// Estación de trabajo del operador. Publica SOLO PDFs ya autorizados fuera de Vitalia.
 class OperadorLaboratorioPage extends StatefulWidget {
   const OperadorLaboratorioPage({
     super.key,
@@ -27,12 +28,19 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     (Icons.note_add_outlined, 'Nueva orden'),
     (Icons.science_outlined, 'Muestras'),
     (Icons.fact_check_outlined, 'Resultados'),
+    (Icons.picture_as_pdf_outlined, 'Informes PDF'),
   ];
 
   final _patientController = TextEditingController();
   final _searchController = TextEditingController();
   final _barcodeController = TextEditingController();
   final _receiptNoteController = TextEditingController();
+  final _reportIssuer = TextEditingController();
+  final _reportReference = TextEditingController();
+  XFile? _reportFile;
+  DateTime? _reportAuthorizedAt;
+  bool _confirmExternal = false;
+  bool _confirmPatient = false;
   final Map<String, TextEditingController> _manualControllers = {};
   String? _containerCode;
   final _selectedExams = <String>{'hemograma'};
@@ -64,6 +72,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     _searchController.dispose();
     _barcodeController.dispose();
     _receiptNoteController.dispose();
+    _reportIssuer.dispose();
+    _reportReference.dispose();
     for (final controller in _manualControllers.values) {
       controller.dispose();
     }
@@ -190,7 +200,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       _barcodeController.clear();
       _receiptNoteController.clear();
       _containerCode = pending.isEmpty ? null : (pending.first as Map)['code'] as String;
-      _section = ['results_recorded', 'review_rejected', 'review_approved']
+      _section = ['report_attached', 'report_published'].contains(order['status'])
+          ? 5 : ['results_recorded', 'review_rejected', 'review_approved']
           .contains(order['status']) ? 4 : 3;
     });
   }
@@ -243,6 +254,106 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     await _refreshAll();
     if (mounted) setState(() => _message = 'Recepción de muestra registrada.');
   });
+
+  Future<void> _selectReportPdf() async {
+    try {
+      final file = await openFile(acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Informe PDF',
+          extensions: ['pdf'],
+          mimeTypes: ['application/pdf'],
+        ),
+      ]);
+      if (file == null || !mounted) return;
+      final size = await file.length();
+      if (!mounted) return;
+      if (size < 8 || size > 2 * 1024 * 1024) {
+        setState(() => _error = 'Selecciona un PDF de prueba de hasta 2 MiB.');
+        return;
+      }
+      setState(() {
+        _reportFile = file;
+        _error = null;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _error = 'No se pudo seleccionar el PDF.');
+    }
+  }
+
+  Future<void> _selectAuthorizationDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _reportAuthorizedAt ?? DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+      helpText: 'Fecha de autorización externa',
+    );
+    if (mounted && date != null) setState(() => _reportAuthorizedAt = date);
+  }
+
+  Future<void> _attachExternalReport() => _run(() async {
+    final order = _selected?['order'] as Map?;
+    if (order == null || order['status'] != 'registered') {
+      throw const AuthFailure('Selecciona una orden nueva para adjuntar el PDF.');
+    }
+    final file = _reportFile;
+    if (file == null || _reportAuthorizedAt == null ||
+        !_confirmExternal || !_confirmPatient) {
+      throw const AuthFailure('Selecciona el PDF, la fecha y confirma sus verificaciones.');
+    }
+    if (_reportIssuer.text.trim().length < 3 ||
+        _reportReference.text.trim().length < 3) {
+      throw const AuthFailure('Indica el laboratorio emisor y la referencia de autorización.');
+    }
+    final bytes = await file.readAsBytes();
+    await widget.api.silUploadReport(
+      orderId: order['id'] as String,
+      fileName: file.name,
+      issuer: _reportIssuer.text.trim(),
+      authorizationReference: _reportReference.text.trim(),
+      authorizedAt: _reportAuthorizedAt!,
+      bytes: bytes,
+    );
+    _reportFile = null;
+    await _openOrder(order['id'] as String);
+    await _refreshAll();
+    if (mounted) {
+      setState(() => _message =
+          'Informe incorporado. Comprueba la asociación antes de publicarlo.');
+    }
+  });
+
+  Future<void> _publishExternalReport() async {
+    final order = _selected?['order'] as Map?;
+    if (order == null || order['status'] != 'report_attached' || _busy) return;
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar publicación al paciente'),
+        content: const Text(
+          'Confirma que comprobaste la autorización externa del PDF y '
+          'su correspondencia con el paciente. La publicación no equivale '
+          'a validar resultados clínicos dentro de Vitalia.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(context, true),
+              child: const Text('Publicar informe')),
+        ],
+      ),
+    );
+    if (approved != true || !mounted) return;
+    await _run(() async {
+      await widget.api.silRequest(
+        '/orders/${order['id']}/report/publish', body: {});
+      await _openOrder(order['id'] as String);
+      await _refreshAll();
+      if (mounted) setState(() => _message =
+          'Informe publicado en el portal de ese paciente. '
+          'Aún no se envían notificaciones externas.');
+    });
+  }
 
   Future<void> _recordManual() => _run(() async {
     final order = _selected?['order'] as Map?;
@@ -316,6 +427,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     'results_recorded' => 'Pendiente de revisión',
     'review_rejected' => 'Devuelta para corrección',
     'review_approved' => 'Revisión interna aprobada',
+    'report_attached' => 'Informe externo recibido',
+    'report_published' => 'Informe disponible al paciente',
     _ => 'Sin estado',
   };
 
@@ -644,6 +757,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     'results_corrected' => 'Resultados corregidos y reenviados',
     'review_approved' => 'Revisión interna aprobada',
     'review_rejected' => 'Orden devuelta con observaciones',
+    'external_report_attached' => 'PDF externo incorporado',
+    'external_report_published' => 'PDF disponible al paciente',
+    'external_report_downloaded' => 'Paciente descargó el PDF',
     _ => code,
   };
 
