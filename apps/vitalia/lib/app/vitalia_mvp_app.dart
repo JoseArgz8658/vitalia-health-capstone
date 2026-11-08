@@ -1,6 +1,7 @@
 import '../features/incorporacion/activar_invitacion_page.dart';
 import '../features/asignaciones/asignaciones_page.dart';
 import '../features/laboratorio/laboratorio_simulado_page.dart';
+import '../features/laboratorio/administracion_laboratorio_page.dart';
 import '../features/perfil/perfil_page.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -137,6 +138,18 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
           settings: settings,
           builder: (_) => ActivarInvitacionPage(api: AuthApi(), ownsApi: true),
         );
+      if (settings.name == '/laboratorio')
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => AccesoPage(
+            api: _api,
+            laboratoryMode: true,
+            onAuthenticated: (user) {
+              _signedIn(user);
+              _navigator.currentState?.popUntil((r) => r.isFirst);
+            },
+          ),
+        );
       if (settings.name == '/administracion')
         return MaterialPageRoute<void>(
           settings: settings,
@@ -157,12 +170,20 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
             onAuthenticated: _signedIn,
             notice: _accessNotice,
           )
-        : _user!['role'] == 'administrador'
+        : _user!['role'] == 'operador_laboratorio'
         ? LaboratorioSimuladoPage(
             key: ValueKey(_user!['id']),
             api: _api,
             onExpired: _expired,
             onLogout: _logout,
+          )
+        : _user!['role'] == 'administrador' ||
+            _user!['role'] == 'validador_laboratorio'
+        ? AdministracionLaboratorioPage(
+            key: ValueKey(_user!['id']),
+            email: _user!['email'] as String,
+            onLogout: _logout,
+            validatorMode: _user!['role'] == 'validador_laboratorio',
           )
         : _user!['role'] == 'paciente'
         ? PacienteDocumentosPage(
