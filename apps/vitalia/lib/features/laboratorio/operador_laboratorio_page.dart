@@ -54,6 +54,12 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   bool _confirmExternal = false;
   bool _confirmPatient = false;
   final Map<String, TextEditingController> _manualControllers = {};
+  XFile? _resultsPdf;
+  String? _resultsPreviewToken;
+  String? _resultsPreviewStatus;
+  List<String> _resultsPreviewWarnings = [];
+  final Map<String, String> _resultsRowWarnings = {};
+  bool _resultsReviewed = false;
   String? _containerCode;
   final _selectedExams = <String>{'hemograma'};
 
@@ -196,6 +202,12 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       controller.dispose();
     }
     _manualControllers.clear();
+    _resultsPdf = null;
+    _resultsPreviewToken = null;
+    _resultsPreviewStatus = null;
+    _resultsPreviewWarnings = [];
+    _resultsRowWarnings.clear();
+    _resultsReviewed = false;
     final codes = (selected['exams'] as List? ?? [])
         .map((item) => (item as Map)['code'])
         .toSet();
@@ -435,10 +447,82 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     });
   });
 
+  Future<void> _selectResultsPdf() async {
+    try {
+      final file=await openFile(acceptedTypeGroups:const [
+        XTypeGroup(label:'Informe PDF ficticio',extensions:['pdf'],
+          mimeTypes:['application/pdf']),
+      ]);
+      if(file==null||!mounted)return;
+      final length=await file.length();
+      if(!mounted)return;
+      if(length<8||length>2*1024*1024) {
+        setState(()=>_error='Selecciona un PDF ficticio de hasta 2 MiB.');
+        return;
+      }
+      setState((){
+        _resultsPdf=file;
+        _resultsPreviewToken=null;
+        _resultsPreviewStatus=null;
+        _resultsPreviewWarnings=[];
+        _resultsRowWarnings.clear();
+        _resultsReviewed=false;
+        _error=null;
+      });
+    } catch (_) {
+      if(mounted)setState(()=>_error='No se pudo seleccionar el PDF.');
+    }
+  }
+
+  Future<void> _previewResultsPdf() => _run(() async {
+    final order=_selected?['order'] as Map?;
+    if(order==null||order['status']!='sampled') {
+      throw const AuthFailure('Primero registra la recepción de muestras.');
+    }
+    final file=_resultsPdf;
+    if(file==null)throw const AuthFailure('Selecciona el PDF ficticio.');
+    final response=await widget.api.silPreviewResultsFile(
+      orderId:order['id'] as String,
+      bytes:await file.readAsBytes(),
+    );
+    if(!mounted)return;
+    final preview=Map<String,dynamic>.from(response['preview'] as Map);
+    final token=preview['previewToken'] as String?;
+    final warnings=<String,String>{};
+    var filled=0;
+    for(final raw in (preview['items'] as List? ?? [])){
+      final item=raw as Map;
+      final key="${item['examCode']}::${item['analyte']}";
+      final controller=_manualControllers[key];
+      if(controller==null)continue;
+      final warning=item['warning'] as String?;
+      if(warning!=null)warnings[key]=warning;
+      final value=item['suggestedValue'];
+      if(value is num && controller.text.trim().isEmpty){
+        controller.text=value.toString();
+        filled++;
+      }
+    }
+    setState((){
+      _resultsPreviewToken=token;
+      _resultsPreviewStatus=preview['state'] as String?;
+      _resultsPreviewWarnings=(preview['warnings'] as List? ?? [])
+          .map((x)=>x.toString()).toList();
+      _resultsRowWarnings..clear()..addAll(warnings);
+      _resultsReviewed=false;
+      _message='Extracción revisable: $filled valores precargados. '
+          'Comprueba el PDF y corrige los campos faltantes antes de registrar.';
+    });
+  });
+
   Future<void> _recordManual() => _run(() async {
     final order = _selected?['order'] as Map?;
     if (order == null || !['sampled', 'review_rejected'].contains(order['status'])) {
       throw const AuthFailure('La orden no está habilitada para ingresar o corregir resultados.');
+    }
+    if(_resultsPreviewToken!=null && !_resultsReviewed) {
+      throw const AuthFailure(
+        'Confirma que revisaste cada valor con el PDF original.');
     }
     final values = <Map<String, dynamic>>[];
     for (final entry in _manualControllers.entries) {
@@ -459,11 +543,17 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       throw const AuthFailure('Esta orden no tiene parámetros definidos.');
     }
     final id = order['id'] as String;
-    await widget.api.silRequest('/orders/$id/results', body: {'results': values});
+    final assisted=_resultsPreviewToken!=null;
+    await widget.api.silRequest('/orders/$id/results', body: {
+      'results': values,
+      if(assisted)'previewToken':_resultsPreviewToken,
+    });
     await _openOrder(id);
     await _refreshAll();
     if (mounted) {
-      setState(() => _message = 'Resultados registrados. Pendientes de revisión profesional.');
+      setState(() => _message = assisted
+        ? 'Resultados del PDF revisados y registrados por el operador. Pendientes de revisión.'
+        : 'Resultados manuales registrados. Pendientes de revisión profesional.');
     }
   });
 
@@ -837,7 +927,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     'order_created' => 'Orden registrada',
     'sample_received' => 'Muestra recibida',
     'results_simulated' => 'Resultados de prueba generados',
-    'results_manual' => 'Resultados ingresados manualmente',
+    'results_manual' => 'Resultados registrados por operador',
     'results_corrected' => 'Resultados corregidos y reenviados',
     'review_approved' => 'Revisión interna aprobada',
     'review_rejected' => 'Orden devuelta con observaciones',
@@ -865,6 +955,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                     title: Text(_auditAction((item as Map)['action'] as String)),
                     subtitle: Text(
                       '${item['actorEmail']} · ${_date(item['createdAt'])}'
+                      '${(item['details'] as Map?)?['assistedImport'] == true
+                          ? ' · Extracción IA revisada por operador' : ''}'
                       '${(item['details'] as Map?)?['note'] == null
                           ? '' : ' · ${(item['details'] as Map)['note']}'}',
                     ),
@@ -978,7 +1070,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           if (status == 'sampled') ...[
             const SizedBox(height: 18),
             const Text('Los tubos requeridos están registrados. Puedes ingresar '
-                'los resultados manualmente o generar resultados de prueba.'),
+                'los resultados manualmente o analizar un PDF con IA.'),
             const SizedBox(height: 12),
             Wrap(spacing: 12, runSpacing: 10, children: [
               FilledButton.icon(
@@ -987,9 +1079,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                 label: const Text('Ingresar resultados manualmente'),
               ),
               OutlinedButton.icon(
-                onPressed: _busy ? null : _processSample,
-                icon: const Icon(Icons.science_outlined),
-                label: const Text('Generar resultados de prueba'),
+                onPressed: _busy ? null : () => setState(() => _section = 4),
+                icon: const Icon(Icons.document_scanner_outlined),
+                label: const Text('Analizar PDF con IA'),
               ),
             ]),
           ],
@@ -1013,8 +1105,42 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     final selectedCodes = (data['exams'] as List? ?? [])
         .map((item) => (item as Map)['code']).toSet();
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text('Registro manual de resultados',
+      Text('Ingreso de resultados: PDF con IA o manual',
           style: Theme.of(context).textTheme.titleLarge),
+      const SizedBox(height: 8),
+      const Text('Modo asistido: carga un PDF ficticio. La IA propone valores, '
+          'marca incidencias y deja los datos dudosos para corrección manual. '
+          'No registra resultados sin tu confirmación.'),
+      const SizedBox(height: 12),
+      Wrap(spacing: 10,runSpacing: 8,children: [
+        OutlinedButton.icon(
+          onPressed:_busy?null:_selectResultsPdf,
+          icon:const Icon(Icons.attach_file),
+          label:Text(_resultsPdf?.name ?? 'Seleccionar PDF de resultados'),
+        ),
+        FilledButton.tonalIcon(
+          onPressed:_busy||_resultsPdf==null?null:_previewResultsPdf,
+          icon:const Icon(Icons.document_scanner_outlined),
+          label:const Text('Analizar archivo con IA'),
+        ),
+      ]),
+      if(_resultsPreviewStatus!=null) ...[
+        const SizedBox(height: 12),
+        Text('Estado de extracción: ${_resultsPreviewStatus == 'ready'
+          ? 'Propuesta completa, pendiente de revisión'
+          : _resultsPreviewStatus == 'identity_mismatch'
+          ? 'Identidad no coincide: NO usar el PDF'
+          : 'Requiere corrección manual'}'),
+        for(final warning in _resultsPreviewWarnings)
+          Padding(
+            padding:const EdgeInsets.only(top:4),
+            child:Text(warning,
+              style:TextStyle(color:Theme.of(context).colorScheme.error)),
+          ),
+      ],
+      const Divider(height: 30),
+      Text('Valores revisables',
+          style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 6),
       const Text('Ingresa todos los valores del catálogo. '
           'La unidad y la referencia se toman del sistema y no se editan.'),
@@ -1036,7 +1162,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                       const TextInputType.numberWithOptions(decimal: true, signed: true),
                   decoration: InputDecoration(
                     labelText: '${analyte['analyte']}',
-                    helperText: 'Unidad: ${analyte['unit']}',
+                    helperText: _resultsRowWarnings[
+                      '${exam['code']}::${analyte['analyte']}'
+                    ] ?? 'Unidad: ${analyte['unit']}',
                     border: const OutlineInputBorder(),
                   ),
                 ),
@@ -1044,6 +1172,16 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           ]),
           const SizedBox(height: 18),
         ],
+      if(_resultsPreviewToken!=null)
+        CheckboxListTile(
+          contentPadding:EdgeInsets.zero,
+          controlAffinity:ListTileControlAffinity.leading,
+          value:_resultsReviewed,
+          onChanged:_busy?null:(value)=>
+            setState(()=>_resultsReviewed=value??false),
+          title:const Text('Revisé cada cifra con el PDF original '
+            'y corregí manualmente los errores de extracción.'),
+        ),
       Align(
         alignment: Alignment.centerLeft,
         child: FilledButton.icon(
