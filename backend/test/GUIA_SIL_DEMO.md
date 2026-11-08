@@ -43,6 +43,10 @@ if (-not (Test-Path $secretPath)) {
 # Get-Content $secretPath
 ```
 
+La estación de trabajo del operador ahora ofrece navegación por Resumen, Órdenes, Nueva orden, Muestras y Resultados. El resumen lee métricas agregadas de PostgreSQL; la tabla permite buscar correo/número VH-000001/UUID, filtrar por estado y avanzar por páginas de 20 registros.
+
+La migración `028_sil_order_numbers` añade un correlativo de orden legible y conserva los UUID como claves internas. **No activar el backend actualizado hasta completar también la migración 028 exclusivamente en `vitalia_dev`.** No ejecutar migraciones sobre la base principal.
+
 Las contraseñas se conservan en el archivo local. Al reiniciar Docker, las cuentas se mantienen en PostgreSQL y el script de inicio reutiliza los correos. Si se reconstruye la base aislada, se regeneran las mismas credenciales desde el archivo local, siempre que se vuelvan a aplicar las migraciones.
 
 ## Preparación (con PostgreSQL de pruebas encendido)
@@ -55,7 +59,7 @@ npm --prefix .\backend run build
 npm --prefix .\backend test
 ```
 
-**Detenerse si falla el compilador o las pruebas.** Después aplicar todas las migraciones, incluida `027_sil_catalog`, en `vitalia_dev` usando la misma red Docker aislada. No se debe cambiar `PGDATABASE` por `vitalia`.
+**Detenerse si falla el compilador o las pruebas.** Después aplicar todas las migraciones, incluidas `027_sil_catalog` y `028_sil_order_numbers`, en `vitalia_dev` usando la misma red Docker aislada. No se debe cambiar `PGDATABASE` por `vitalia`.
 
 ```powershell
 $distPath = (Resolve-Path ".\backend\dist").Path
