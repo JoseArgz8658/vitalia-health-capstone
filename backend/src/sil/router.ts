@@ -6,14 +6,10 @@ import {SilConflictError,SilNotFoundError,type SilServices} from './service';
 
 const uuid = z.uuid();
 const resultSchema = z.object({
+  examCode:z.string().regex(/^[a-z0-9_]{3,40}$/),
   analyte:z.string().trim().min(1).max(100),
   numericValue:z.number().finite().min(-1000000000).max(1000000000),
-  unit:z.string().trim().min(1).max(30),
-  examCode:z.string().regex(/^[a-z0-9_]{3,40}$/).optional(),
-  referenceMin:z.number().finite().nullable().optional(),
-  referenceMax:z.number().finite().nullable().optional(),
-}).strict().refine(v=>v.referenceMin==null||v.referenceMax==null||
-  v.referenceMin<=v.referenceMax);
+}).strict();
 export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServices) {
   const router=Router();
   router.use(async(req,res,next)=>{
@@ -73,24 +69,31 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     res.status(201).json({order});
   });
   router.post('/orders/:id/sample',async(req,res)=>{
-    const data=z.object({barcode:z.string().trim().regex(/^[A-Z0-9-]{3,40}$/)}).strict().safeParse(req.body);
+    const data=z.object({
+      barcode:z.string().trim().regex(/^[A-Z0-9-]{3,40}$/),
+      containerCode:z.enum(['edta','serum','fluoride']),
+      receiptNote:z.string().trim().max(300).optional(),
+    }).strict().safeParse(req.body);
     if(!uuid.safeParse(req.params.id).success||!data.success) {
       res.status(400).json({error:{code:'INVALID_SAMPLE'}});return;
     }
-    const sample=await service.registerSample(req.params.id as string,data.data.barcode);
+    const sample=await service.registerSample(req.params.id as string,
+      data.data.barcode,data.data.containerCode,res.locals.account.id,
+      data.data.receiptNote);
     res.status(201).json({sample});
   });
   router.post('/orders/:id/results',async(req,res)=>{
     const data=z.object({results:z.array(resultSchema).min(1).max(30)}).strict()
       .superRefine((value,ctx)=>{
-        const names=value.results.map(v=>`${v.examCode??'hemograma'}:${v.analyte.toLowerCase()}`);
+        const names=value.results.map(v=>`${v.examCode}:${v.analyte.toLowerCase()}`);
         if(new Set(names).size!==names.length)
           ctx.addIssue({code:'custom',message:'Analitos duplicados.'});
       }).safeParse(req.body);
     if(!uuid.safeParse(req.params.id).success||!data.success) {
       res.status(400).json({error:{code:'INVALID_RESULTS'}});return;
     }
-    const recorded=await service.recordResults(req.params.id as string,data.data.results);
+    const recorded=await service.recordManualResults(req.params.id as string,
+      data.data.results,res.locals.account.id);
     res.status(201).json({result:recorded});
   });
   router.post('/orders/:id/simulate',async(req,res)=>{
@@ -99,7 +102,8 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
       Array.isArray(req.body) || Object.keys(req.body).length!==0) {
       res.status(400).json({error:{code:'INVALID_SIMULATION'}});return;
     }
-    const result=await service.simulateAnalyzer(req.params.id as string);
+    const result=await service.simulateAnalyzer(req.params.id as string,
+      res.locals.account.id);
     res.status(201).json({result});
   });
   router.get('/orders/:id',async(req,res)=>{
