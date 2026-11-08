@@ -1,6 +1,6 @@
 import '../features/incorporacion/activar_invitacion_page.dart';
 import '../features/asignaciones/asignaciones_page.dart';
-import '../features/laboratorio/laboratorio_simulado_page.dart';
+import '../features/laboratorio/operador_laboratorio_page.dart';
 import '../features/laboratorio/administracion_laboratorio_page.dart';
 import '../features/perfil/perfil_page.dart';
 import 'dart:async';
@@ -171,7 +171,7 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
             notice: _accessNotice,
           )
         : _user!['role'] == 'operador_laboratorio'
-        ? LaboratorioSimuladoPage(
+        ? OperadorLaboratorioPage(
             key: ValueKey(_user!['id']),
             api: _api,
             onExpired: _expired,
