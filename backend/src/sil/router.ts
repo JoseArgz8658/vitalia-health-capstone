@@ -177,7 +177,9 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
       res.status(400).json({error:{code:'INVALID_REPORT'}});return;
     }
     const parsed=z.object({
-      fileName:z.string().regex(/^[^\\/\\x00-\\x1f]{1,115}\\.pdf$/i).max(120),
+      fileName:z.string().trim().min(5).max(120).regex(/[.]pdf$/i)
+        .refine(name=>!name.includes('/') && !name.includes(String.fromCharCode(92)) &&
+          !Array.from(name).some(ch=>ch.charCodeAt(0)<32)),
       issuingLaboratory:z.string().trim().min(3).max(120),
       authorizationReference:z.string().trim().min(3).max(120),
       externallyAuthorizedAt:z.string().min(10).max(40),
