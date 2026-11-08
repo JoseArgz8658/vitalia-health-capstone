@@ -462,8 +462,9 @@ export function createSilService(db: Pool) {
             branch.rows[0].laboratoryName,input.authorizationReference,date,actorId,
             input.branchCode,input.authorizedProfessionalName]);
         await client.query(
-          `UPDATE public.vitalia_sil_orders SET status='report_attached' WHERE id=$1`,
-          [orderId]);
+          `UPDATE public.vitalia_sil_orders
+           SET status='report_attached',origin_branch_code=$2 WHERE id=$1`,
+          [orderId,input.branchCode]);
         await appendAudit(client,orderId,actorId,'external_report_attached',{
           reportId:id,fileSha256:checksum,branchCode:input.branchCode,
           authorizationReference:input.authorizationReference,
@@ -590,13 +591,16 @@ export function createSilService(db: Pool) {
           `SELECT id,file_name AS "fileName",
             issuing_laboratory AS "issuingLaboratory",
             external_authorization_ref AS "authorizationReference",
-            origin_branch_code AS "originBranchCode",
-            authorized_professional_name AS "authorizedProfessionalName",
-            patient_identifier_checked AS "patientIdentifierChecked",
-            externally_authorized_at AS "externallyAuthorizedAt",
-            received_at AS "receivedAt",published_at AS "publishedAt",
-            pdf_sha256 AS sha256
-           FROM public.vitalia_sil_external_reports WHERE order_id=$1`,[orderId]),
+            r.origin_branch_code AS "originBranchCode",
+            b.display_name AS "originBranchName",
+            r.authorized_professional_name AS "authorizedProfessionalName",
+            r.patient_identifier_checked AS "patientIdentifierChecked",
+            r.externally_authorized_at AS "externallyAuthorizedAt",
+            r.received_at AS "receivedAt",r.published_at AS "publishedAt",
+            r.pdf_sha256 AS sha256
+           FROM public.vitalia_sil_external_reports r
+           LEFT JOIN public.vitalia_sil_branches b ON b.code=r.origin_branch_code
+           WHERE r.order_id=$1`,[orderId]),
       ]);
       return {order:order.rows[0],exams:exams.rows,
         sample:samples.rows[0]??null,samples:samples.rows,
