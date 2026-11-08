@@ -114,6 +114,56 @@ class AuthApi {
     }
   }
 
+  /// Solo DEMO: analiza un PDF ficticio y devuelve sugerencias.
+  /// No guarda datos clínicos ni registra muestras hasta confirmación humana.
+  Future<Map<String, dynamic>> silPreviewResultsFile({
+    required String orderId,
+    required Uint8List bytes,
+  }) async {
+    if (!RegExp(r'^[a-f0-9-]{36}$').hasMatch(orderId) ||
+        bytes.length < 8 || bytes.length > 2 * 1024 * 1024) {
+      throw const AuthFailure('Selecciona un PDF de prueba de hasta 2 MiB.');
+    }
+    final token = _token;
+    if (token == null || expiresAt == null ||
+        !expiresAt!.isAfter(DateTime.now())) {
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+    }
+    try {
+      final response = await _client.post(
+        _base.resolve('/api/sil/orders/$orderId/results/preview'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/pdf',
+        },
+        body: bytes,
+      ).timeout(const Duration(seconds: 155));
+      if (_token != token || response.statusCode == 401) {
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+      }
+      if (response.statusCode >= 400) {
+        throw AuthFailure(switch(response.statusCode) {
+          400 => 'Archivo no admitido. Selecciona un PDF de prueba.',
+          403 => 'Tu cuenta no puede analizar este documento.',
+          404 => 'La orden no está disponible.',
+          409 => 'La orden debe tener todas sus muestras registradas.',
+          413 => 'El PDF supera el límite de 2 MiB.',
+          _ => 'No fue posible analizar el archivo.',
+        },response.statusCode);
+      }
+      return jsonDecode(response.body) as Map<String,dynamic>;
+    } on AuthFailure {
+      rethrow;
+    } on TimeoutException {
+      throw const AuthFailure(
+        'La IA tardó demasiado. Puedes ingresar los valores manualmente.');
+    } catch (_) {
+      throw const AuthFailure('No se pudo consultar la extracción del archivo.');
+    }
+  }
+
   /// Solo flujo de demostración postanalítica: adjuntar PDF ya autorizado fuera de Vitalia.
   Future<Map<String, dynamic>> silUploadReport({
     required String orderId,
