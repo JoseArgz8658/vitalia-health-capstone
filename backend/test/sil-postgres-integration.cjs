@@ -21,6 +21,7 @@ async function main() {
   let orderId=null;
   let simulatedOrderId=null;
   let multiOrderId=null;
+  let reportOrderId=null;
   let success=false, clean=false;
   try {
     const target=await db.query('SELECT current_database() AS db, current_user AS actor');
@@ -41,6 +42,9 @@ async function main() {
     const reviewVersion=await db.query(
       "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='030_sil_review_workflow'");
     assert.equal(reviewVersion.rowCount,1,'Migración 030 ausente');
+    const externalReportsVersion=await db.query(
+      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='031_sil_external_reports'");
+    assert.equal(externalReportsVersion.rowCount,1,'Migración 031 ausente');
     await db.query(
       `INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code)
        VALUES($1,$2,'synthetic-test-only','paciente'),
@@ -165,11 +169,48 @@ async function main() {
     assert.equal(catalog.exams.length,6);
     console.log('PRUEBA CATÁLOGO: 6 prestaciones, orden combinada y 9 analitos.');
 
+    // Circuito alternativo: PDF externo previamente autorizado en el laboratorio.
+    // Estos bytes representan un PDF sintético mínimo, no un resultado clínico.
+    const reportOrder=await sil.createOrder(patientId,actorId,['glicemia']);
+    reportOrderId=reportOrder.id;
+    const fakePdf=Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n');
+    const pdfInput={
+      fileName:'informe-demo.pdf',
+      issuingLaboratory:'Laboratorio de demostracion',
+      authorizationReference:'AUTORIZACION-EXTERNA-TEST',
+      externallyAuthorizedAt:new Date(Date.now()-86400000).toISOString(),
+      patientMatchConfirmed:true,
+    };
+    const receivedPdf=await sil.attachExternalReport(
+      reportOrderId,actorId,pdfInput,fakePdf);
+    assert.equal(receivedPdf.status,'report_attached');
+    assert.equal((await sil.getOrder(reportOrderId)).order.status,'report_attached');
+    assert.equal((await sil.listPatientReports(patientId)).reports.length,0);
+    await assert.rejects(sil.downloadPatientReport(patientId,receivedPdf.id),SilNotFoundError);
+    await assert.rejects(sil.attachExternalReport(
+      reportOrderId,actorId,pdfInput,fakePdf),SilConflictError);
+    const publishedPdf=await sil.publishExternalReport(reportOrderId,actorId);
+    assert.equal(publishedPdf.status,'report_published');
+    await assert.rejects(sil.publishExternalReport(reportOrderId,actorId),SilConflictError);
+    const own=await sil.listPatientReports(patientId);
+    assert.equal(own.reports.length,1);
+    assert.equal(own.reports[0].id,receivedPdf.id);
+    assert.equal((await sil.listPatientReports(actorId)).reports.length,0);
+    await assert.rejects(sil.downloadPatientReport(actorId,receivedPdf.id),SilNotFoundError);
+    const privatePdf=await sil.downloadPatientReport(patientId,receivedPdf.id);
+    assert.deepEqual(privatePdf.bytes,fakePdf);
+    assert.equal(privatePdf.fileName,'informe-demo.pdf');
+    const externalHistory=await sil.getOrder(reportOrderId);
+    assert.deepEqual(externalHistory.audit.map(event=>event.action),[
+      'order_created','external_report_attached',
+      'external_report_published','external_report_downloaded']);
+    console.log('PRUEBA PDF: autorización externa, publicación y privacidad por paciente.');
     success=true;
   } finally {
     try {
       // Borrar solamente registros identificados por UUID creados por esta ejecución.
-      for(const id of [orderId,simulatedOrderId,multiOrderId].filter(Boolean)) {
+      for(const id of [orderId,simulatedOrderId,multiOrderId,reportOrderId].filter(Boolean)) {
+        await db.query('DELETE FROM public.vitalia_sil_external_reports WHERE order_id=$1',[id]);
         await db.query('DELETE FROM public.vitalia_sil_audit WHERE order_id=$1',[id]);
         await db.query('DELETE FROM public.vitalia_sil_results WHERE order_id=$1',[id]);
         await db.query('DELETE FROM public.vitalia_sil_samples WHERE order_id=$1',[id]);
@@ -183,7 +224,7 @@ async function main() {
         `SELECT
           (SELECT COUNT(*)::int FROM public.vitalia_sil_orders WHERE id=ANY($1::uuid[])) AS orders,
           (SELECT COUNT(*)::int FROM public.vitalia_accounts WHERE id=ANY($2::uuid[])) AS accounts`,
-        [[orderId,simulatedOrderId,multiOrderId].filter(Boolean),[patientId,actorId]]);
+        [[orderId,simulatedOrderId,multiOrderId,reportOrderId].filter(Boolean),[patientId,actorId]]);
       assert.equal(remaining.rows[0].orders,0);
       assert.equal(remaining.rows[0].accounts,0);
       clean=true;
