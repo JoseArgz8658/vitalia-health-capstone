@@ -285,6 +285,41 @@ class AuthApi {
     }
   }
 
+  Future<Uint8List> silDownloadMedicalRequest(String orderId) async {
+    if(!RegExp(r'^[a-f0-9-]{36}$').hasMatch(orderId))
+      throw const AuthFailure('Orden inválida.');
+    final token=_token;
+    if(token==null||expiresAt==null||!expiresAt!.isAfter(DateTime.now())){
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+    }
+    try{
+      final response=await _client.get(
+        _base.resolve('/api/sil/orders/$orderId/medical-request/file'),
+        headers:{'Authorization':'Bearer $token'},
+      ).timeout(const Duration(seconds:30));
+      if(_token!=token||response.statusCode==401){
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+      }
+      if(response.statusCode!=200){
+        throw AuthFailure(response.statusCode==403
+            ? 'No tienes permiso para consultar esta solicitud.'
+            : 'El documento de solicitud no está disponible.',
+            response.statusCode);
+      }
+      if(response.bodyBytes.length>2*1024*1024||
+         response.headers['content-type']?.startsWith('application/pdf')!=true)
+        throw const AuthFailure('El archivo recibido no es un PDF válido.');
+      return response.bodyBytes;
+    } on AuthFailure {rethrow;}
+      on TimeoutException {
+        throw const AuthFailure('La descarga tardó demasiado.');
+      }catch(_){
+        throw const AuthFailure('No se pudo descargar el documento de solicitud.');
+      }
+  }
+
   Future<Uint8List> silDownloadReport(String reportId) async {
     if (!RegExp(r'^[a-f0-9-]{36}$').hasMatch(reportId)) {
       throw const AuthFailure('Identificador de informe inválido.');
