@@ -24,6 +24,23 @@ export interface SilManualInput {
 export function createSilService(db: Pool) {
   const education=createSilPatientEducation(db);
   const previewResultsFile=createSilResultsFilePreview(db);
+  // Comprobante temporal asociado a cuenta y orden; no se confía en un
+  // booleano enviado por el navegador para certificar el uso de IA.
+  const previewReceipts=new Map<string,{orderId:string;actorId:string;expiresAt:number}>();
+  async function previewAndReceipt(orderId:string,bytes:Buffer,actorId:string) {
+    const draft=await previewResultsFile(orderId,bytes);
+    if(draft.generatedBy!=='ai_draft')return {...draft,previewToken:null};
+    const now=Date.now();
+    for(const [key,value] of previewReceipts)
+      if(value.expiresAt<now)previewReceipts.delete(key);
+    if(previewReceipts.size>=100){
+      const oldest=previewReceipts.keys().next().value;
+      if(oldest!==undefined)previewReceipts.delete(oldest);
+    }
+    const token=randomUUID();
+    previewReceipts.set(token,{orderId,actorId,expiresAt:now+10*60*1000});
+    return {...draft,previewToken:token};
+  }
   async function appendAudit(client:PoolClient,orderId:string,actorId:string,
     action:'order_created'|'sample_received'|'results_simulated'|'results_manual'|
       'results_corrected'|'review_approved'|'review_rejected'|
@@ -36,7 +53,7 @@ export function createSilService(db: Pool) {
   }
   return {
     askPatientReport:education.ask,
-    previewResultsFile,
+    previewResultsFile:previewAndReceipt,
     async catalog() {
       const [exams,analytes,containers] = await Promise.all([
         db.query<{code:string;name:string;sampleType:string}>(
@@ -332,7 +349,12 @@ export function createSilService(db: Pool) {
         throw error;
       } finally {client.release(failed);}
     },
-    async recordManualResults(orderId:string,values:SilManualInput[],actorId:string,assistedImport=false) {
+    async recordManualResults(orderId:string,values:SilManualInput[],actorId:string,previewToken?:string) {
+      const receipt=previewToken?previewReceipts.get(previewToken):null;
+      if(previewToken&&(!receipt||receipt.orderId!==orderId||
+          receipt.actorId!==actorId||receipt.expiresAt<Date.now()))
+        throw new SilConflictError();
+      const assistedImport=Boolean(receipt);
       const expected=await db.query<{
         examCode:string;analyte:string;unit:string;
         referenceMin:number|null;referenceMax:number|null;
@@ -358,7 +380,9 @@ export function createSilService(db: Pool) {
         if(value===undefined)throw new SilConflictError();
         records.push({...item,numericValue:value});
       }
-      return this.recordResults(orderId,records,actorId,'manual',assistedImport);
+      const result=await this.recordResults(orderId,records,actorId,'manual',assistedImport);
+      if(previewToken)previewReceipts.delete(previewToken);
+      return result;
     },
     async simulateAnalyzer(orderId: string,actorId:string) {
       // Solo plantillas sintéticas del catálogo. No conecta con equipos médicos.
