@@ -29,13 +29,25 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     (Icons.science_outlined, 'Muestras'),
     (Icons.fact_check_outlined, 'Resultados'),
     (Icons.picture_as_pdf_outlined, 'Informes PDF'),
+    (Icons.badge_outlined, 'Ficha paciente DEMO'),
   ];
 
   final _patientController = TextEditingController();
   final _searchController = TextEditingController();
   final _barcodeController = TextEditingController();
   final _receiptNoteController = TextEditingController();
-  final _reportIssuer = TextEditingController();
+  final _reportProfessional = TextEditingController();
+  final _reportPatientIdentifier = TextEditingController();
+  final _patientDemoId = TextEditingController();
+  final _patientDemoGiven = TextEditingController();
+  final _patientDemoFamily = TextEditingController();
+  final _patientDemoBirth = TextEditingController();
+  final _patientDemoPhone = TextEditingController();
+  String _patientDemoSex = 'not_specified';
+  bool _syntheticPatientConfirmed = false;
+  Map<String, dynamic>? _patientDemoLoaded;
+  List<Map<String, dynamic>> _branches = [];
+  String? _selectedBranch;
   final _reportReference = TextEditingController();
   XFile? _reportFile;
   DateTime? _reportAuthorizedAt;
@@ -72,7 +84,12 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     _searchController.dispose();
     _barcodeController.dispose();
     _receiptNoteController.dispose();
-    _reportIssuer.dispose();
+    _reportProfessional.dispose();
+    _reportPatientIdentifier.dispose();
+    for (final controller in [
+      _patientDemoId, _patientDemoGiven, _patientDemoFamily,
+      _patientDemoBirth, _patientDemoPhone,
+    ]) { controller.dispose(); }
     _reportReference.dispose();
     for (final controller in _manualControllers.values) {
       controller.dispose();
@@ -85,10 +102,14 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     setState(() => _loading = true);
     try {
       final catalog = await widget.api.silRequest('/catalog');
+      final branches = await widget.api.silRequest('/branches');
       final summary = await widget.api.silRequest('/summary');
       final recent = await widget.api.silRequest('/orders?limit=5&offset=0');
       if (!mounted) return;
       setState(() {
+        _branches = (branches['branches'] as List? ?? [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
         _catalog = (catalog['exams'] as List? ?? [])
             .map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
@@ -201,7 +222,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       _receiptNoteController.clear();
       // Nunca conservar un PDF o una confirmación al cambiar de paciente/orden.
       _reportFile = null;
-      _reportIssuer.clear();
+      _reportProfessional.clear();
+      _reportPatientIdentifier.clear();
+      _selectedBranch = null;
       _reportReference.clear();
       _reportAuthorizedAt = null;
       _confirmExternal = false;
@@ -308,15 +331,19 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         !_confirmExternal || !_confirmPatient) {
       throw const AuthFailure('Selecciona el PDF, la fecha y confirma sus verificaciones.');
     }
-    if (_reportIssuer.text.trim().length < 3 ||
+    if (_selectedBranch == null ||
+        _reportProfessional.text.trim().length < 3 ||
+        _reportPatientIdentifier.text.trim().isEmpty ||
         _reportReference.text.trim().length < 3) {
-      throw const AuthFailure('Indica el laboratorio emisor y la referencia de autorización.');
+      throw const AuthFailure('Selecciona sucursal e indica profesional, identificador del PDF y referencia.');
     }
     final bytes = await file.readAsBytes();
     await widget.api.silUploadReport(
       orderId: order['id'] as String,
       fileName: file.name,
-      issuer: _reportIssuer.text.trim(),
+      branchCode: _selectedBranch!,
+      authorizedProfessionalName: _reportProfessional.text.trim(),
+      patientIdentifierFromPdf: _reportPatientIdentifier.text.trim().toUpperCase(),
       authorizationReference: _reportReference.text.trim(),
       authorizedAt: _reportAuthorizedAt!,
       bytes: bytes,
@@ -361,6 +388,52 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           'Aún no se envían notificaciones externas.');
     });
   }
+
+  Future<void> _loadDemoPatient() => _run(() async {
+    final email = _patientController.text.trim().toLowerCase();
+    if (!email.endsWith('@example.invalid')) {
+      throw const AuthFailure('Solo se permiten cuentas ficticias example.invalid.');
+    }
+    final response = await widget.api.silRequest(
+      '/patients/profile?email=${Uri.encodeQueryComponent(email)}',
+    );
+    final patient = Map<String, dynamic>.from(response['patient'] as Map);
+    if (!mounted) return;
+    setState(() {
+      _patientDemoLoaded = patient;
+      _patientDemoId.text = patient['syntheticIdentifier'] as String? ?? '';
+      _patientDemoGiven.text = patient['givenNames'] as String? ?? '';
+      _patientDemoFamily.text = patient['familyNames'] as String? ?? '';
+      _patientDemoBirth.text = patient['birthDate'] as String? ?? '';
+      _patientDemoPhone.text = patient['contactPhoneDemo'] as String? ?? '';
+      _patientDemoSex = patient['sexForReference'] as String? ?? 'not_specified';
+      _syntheticPatientConfirmed = false;
+    });
+  });
+
+  Future<void> _saveDemoPatient() => _run(() async {
+    if (_patientDemoLoaded == null || !_syntheticPatientConfirmed) {
+      throw const AuthFailure('Consulta el paciente y confirma que todos los datos son ficticios.');
+    }
+    final email = _patientDemoLoaded!['email'] as String;
+    final result = await widget.api.silRequest('/patients/profile', body: {
+      'email': email,
+      'syntheticIdentifier': _patientDemoId.text.trim().toUpperCase(),
+      'givenNames': _patientDemoGiven.text.trim(),
+      'familyNames': _patientDemoFamily.text.trim(),
+      'birthDate': _patientDemoBirth.text.trim(),
+      'sexForReference': _patientDemoSex,
+      if (_patientDemoPhone.text.trim().isNotEmpty)
+        'contactPhoneDemo': _patientDemoPhone.text.trim(),
+      'syntheticConfirmed': true,
+    });
+    if (!mounted) return;
+    setState(() {
+      _patientDemoLoaded = Map<String, dynamic>.from(result['patient'] as Map);
+      _syntheticPatientConfirmed = false;
+      _message = 'Ficha sintética guardada. Comprueba el identificador del PDF antes de publicarlo.';
+    });
+  });
 
   Future<void> _recordManual() => _run(() async {
     final order = _selected?['order'] as Map?;
