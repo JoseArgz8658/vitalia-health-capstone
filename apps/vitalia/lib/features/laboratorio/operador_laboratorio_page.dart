@@ -1246,7 +1246,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           ] else if (report != null) ...[
             Text('Documento: ${report['fileName']}'),
             Text('Emisor: ${report['issuingLaboratory']}'),
-            Text('Sucursal: ${report['originBranchCode'] ?? 'No registrada'}'),
+            Text('Sucursal: ${report['originBranchName'] ?? report['originBranchCode'] ?? 'No registrada'}'),
             Text('Profesional en informe: ${report['authorizedProfessionalName'] ?? 'No registrado'}'),
             Text('Identificación del paciente comprobada: '
                 '${report['patientIdentifierChecked'] == true ? 'Sí' : 'Pendiente'}'),
