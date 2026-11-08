@@ -199,6 +199,13 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       _selected = selected;
       _barcodeController.clear();
       _receiptNoteController.clear();
+      // Nunca conservar un PDF o una confirmación al cambiar de paciente/orden.
+      _reportFile = null;
+      _reportIssuer.clear();
+      _reportReference.clear();
+      _reportAuthorizedAt = null;
+      _confirmExternal = false;
+      _confirmPatient = false;
       _containerCode = pending.isEmpty ? null : (pending.first as Map)['code'] as String;
       _section = ['report_attached', 'report_published'].contains(order['status'])
           ? 5 : ['results_recorded', 'review_rejected', 'review_approved']
