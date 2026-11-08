@@ -44,6 +44,23 @@ if (-not (Test-Path $secretPath)) {
 # Get-Content $secretPath
 ```
 
+## Catálogo laboratorio/sucursales y ficha sintética (migración 033)
+
+La migración **`033_sil_branches_patient_demo`** añade un catálogo de laboratorio ficticio **Laboratorio Pérez** y tres sucursales de demostración: Vitacura, Las Condes y Providencia. La lista se consulta por API, no se envía una razón social arbitraria desde el navegador. Es un *ejemplo de una sola empresa*, no un sistema multiempresa ni un módulo de sucursales reales.
+
+La estación del operador incorpora **Ficha paciente DEMO** y **Informes PDF**. La ficha solo admite cuentas `@example.invalid`, un identificador sintético `DEMO-...`, nombres/fecha/sexo y un teléfono **inventados**. No almacenes RUN, teléfonos ni datos de pacientes reales en este entorno. La ficha queda asociada a la cuenta de paciente existente; no crea cuentas nuevas. Una vez existe un informe asociado, la ficha se inmoviliza para evitar reasignar documentos mediante cambios de identidad.
+
+En la carga del PDF se elige una sucursal y se consignan por separado:
+- **Laboratorio**: del catálogo (origen organizacional).
+- **Sucursal**: centro de procedencia de la orden/informe (catálogo ficticio).
+- **Profesional indicado en el informe**: texto transcrito; **no equivale a verificar su firma o habilitación**.
+- **N.º de informe/referencia de autorización**: identificador documental, **no es el nombre del director técnico**.
+- **Identificador de paciente leído manualmente del PDF**: debe coincidir con la ficha `DEMO-...`.
+
+La coincidencia del identificador es una **comprobación manual**, no lectura automática OCR ni validación de firma. Si no coincide, el backend rechaza la incorporación; el PDF solo puede publicarse cuando la comprobación fue registrada. Antes de operar con datos reales harían falta aislamiento multiempresa, identificación y acceso seguros, OCR verificable con manejo de errores, seguridad adicional, almacenamiento externo, y diseño normativo.
+
+No iniciar `vitalia-sil-demo` actualizado hasta ejecutar la migración 033 sobre **`vitalia_dev` de `vitalia-postgres-sil-persistent`**. Conservar el volumen `vitalia_sil_test_data` y las cuatro contraseñas ya configuradas; ninguna actualización del código requiere regenerarlas. La API principal y `vitalia-postgres-1` quedan fuera de esta prueba.
+
 ## Publicación postanalítica de PDF externo (MVP aislado)
 
 La migración **`032_sil_audit_download`** corrige la restricción de auditoría para admitir el evento `external_report_downloaded` al descargar el PDF desde el portal del paciente. Es incremental: no elimina ni reescribe informes existentes. Debe aplicarse después de `031` en `vitalia_dev`, antes de la prueba de integración de PDF.
@@ -119,7 +136,7 @@ La migración `028_sil_order_numbers` añade un correlativo de orden legible y c
 
 La migración **`029_sil_traceability`** separa los tubos EDTA, suero y fluoruro por orden, mantiene registros anteriores como `historical`, agrega la cuenta responsable de la recepción, el origen del resultado y eventos de auditoría de las operaciones nuevas. No borra muestras ni resultados anteriores. Una orden nueva con hemograma y perfil lipídico necesita un tubo EDTA y uno de suero. El registro manual exige todos los analitos de las prestaciones solicitadas y toma las unidades del catálogo; no habilita validación clínica.
 
-**No iniciar el backend actualizado antes de aplicar la migración 032 exclusivamente en `vitalia_dev`.** No ejecutar migraciones sobre la base principal.
+**No iniciar el backend actualizado antes de aplicar la migración 033 exclusivamente en `vitalia_dev`.** No ejecutar migraciones sobre la base principal.
 
 Las contraseñas se conservan en el archivo local. Al reiniciar Docker, las cuentas se mantienen en PostgreSQL y el script de inicio reutiliza los correos. Si se reconstruye la base aislada, se regeneran las mismas credenciales desde el archivo local, siempre que se vuelvan a aplicar las migraciones.
 
