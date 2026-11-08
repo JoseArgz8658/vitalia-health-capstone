@@ -41,6 +41,9 @@ function setup(role) {
       state:'requires_operator_review',confirmed:false,previewToken:actorId,
       suggestedExams:[{code:'glicemia',name:'Glicemia'}],
     })),
+    downloadMedicalRequest: jest.fn(async()=>({
+      fileName:'solicitud-demo.pdf',bytes:Buffer.from('%PDF-1.4\\n%%EOF'),
+    })),
     confirmMedicalRequest: jest.fn(async()=>({
       order:{id:actorId,orderNumber:'VH-000125',status:'registered'},
       requestId:patientId,
@@ -118,6 +121,23 @@ describe('SIL: permisos y catálogo multiprestación', () => {
         .set('x-request-filename','solicitud.pdf')
         .send(file)).expect(403);
       expect(restricted.service.confirmMedicalRequest).not.toHaveBeenCalled();
+    }
+  });
+  test('solo operador y validador pueden consultar el PDF original de solicitud',async()=>{
+    const file='/api/sil/orders/'+actorId+'/medical-request/file';
+    for(const role of ['operador_laboratorio','validador_laboratorio']){
+      const authorizedRole=setup(role);
+      const response=await authorized(request(authorizedRole.app).get(file))
+        .expect(200);
+      expect(response.headers['content-type']).toMatch(/application\/pdf/);
+      expect(response.headers['cache-control']).toContain('no-store');
+      expect(authorizedRole.service.downloadMedicalRequest).toHaveBeenCalledWith(
+        actorId,actorId);
+    }
+    for(const role of ['paciente','administrador']){
+      const denied=setup(role);
+      await authorized(request(denied.app).get(file)).expect(403);
+      expect(denied.service.downloadMedicalRequest).not.toHaveBeenCalled();
     }
   });
   test('operador recibe indicadores globales y listado filtrado',async () => {
