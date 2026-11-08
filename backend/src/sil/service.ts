@@ -93,6 +93,76 @@ export function createSilService(db: Pool) {
       if(!result.rows.length) throw new SilNotFoundError();
       return result.rows[0];
     },
+    async branches() {
+      const result=await db.query(
+        `SELECT b.code,b.display_name AS "branchName",b.commune,
+            l.code AS "laboratoryCode",l.display_name AS "laboratoryName"
+         FROM public.vitalia_sil_branches b
+         JOIN public.vitalia_sil_laboratories l ON l.code=b.laboratory_code
+         WHERE b.active ORDER BY b.display_name`);
+      return {branches:result.rows};
+    },
+    async patientProfileDemo(email:string) {
+      if(!email.endsWith('@example.invalid'))throw new SilNotFoundError();
+      const result=await db.query(
+        `SELECT a.id,a.email,
+           p.synthetic_identifier AS "syntheticIdentifier",
+           p.given_names AS "givenNames",p.family_names AS "familyNames",
+           p.birth_date::text AS "birthDate",
+           p.sex_for_reference AS "sexForReference",
+           p.contact_phone_demo AS "contactPhoneDemo"
+         FROM public.vitalia_accounts a
+         LEFT JOIN public.vitalia_sil_patient_profiles_demo p ON p.patient_id=a.id
+         WHERE a.email=$1 AND a.role_code='paciente'`,[email]);
+      if(!result.rows.length)throw new SilNotFoundError();
+      return {patient:result.rows[0]};
+    },
+    async savePatientProfileDemo(email:string,input:{
+      syntheticIdentifier:string;givenNames:string;familyNames:string;
+      birthDate:string;sexForReference:'female'|'male'|'not_specified';
+      contactPhoneDemo?:string;
+    }) {
+      if(!email.endsWith('@example.invalid') ||
+        !/^DEMO-[A-Z0-9-]{3,16}$/.test(input.syntheticIdentifier))
+        throw new SilConflictError();
+      const client=await db.connect();
+      let failed=false;
+      try{
+        await client.query('BEGIN');
+        const patient=await client.query<{id:string}>(
+          `SELECT id FROM public.vitalia_accounts WHERE email=$1
+             AND role_code='paciente' FOR UPDATE`,[email]);
+        if(!patient.rows.length)throw new SilNotFoundError();
+        const id=patient.rows[0].id;
+        const previouslyIssued=await client.query(
+          `SELECT 1 FROM public.vitalia_sil_external_reports
+           WHERE patient_id=$1 LIMIT 1`,[id]);
+        if(previouslyIssued.rows.length)throw new SilConflictError();
+        await client.query(
+          `INSERT INTO public.vitalia_sil_patient_profiles_demo(
+             patient_id,synthetic_identifier,given_names,family_names,birth_date,
+             sex_for_reference,contact_phone_demo)
+           VALUES($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT(patient_id) DO UPDATE SET
+              synthetic_identifier=EXCLUDED.synthetic_identifier,
+              given_names=EXCLUDED.given_names,
+              family_names=EXCLUDED.family_names,
+              birth_date=EXCLUDED.birth_date,
+              sex_for_reference=EXCLUDED.sex_for_reference,
+              contact_phone_demo=EXCLUDED.contact_phone_demo,
+              updated_at=CURRENT_TIMESTAMP`,
+          [id,input.syntheticIdentifier,input.givenNames,input.familyNames,
+            input.birthDate,input.sexForReference,input.contactPhoneDemo??null]);
+        await client.query('COMMIT');
+      }catch(error){
+        try{await client.query('ROLLBACK');}catch{failed=true;}
+        if((error as {code?:string}).code==='23505' ||
+           (error as {code?:string}).code==='22007')
+          throw new SilConflictError();
+        throw error;
+      }finally{client.release(failed);}
+      return this.patientProfileDemo(email);
+    },
     async summary() {
       const result=await db.query<{
         total:number;pendingSample:number;pendingResults:number;
@@ -346,8 +416,9 @@ export function createSilService(db: Pool) {
       }finally{client.release(failed);}
     },
     async attachExternalReport(orderId:string,actorId:string,input:{
-      fileName:string;issuingLaboratory:string;authorizationReference:string;
-      externallyAuthorizedAt:string;patientMatchConfirmed:true;
+      fileName:string;branchCode:string;authorizedProfessionalName:string;
+      authorizationReference:string;externallyAuthorizedAt:string;
+      patientMatchConfirmed:true;patientIdentifierFromPdf:string;
     },bytes:Buffer) {
       if(!input.patientMatchConfirmed || bytes.length<8 || bytes.length>2*1024*1024)
         throw new SilConflictError();
@@ -365,23 +436,38 @@ export function createSilService(db: Pool) {
         if(!order.rows.length)throw new SilNotFoundError();
         if(order.rows[0].status!=='registered' || !order.rows[0].synthetic)
           throw new SilConflictError();
+        const branch=await client.query<{laboratoryName:string}>(
+          `SELECT l.display_name AS "laboratoryName"
+           FROM public.vitalia_sil_branches b
+           JOIN public.vitalia_sil_laboratories l ON l.code=b.laboratory_code
+           WHERE b.code=$1 AND b.active`,[input.branchCode]);
+        if(!branch.rows.length)throw new SilConflictError();
+        const profile=await client.query<{syntheticIdentifier:string}>(
+          `SELECT synthetic_identifier AS "syntheticIdentifier"
+           FROM public.vitalia_sil_patient_profiles_demo
+           WHERE patient_id=$1`,[order.rows[0].patientId]);
+        if(!profile.rows.length ||
+          profile.rows[0].syntheticIdentifier!==input.patientIdentifierFromPdf)
+          throw new SilConflictError();
         const id=randomUUID();
         const checksum=createHash('sha256').update(bytes).digest('hex');
         await client.query(
           `INSERT INTO public.vitalia_sil_external_reports(
             id,order_id,patient_id,file_name,pdf_data,pdf_sha256,
             issuing_laboratory,external_authorization_ref,
-            externally_authorized_at,patient_match_confirmed,received_by)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,true,$10)`,
+            externally_authorized_at,patient_match_confirmed,received_by,
+            origin_branch_code,authorized_professional_name,patient_identifier_checked)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,true,$10,$11,$12,true)`,
           [id,orderId,order.rows[0].patientId,input.fileName,bytes,checksum,
-            input.issuingLaboratory,input.authorizationReference,date,actorId]);
+            branch.rows[0].laboratoryName,input.authorizationReference,date,actorId,
+            input.branchCode,input.authorizedProfessionalName]);
         await client.query(
           `UPDATE public.vitalia_sil_orders SET status='report_attached' WHERE id=$1`,
           [orderId]);
         await appendAudit(client,orderId,actorId,'external_report_attached',{
-          reportId:id,fileSha256:checksum,issuer:input.issuingLaboratory,
+          reportId:id,fileSha256:checksum,branchCode:input.branchCode,
           authorizationReference:input.authorizationReference,
-          patientMatchConfirmed:true
+          patientMatchConfirmed:true,patientIdentifierChecked:true
         });
         await client.query('COMMIT');
         return {id,orderId,status:'report_attached',fileName:input.fileName,
@@ -405,6 +491,7 @@ export function createSilService(db: Pool) {
           `UPDATE public.vitalia_sil_external_reports
              SET published_at=CURRENT_TIMESTAMP,published_by=$2
              WHERE order_id=$1 AND published_at IS NULL AND patient_match_confirmed
+               AND patient_identifier_checked
              RETURNING id`,[orderId,actorId]);
         if(!report.rows.length)throw new SilConflictError();
         await client.query(
@@ -503,6 +590,9 @@ export function createSilService(db: Pool) {
           `SELECT id,file_name AS "fileName",
             issuing_laboratory AS "issuingLaboratory",
             external_authorization_ref AS "authorizationReference",
+            origin_branch_code AS "originBranchCode",
+            authorized_professional_name AS "authorizedProfessionalName",
+            patient_identifier_checked AS "patientIdentifierChecked",
             externally_authorized_at AS "externallyAuthorizedAt",
             received_at AS "receivedAt",published_at AS "publishedAt",
             pdf_sha256 AS sha256
