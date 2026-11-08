@@ -197,10 +197,13 @@ export function createSilService(db: Pool) {
     },
     async getOrder(orderId: string) {
       const order = await db.query(
-        `SELECT id,'VH-' || lpad(order_number::text,6,'0') AS "orderNumber",
-          patient_id AS "patientId",exam_code AS "examCode",
-          status,synthetic,created_at AS "createdAt"
-         FROM public.vitalia_sil_orders WHERE id=$1`,[orderId]);
+        `SELECT o.id,'VH-' || lpad(o.order_number::text,6,'0') AS "orderNumber",
+          o.patient_id AS "patientId",a.email AS "patientEmail",
+          o.exam_code AS "examCode",
+          o.status,o.synthetic,o.created_at AS "createdAt"
+         FROM public.vitalia_sil_orders o
+         JOIN public.vitalia_accounts a ON a.id=o.patient_id
+         WHERE o.id=$1`,[orderId]);
       if (!order.rows.length) throw new SilNotFoundError();
       const [exams,sample,results] = await Promise.all([
         db.query(
