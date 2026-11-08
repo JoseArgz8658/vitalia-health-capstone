@@ -7,7 +7,7 @@ const sample={id,orderId:id,barcode:'LAB-DEMO-001'};
 const service={
  createOrder:jest.fn().mockResolvedValue({id,status:'registered'}),
  registerSample:jest.fn().mockResolvedValue(sample),
- recordResults:jest.fn().mockResolvedValue({orderId:id,status:'results_recorded',count:1,synthetic:true}),
+ recordManualResults:jest.fn().mockResolvedValue({orderId:id,status:'results_recorded',count:1,synthetic:true}),
  simulateAnalyzer:jest.fn().mockResolvedValue({orderId:id,status:'results_recorded',count:5,synthetic:true,simulated:true,analyzerId:'simulador-hemograma-v1'}),
  getOrder:jest.fn().mockResolvedValue({order:{id,status:'registered'},sample:null,results:[]}),
 };
@@ -49,27 +49,26 @@ test('no admite adjudicar roles ni exámenes no soportados',async()=>{
 });
 test('registrar muestra requiere código válido',async()=>{
  const res=await request(app()).post('/api/sil/orders/'+id+'/sample').set(bearer)
-  .send({barcode:'LAB-DEMO-001'});
+  .send({barcode:'LAB-DEMO-001',containerCode:'edta'});
  expect(res.status).toBe(201);
- expect(service.registerSample).toHaveBeenCalledWith(id,'LAB-DEMO-001');
+ expect(service.registerSample).toHaveBeenCalledWith(id,'LAB-DEMO-001','edta','11111111-1111-4111-8111-111111111111',undefined);
  expect((await request(app()).post('/api/sil/orders/'+id+'/sample').set(bearer)
-  .send({barcode:'abc/def'})).status).toBe(400);
+  .send({barcode:'abc/def',containerCode:'edta'})).status).toBe(400);
 });
-test('resultados numéricos sintéticos válidos',async()=>{
- const results=[{analyte:'Hemoglobina',numericValue:13.2,unit:'g/dL',
-  referenceMin:12,referenceMax:16}];
+test('registro manual de resultados de prueba válido',async()=>{
+ const results=[{examCode:'hemograma',analyte:'Hemoglobina',numericValue:13.2}];
  const res=await request(app()).post('/api/sil/orders/'+id+'/results').set(bearer).send({results});
  expect(res.status).toBe(201);
- expect(service.recordResults).toHaveBeenCalledWith(id,results);
+ expect(service.recordManualResults).toHaveBeenCalledWith(id,results,'11111111-1111-4111-8111-111111111111');
 });
-test('rechaza analitos repetidos, valores inválidos y rangos invertidos',async()=>{
+test('rechaza resultados manuales repetidos, valores inválidos y unidades forzadas',async()=>{
  for(const results of [
-  [{analyte:'H',numericValue:'14',unit:'g/dL'}],
-  [{analyte:'H',numericValue:14,unit:'g/dL',referenceMin:16,referenceMax:12}],
-  [{analyte:'H',numericValue:14,unit:'g/dL'},{analyte:'h',numericValue:14,unit:'g/dL'}],
+  [{examCode:'hemograma',analyte:'H',numericValue:'14'}],
+  [{examCode:'hemograma',analyte:'H',numericValue:14,unit:'g/dL'}],
+  [{examCode:'hemograma',analyte:'H',numericValue:14},{examCode:'hemograma',analyte:'h',numericValue:14}],
  ]) expect((await request(app()).post('/api/sil/orders/'+id+'/results')
    .set(bearer).send({results})).status).toBe(400);
- expect(service.recordResults).not.toHaveBeenCalled();
+ expect(service.recordManualResults).not.toHaveBeenCalled();
 });
 test('consulta de administración ve estado y no expone datos a paciente',async()=>{
  expect((await request(app('administrador')).get('/api/sil/orders/'+id).set(bearer)).status).toBe(200);
@@ -81,7 +80,7 @@ test('solo operador puede simular resultados de prueba',async()=>{
   .set(bearer).send({});
  expect(accepted.status).toBe(201);
  expect(accepted.body.result.simulated).toBe(true);
- expect(service.simulateAnalyzer).toHaveBeenCalledWith(id);
+ expect(service.simulateAnalyzer).toHaveBeenCalledWith(id,'11111111-1111-4111-8111-111111111111');
  expect((await request(app('administrador')).post('/api/sil/orders/'+id+'/simulate')
   .set(bearer).send({})).status).toBe(403);
  expect((await request(app('paciente')).post('/api/sil/orders/'+id+'/simulate')
