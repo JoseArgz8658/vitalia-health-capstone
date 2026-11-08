@@ -287,7 +287,7 @@ void main() {
       expect(
         find.text(
           role == 'administrador'
-              ? 'Vitalia SIL Simple'
+              ? 'Administración de Vitalia Health'
               : 'Mis pacientes',
         ),
         findsOneWidget,
@@ -296,4 +296,45 @@ void main() {
       auth.close();
     });
   }
+  testWidgets('operador entra al laboratorio sin controles administrativos',
+      (tester) async {
+    final auth = makeAuth('operador_laboratorio', (req) async {
+      if (req.url.path.endsWith('/catalog')) {
+        return http.Response(
+          jsonEncode({
+            'exams': [
+              {
+                'code': 'hemograma',
+                'name': 'Hemograma',
+                'sampleType': 'sangre_venosa',
+                'analytes': []
+              }
+            ]
+          }),
+          200,
+        );
+      }
+      if (req.url.path.endsWith('/orders')) {
+        return http.Response('{"orders":[]}', 200);
+      }
+      return http.Response('{}', 404);
+    });
+    await tester.pumpWidget(
+      VitaliaMvpApp(api: auth, initialRoute: '/laboratorio'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Acceso del laboratorio'), findsOneWidget);
+    await tester.enterText(
+      find.byType(TextFormField).at(0), 'operador_laboratorio@example.com');
+    await tester.enterText(
+      find.byType(TextFormField).at(1), 'clave de prueba');
+    await tester.tap(find.text('Iniciar sesión'));
+    await tester.pumpAndSettle();
+    expect(find.text('Panel del laboratorio'), findsOneWidget);
+    expect(find.text('Administración de Vitalia Health'), findsNothing);
+    expect(find.text('Registrar orden'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    auth.close();
+  });
+
 }
