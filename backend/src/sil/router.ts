@@ -67,6 +67,44 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     res.set('Content-Length',String(file.bytes.length));
     res.send(file.bytes);
   });
+  router.get('/branches',async(_req,res)=>{
+    res.json(await service.branches());
+  });
+  router.get('/patients/profile',async(req,res)=>{
+    if(res.locals.account.role!=='operador_laboratorio' ||
+       process.env.VITALIA_SIL_DEMO!=='YES'){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    const parsed=z.object({
+      email:z.email().max(254).refine(v=>v.endsWith('@example.invalid')),
+    }).strict().safeParse(req.query);
+    if(!parsed.success){
+      res.status(400).json({error:{code:'INVALID_PATIENT'}});return;
+    }
+    res.json(await service.patientProfileDemo(parsed.data.email.toLowerCase()));
+  });
+  router.post('/patients/profile',async(req,res)=>{
+    if(res.locals.account.role!=='operador_laboratorio' ||
+       process.env.VITALIA_SIL_DEMO!=='YES'){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    const parsed=z.object({
+      email:z.email().max(254).refine(v=>v.endsWith('@example.invalid')),
+      syntheticIdentifier:z.string().regex(/^DEMO-[A-Z0-9-]{3,16}$/),
+      givenNames:z.string().trim().min(2).max(100),
+      familyNames:z.string().trim().min(2).max(100),
+      birthDate:z.iso.date().refine(v=>v>='1900-01-01' &&
+        v<=new Date().toISOString().slice(0,10)),
+      sexForReference:z.enum(['female','male','not_specified']),
+      contactPhoneDemo:z.string().trim().min(6).max(20).optional(),
+      syntheticConfirmed:z.literal(true),
+    }).strict().safeParse(req.body);
+    if(!parsed.success){
+      res.status(400).json({error:{code:'INVALID_PATIENT_PROFILE'}});return;
+    }
+    const {syntheticConfirmed,email,...profile}=parsed.data;
+    res.json(await service.savePatientProfileDemo(email.toLowerCase(),profile));
+  });
   router.get('/patients',async(req,res)=>{
     if(res.locals.account.role!=='operador_laboratorio'){
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
@@ -168,7 +206,10 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     try{
       input={
         fileName:decodeURIComponent(req.get('x-report-filename')??''),
-        issuingLaboratory:decodeURIComponent(req.get('x-report-issuer')??''),
+        branchCode:req.get('x-report-branch-code')??'',
+        authorizedProfessionalName:decodeURIComponent(
+          req.get('x-report-authorized-professional')??''),
+        patientIdentifierFromPdf:req.get('x-report-patient-identifier')??'',
         authorizationReference:decodeURIComponent(req.get('x-report-authorization-ref')??''),
         externallyAuthorizedAt:req.get('x-report-authorized-at'),
         patientMatchConfirmed:req.get('x-report-patient-confirmed')==='true',
@@ -180,7 +221,9 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
       fileName:z.string().trim().min(5).max(120).regex(/[.]pdf$/i)
         .refine(name=>!name.includes('/') && !name.includes(String.fromCharCode(92)) &&
           !Array.from(name).some(ch=>ch.charCodeAt(0)<32)),
-      issuingLaboratory:z.string().trim().min(3).max(120),
+      branchCode:z.string().regex(/^[a-z0-9-]{3,50}$/),
+      authorizedProfessionalName:z.string().trim().min(3).max(120),
+      patientIdentifierFromPdf:z.string().regex(/^DEMO-[A-Z0-9-]{3,16}$/),
       authorizationReference:z.string().trim().min(3).max(120),
       externallyAuthorizedAt:z.string().min(10).max(40),
       patientMatchConfirmed:z.literal(true),
