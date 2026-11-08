@@ -205,7 +205,7 @@ describe('SIL: permisos y catálogo multiprestación', () => {
     expect(listed.body.reports.length).toBe(1);
     const downloaded=await authorized(request(patient.app)
       .get('/api/sil/patient/reports/'+actorId+'/file')).expect(200);
-    expect(downloaded.headers['content-type']).toMatch(/application\\/pdf/);
+    expect(downloaded.headers['content-type']).toContain('application/pdf');
     expect(patient.service.downloadPatientReport).toHaveBeenCalledWith(actorId,actorId);
     await authorized(request(setup('administrador').app)
       .get('/api/sil/patient/reports')).expect(403);
