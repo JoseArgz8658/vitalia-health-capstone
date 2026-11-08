@@ -6,18 +6,19 @@ Esta guía solo aplica a `vitalia-postgres-test` y la red `vitalia-fase7-test-ne
 
 - **Operador de laboratorio** (`operador_laboratorio`): búsqueda de paciente existente por correo, catálogo, órdenes con una o varias prestaciones, recepción de muestra y registro de resultados de demostración.
 - **Administrador** (`administrador`): acceso a pantalla administrativa separada, sin autorización de escritura en rutas SIL. Gestión de usuarios aún pendiente.
-- **Responsable de validación** (`validador_laboratorio`): rol reservado; acceso a consultas SIL, sin autorización de procesamiento ni validación implementada todavía.
+- **Responsable de validación** (`validador_laboratorio`): acceso exclusivo a la bandeja de revisión, aprobación interna o devolución motivada; no puede operar muestras ni publicar resultados.
 - **Paciente**: sin acceso a rutas SIL de trabajo interno.
 
 ## Prestaciones en catálogo
 
-Hemograma (5 analitos sintéticos), perfil lipídico (4), glicemia (1), HbA1c (1), perfil renal (3) y perfil hepático (5). La base contiene plantillas sintéticas, **no** intervalos clínicos universales. Una orden puede incluir varios exámenes; en esta fase, la recepción registra un único evento de muestra sanguínea por orden, no separa tubos físicos.
+Hemograma (5 analitos sintéticos), perfil lipídico (4), glicemia (1), HbA1c (1), perfil renal (3) y perfil hepático (5). La base contiene plantillas sintéticas, **no** intervalos clínicos universales. Una orden puede incluir varios exámenes; la recepción registra los tubos EDTA, suero o fluoruro que requiere cada prestación. La correspondencia es una simplificación académica y no sustituye protocolos clínicos.
 
 ## Accesos de demostración persistentes
 
 **No guardar ninguna contraseña en Git, documentos compartidos ni código fuente.** La nueva API lee contraseñas configuradas localmente. Correos:
 - Operador: `operador.sil@example.invalid`
 - Administrador: `admin.sil@example.invalid`
+- Validador: `validador.sil@example.invalid`
 - Paciente semilla: `paciente.sil@example.invalid` (solo para crear órdenes; todavía no se expone acceso de paciente).
 
 Generar una vez el archivo `$HOME\.vitalia-sil-demo.env` (fuera del repositorio) mediante PowerShell:
@@ -43,13 +44,40 @@ if (-not (Test-Path $secretPath)) {
 # Get-Content $secretPath
 ```
 
+## Contraseña permanente del validador
+
+El archivo de secretos que ya existe **no se debe reemplazar**. Solo agrega una tercera contraseña si falta, sin mostrarla en consola ni en chats:
+
+```powershell
+$secretPath = Join-Path $HOME ".vitalia-sil-demo.env"
+if (-not (Test-Path $secretPath)) { throw "Falta el archivo de secretos del SIL." }
+if (-not (Select-String -Path $secretPath -Pattern '^VITALIA_SIL_VALIDATOR_PASSWORD=' -Quiet)) {
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $bytes = New-Object byte[] 24
+        $rng.GetBytes($bytes)
+        $validatorSecret = [Convert]::ToBase64String($bytes)
+    } finally { $rng.Dispose() }
+    Add-Content -Encoding ASCII -Path $secretPath -Value ("VITALIA_SIL_VALIDATOR_PASSWORD=" + $validatorSecret)
+    Remove-Variable validatorSecret -ErrorAction SilentlyContinue
+}
+```
+
+**Importante:** Docker fija las variables del `--env-file` al crear el contenedor. Para introducir la nueva variable se debe detener y recrear **solo** `vitalia-sil-demo` usando la sección de recreación. Reiniciarlo con `docker start` no carga la nueva contraseña.
+
+### Revisión interna con retorno al operador
+
+La migración `030_sil_review_workflow` habilita `review_approved` y `review_rejected`, agrega eventos de auditoría y mantiene cerrada la publicación. El validador revisa órdenes con resultados completos, aprueba la revisión interna o devuelve la orden con motivo de al menos diez caracteres. El operador puede corregir todos los parámetros de una orden devuelta; los valores anteriores quedan preservados en el evento de auditoría `results_corrected`. Una revisión aprobada no se puede editar desde el SIL. Ninguna decisión implica validación clínica de resultados reales.
+
+Acceso del validador: `http://localhost:5173/#/validacion`. El rol requiere contraseña separada, guardada en el archivo local. 
+
 La estación de trabajo del operador ahora ofrece navegación por Resumen, Órdenes, Nueva orden, Muestras y Resultados. El resumen lee métricas agregadas de PostgreSQL; la tabla permite buscar correo/número VH-000001/UUID, filtrar por estado y avanzar por páginas de 20 registros.
 
 La migración `028_sil_order_numbers` añade un correlativo de orden legible y conserva los UUID como claves internas.
 
 La migración **`029_sil_traceability`** separa los tubos EDTA, suero y fluoruro por orden, mantiene registros anteriores como `historical`, agrega la cuenta responsable de la recepción, el origen del resultado y eventos de auditoría de las operaciones nuevas. No borra muestras ni resultados anteriores. Una orden nueva con hemograma y perfil lipídico necesita un tubo EDTA y uno de suero. El registro manual exige todos los analitos de las prestaciones solicitadas y toma las unidades del catálogo; no habilita validación clínica.
 
-**No iniciar el backend actualizado antes de aplicar la migración 029 exclusivamente en `vitalia_dev`.** **No activar el backend actualizado hasta completar también la migración 028 exclusivamente en `vitalia_dev`.** No ejecutar migraciones sobre la base principal.
+**No iniciar el backend actualizado antes de aplicar la migración 030 exclusivamente en `vitalia_dev`.** No ejecutar migraciones sobre la base principal.
 
 Las contraseñas se conservan en el archivo local. Al reiniciar Docker, las cuentas se mantienen en PostgreSQL y el script de inicio reutiliza los correos. Si se reconstruye la base aislada, se regeneran las mismas credenciales desde el archivo local, siempre que se vuelvan a aplicar las migraciones.
 
@@ -63,7 +91,7 @@ npm --prefix .\backend run build
 npm --prefix .\backend test
 ```
 
-**Detenerse si falla el compilador o las pruebas.** Después aplicar todas las migraciones, incluidas `027_sil_catalog`, `028_sil_order_numbers` y `029_sil_traceability`, en `vitalia_dev` usando la misma red Docker aislada. No se debe cambiar `PGDATABASE` por `vitalia`.
+**Detenerse si falla el compilador o las pruebas.** Después aplicar todas las migraciones, incluidas `027_sil_catalog`, `028_sil_order_numbers`, `029_sil_traceability` y `030_sil_review_workflow`, en `vitalia_dev` usando la misma red Docker aislada. No se debe cambiar `PGDATABASE` por `vitalia`.
 
 ```powershell
 $distPath = (Resolve-Path ".\backend\dist").Path
@@ -134,4 +162,4 @@ flutter test
 flutter run -d edge --web-hostname localhost --web-port 5173 --dart-define=VITALIA_API_URL=http://127.0.0.1:3101
 ```
 
-Entrar a `http://localhost:5173/#/laboratorio` con el operador estable; la ruta `/#/administracion` sigue destinada al administrador. El paciente semilla puede buscarse por correo, sin UUID. No presentar datos sintéticos como informes clínicos publicados.
+Entrar a `http://localhost:5173/#/laboratorio` con el operador estable; la ruta `/#/administracion` sigue destinada al administrador. La ruta `/#/validacion` corresponde al validador. El paciente semilla puede buscarse por correo, sin UUID. No presentar datos sintéticos como informes clínicos publicados.
