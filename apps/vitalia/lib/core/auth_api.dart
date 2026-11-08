@@ -49,9 +49,9 @@ class AuthApi {
   }) async {
     final uri = Uri.tryParse(path);
     final validPath = RegExp(
-      r'^/(?:catalog|summary|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results|review|report(?:/publish)?))?)?|patients|patient/reports(?:/[a-f0-9-]{36}/file)?)$',
+      r'^/(?:catalog|branches|summary|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results|review|report(?:/publish)?))?)?|patients(?:/profile)?|patient/reports(?:/[a-f0-9-]{36}/file)?)$',
     );
-    final allowedParams = uri?.path == '/patients'
+    final allowedParams = (uri?.path == '/patients' || uri?.path == '/patients/profile')
         ? <String>{'email'}
         : uri?.path == '/orders'
         ? <String>{'limit', 'offset', 'status', 'search'}
@@ -64,7 +64,8 @@ class AuthApi {
         !validPath.hasMatch(uri.path) ||
         query.keys.any((key) => !allowedParams.contains(key)) ||
         query.values.any((values) => values.length != 1) ||
-        (uri.path == '/patients' && !query.containsKey('email'))) {
+        ((uri.path == '/patients' || uri.path == '/patients/profile') &&
+            body == null && !query.containsKey('email'))) {
       throw const AuthFailure('Ruta de laboratorio inválida.');
     }
     final token = _token;
@@ -113,7 +114,9 @@ class AuthApi {
   Future<Map<String, dynamic>> silUploadReport({
     required String orderId,
     required String fileName,
-    required String issuer,
+    required String branchCode,
+    required String authorizedProfessionalName,
+    required String patientIdentifierFromPdf,
     required String authorizationReference,
     required DateTime authorizedAt,
     required Uint8List bytes,
@@ -121,7 +124,10 @@ class AuthApi {
     if (!RegExp(r'^[a-f0-9-]{36}$').hasMatch(orderId) ||
         bytes.isEmpty || bytes.length > 2 * 1024 * 1024 ||
         !fileName.toLowerCase().endsWith('.pdf') ||
-        fileName.length > 120 || issuer.trim().length < 3 ||
+        fileName.length > 120 || branchCode.trim().isEmpty ||
+        authorizedProfessionalName.trim().length < 3 ||
+        !RegExp(r'^DEMO-[A-Z0-9-]{3,16}$')
+            .hasMatch(patientIdentifierFromPdf) ||
         authorizationReference.trim().length < 3) {
       throw const AuthFailure('Revisa los datos del informe PDF (máximo 2 MiB).');
     }
@@ -138,7 +144,10 @@ class AuthApi {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/pdf',
           'x-report-filename': Uri.encodeComponent(fileName),
-          'x-report-issuer': Uri.encodeComponent(issuer.trim()),
+          'x-report-branch-code': branchCode,
+          'x-report-authorized-professional':
+              Uri.encodeComponent(authorizedProfessionalName.trim()),
+          'x-report-patient-identifier': patientIdentifierFromPdf,
           'x-report-authorization-ref':
               Uri.encodeComponent(authorizationReference.trim()),
           'x-report-authorized-at': authorizedAt.toUtc().toIso8601String(),
