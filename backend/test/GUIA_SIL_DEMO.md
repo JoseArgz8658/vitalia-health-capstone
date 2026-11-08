@@ -44,6 +44,24 @@ if (-not (Test-Path $secretPath)) {
 # Get-Content $secretPath
 ```
 
+## Resultados mediante PDF e IA: borrador + corrección manual
+
+**Cambio de alcance del operador:** `Automático` significa **seleccionar un PDF de resultados ficticios y ejecutar extracción de IA**, NO pulsar un simulador para inventar valores. El simulador de plantillas sigue disponible únicamente para pruebas técnicas antiguas por API, pero se retiró de la interfaz del operador. `Muestras` registra por separado la **recepción física declarada de los tubos**; un PDF nunca prueba que se haya recibido una muestra.
+
+Desde `Resultados` de una orden que tenga todos los tubos requeridos en estado `sampled`, el operador puede:
+1. Seleccionar un PDF de demostración de hasta 2 MiB que incluya el identificador `DEMO-...` correspondiente a la ficha del paciente.
+2. Pulsar `Analizar archivo con IA`. El backend verifica el estado de la orden y la identidad sintética, extrae el texto mediante el lector PDF preexistente y llama al extractor de Ollama. El resultado **NO se almacena** todavía.
+3. Revisar los valores precargados. Si la IA no identifica un analito, produce valores/ unidades ambiguas, informa incidencias, no encuentra el valor junto al nombre en la fuente, o el PDF necesita OCR, Vitalia lo marca como **pendiente de revisión manual**.
+4. Corregir/ingresar los valores faltantes, revisar cada cifra contra el PDF original y marcar el control de confirmación.
+5. Pulsar `Registrar resultados`. Se reutiliza exactamente la validación y transacción del ingreso manual; el resultado pasa a `results_recorded` y entra a la revisión profesional. La auditoría marca `assistedImport:true` solo si existe un comprobante temporal de extracción IA vinculado a la cuenta y orden, válido por 10 minutos. El registro conserva como responsable al operador. La IA no valida clínicamente ni publica.
+6. Si la IA falla o no existe texto legible, la captura manual permanece disponible. Si falla la identidad del PDF, hay que descartarlo antes de registrar manualmente. No usar datos clínicos reales.
+
+Ruta API para la vista previa: `POST /api/sil/orders/:id/results/preview` con `Content-Type: application/pdf` y token del operador; devuelve `{preview:{state,items,warnings,confirmed:false,previewToken}}`. El servidor **no guarda ni publica el archivo en esta ruta**. Ruta de guardado: `POST /api/sil/orders/:id/results`, con todos los resultados revisados y, si corresponde, `previewToken`. No hay migración nueva.
+
+**Dependencia Ollama:** el contenedor `vitalia-sil-demo` necesita conectividad hacia el servicio local de Ollama. Para `VITALIA_RUNTIME=container` y `VITALIA_OLLAMA_SERVICE=ollama`, usar una **red de Docker separada** compartida exclusivamente por el contenedor demo y Ollama. No conectar la aplicación principal ni PostgreSQL de producción a una red nueva sin revisión. Sin conexión a Ollama, la ruta devuelve `analysis_unavailable` y permite continuar manualmente; nunca simula una extracción como si fuera IA.
+
+Pruebas de aceptación obligatorias: acceso únicamente de operador, informe de identidad distinta rechazado, falta de muestra rechazada, PDF OCR informa limitación, errores o duplicados de analitos quedan sin precargar, ninguna consulta de previsualización escribe en PostgreSQL, y el guardado requiere confirmación y pasa al validador. Estas pruebas no prueban uso clínico real.
+
 ## IA educativa en el portal del paciente (SIL demo)
 
 El portal **Mis informes** muestra un botón `Consultar con IA educativa` por cada informe publicado. La conversación está restringida a la cuenta propietaria del PDF mediante sesión, identificador de informe y estado publicado.
