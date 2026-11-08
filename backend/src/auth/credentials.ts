@@ -5,7 +5,7 @@ import { type AccountSummary, findAccountCredentialsByEmail } from '../accounts/
 import { hashPassword, verifyPassword } from './password';
 
 const inputSchema = z.object({
-  mode: z.enum(['paciente','profesional','administrador']).default('paciente'),
+  mode: z.enum(['paciente','profesional','administrador','operador_laboratorio','validador_laboratorio']).default('paciente'),
   email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
   password: z.string().min(1).refine(value => Buffer.byteLength(value, 'utf8') <= 1024),
 }).strict();
