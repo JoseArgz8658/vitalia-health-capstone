@@ -37,6 +37,14 @@ function setup(role) {
     registerSample: jest.fn(async () => ({id: actorId})),
     recordResults: jest.fn(async () => ({orderId:actorId,status:'results_recorded'})),
     recordManualResults: jest.fn(async () => ({orderId:actorId,status:'results_recorded'})),
+    previewMedicalRequest: jest.fn(async()=>({
+      state:'requires_operator_review',confirmed:false,previewToken:actorId,
+      suggestedExams:[{code:'glicemia',name:'Glicemia'}],
+    })),
+    confirmMedicalRequest: jest.fn(async()=>({
+      order:{id:actorId,orderNumber:'VH-000125',status:'registered'},
+      requestId:patientId,
+    })),
     previewResultsFile: jest.fn(async()=>({
       state:'ready',items:[],warnings:[],generatedBy:'ai_draft',confirmed:false,
       previewToken:actorId,
@@ -62,6 +70,56 @@ function authorized(req) {
 }
 
 describe('SIL: permisos y catálogo multiprestación', () => {
+  test('recepción de solicitudes requiere operador y controles de ingreso',async()=>{
+    const operator=setup('operador_laboratorio');
+    const file=Buffer.from('%PDF-1.4\nsolicitud ficticia\n%%EOF');
+    const preview=await authorized(request(operator.app)
+      .post('/api/sil/medical-requests/preview')
+      .set('Content-Type','application/pdf')
+      .set('x-request-patient-email','paciente.sil@example.invalid')
+      .set('x-request-filename','solicitud.pdf')
+      .send(file)).expect(200);
+    expect(preview.body.preview.confirmed).toBe(false);
+    expect(operator.service.previewMedicalRequest).toHaveBeenCalledWith(
+      actorId,'paciente.sil@example.invalid','solicitud.pdf',expect.any(Buffer));
+    const payload={
+      previewToken:actorId,patientId,branchCode:'perez-las-condes',
+      examCodes:['glicemia','hba1c'],
+      documentReference:'SOL-DEMO-01',
+      prescriberName:'Profesional Ficticio',
+      requestDate:'2026-11-01',verified:true,
+    };
+    await authorized(request(operator.app)
+      .post('/api/sil/medical-requests/confirm')
+      .send(payload)).expect(201);
+    expect(operator.service.confirmMedicalRequest).toHaveBeenCalledWith(
+      actorId,payload);
+    await authorized(request(operator.app)
+      .post('/api/sil/medical-requests/confirm')
+      .send({...payload,verified:false})).expect(400);
+    await authorized(request(operator.app)
+      .post('/api/sil/medical-requests/confirm')
+      .send({...payload,examCodes:['glicemia','glicemia']})).expect(400);
+    await authorized(request(operator.app)
+      .post('/api/sil/medical-requests/confirm')
+      .send({...payload,role:'admin'})).expect(400);
+    await authorized(request(operator.app)
+      .post('/api/sil/medical-requests/preview')
+      .send({email:'paciente.sil@example.invalid'})).expect(400);
+    for(const role of ['paciente','administrador','validador_laboratorio']){
+      const restricted=setup(role);
+      await authorized(request(restricted.app)
+        .post('/api/sil/medical-requests/confirm')
+        .send(payload)).expect(403);
+      await authorized(request(restricted.app)
+        .post('/api/sil/medical-requests/preview')
+        .set('Content-Type','application/pdf')
+        .set('x-request-patient-email','paciente.sil@example.invalid')
+        .set('x-request-filename','solicitud.pdf')
+        .send(file)).expect(403);
+      expect(restricted.service.confirmMedicalRequest).not.toHaveBeenCalled();
+    }
+  });
   test('operador recibe indicadores globales y listado filtrado',async () => {
     const {app,service}=setup('operador_laboratorio');
     const summary=await authorized(request(app).get('/api/sil/summary')).expect(200);
