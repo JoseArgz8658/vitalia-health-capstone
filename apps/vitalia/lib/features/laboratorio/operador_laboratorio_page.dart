@@ -434,6 +434,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           _metric(Icons.inventory_2_outlined, 'Pendientes de muestra', count('pendingSample')),
           _metric(Icons.science_outlined, 'Pendientes de resultados', count('pendingResults')),
           _metric(Icons.verified_outlined, 'Pendientes de revisión', count('pendingReview')),
+          _metric(Icons.assignment_return_outlined, 'Devueltas para corregir', count('returned')),
         ]),
         const SizedBox(height: 20),
         _panel(
