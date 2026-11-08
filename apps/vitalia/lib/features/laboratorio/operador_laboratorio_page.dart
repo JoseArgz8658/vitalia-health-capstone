@@ -1147,12 +1147,46 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             const Text('Para recibir el PDF debes comprobar por separado '
                 'la autorización emitida por el laboratorio y la identidad del paciente.'),
             const SizedBox(height: 15),
+            DropdownButtonFormField<String>(
+              value: _selectedBranch,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Sucursal de origen del informe',
+                border: OutlineInputBorder(),
+              ),
+              hint: const Text('Selecciona una sucursal de la empresa'),
+              items: [
+                for (final branch in _branches)
+                  DropdownMenuItem<String>(
+                    value: branch['code'] as String,
+                    child: Text('${branch['laboratoryName']} · '
+                        '${branch['branchName']}',
+                        overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: _busy ? null : (code) =>
+                  setState(() => _selectedBranch = code),
+            ),
+            const SizedBox(height: 10),
             TextField(
-              controller: _reportIssuer,
+              controller: _reportProfessional,
               enabled: !_busy,
               maxLength: 120,
               decoration: const InputDecoration(
-                labelText: 'Laboratorio emisor',
+                labelText: 'Profesional que figura como responsable en el informe',
+                helperText: 'Transcribir del PDF. No comprueba firmas ni credenciales.',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _reportPatientIdentifier,
+              enabled: !_busy,
+              maxLength: 21,
+              decoration: const InputDecoration(
+                labelText: 'Identificador del paciente leído del PDF de prueba',
+                hintText: 'DEMO-0001',
+                helperText: 'Debe coincidir con la ficha sintética del paciente.',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -1162,7 +1196,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               enabled: !_busy,
               maxLength: 120,
               decoration: const InputDecoration(
-                labelText: 'Referencia de autorización externa',
+                labelText: 'N.º de informe o referencia de autorización',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -1196,7 +1230,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               onChanged: _busy ? null : (value) =>
                   setState(() => _confirmPatient = value ?? false),
               controlAffinity: ListTileControlAffinity.leading,
-              title: Text('Verifiqué que el informe corresponde al paciente '
+              title: Text('Revisé manualmente el identificador ficticio del PDF y ' 
+                  'verifiqué que corresponde al paciente '
                   '${order['patientEmail']}.'),
             ),
             const SizedBox(height: 12),
@@ -1211,6 +1246,10 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           ] else if (report != null) ...[
             Text('Documento: ${report['fileName']}'),
             Text('Emisor: ${report['issuingLaboratory']}'),
+            Text('Sucursal: ${report['originBranchCode'] ?? 'No registrada'}'),
+            Text('Profesional en informe: ${report['authorizedProfessionalName'] ?? 'No registrado'}'),
+            Text('Identificación del paciente comprobada: '
+                '${report['patientIdentifierChecked'] == true ? 'Sí' : 'Pendiente'}'),
             Text('Autorización externa: ${report['authorizationReference']}'),
             Text('Fecha de autorización: ${_date(report['externallyAuthorizedAt'])}'),
             Text('Integridad SHA-256: ${report['sha256']}',
@@ -1241,13 +1280,128 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     ]);
   }
 
+  Widget _demoPatientView() => _panel(
+    'Ficha de identificación (solo datos ficticios)',
+    'Los datos de esta pantalla solo sirven para probar la correspondencia '
+    'del PDF con la cuenta del paciente. No ingreses RUT ni teléfonos reales.',
+    Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      TextField(
+        controller: _patientController,
+        enabled: !_busy,
+        decoration: const InputDecoration(
+          labelText: 'Correo de la cuenta de pruebas',
+          hintText: 'paciente.sil@example.invalid',
+          border: OutlineInputBorder(),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: OutlinedButton.icon(
+          onPressed: _busy ? null : _loadDemoPatient,
+          icon: const Icon(Icons.search),
+          label: const Text('Consultar paciente'),
+        ),
+      ),
+      if (_patientDemoLoaded != null) ...[
+        const SizedBox(height: 18),
+        Text('Cuenta: ${_patientDemoLoaded!['email']}',
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _patientDemoId,
+          maxLength: 21,
+          decoration: const InputDecoration(
+            labelText: 'Identificador ficticio (no utilizar RUN reales)',
+            hintText: 'DEMO-0001',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _patientDemoGiven,
+          maxLength: 100,
+          decoration: const InputDecoration(
+            labelText: 'Nombres ficticios',
+            hintText: 'Paciente',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _patientDemoFamily,
+          maxLength: 100,
+          decoration: const InputDecoration(
+            labelText: 'Apellidos ficticios',
+            hintText: 'De Prueba',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _patientDemoBirth,
+          decoration: const InputDecoration(
+            labelText: 'Fecha de nacimiento ficticia (AAAA-MM-DD)',
+            hintText: '1990-01-01',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String>(
+          value: _patientDemoSex,
+          decoration: const InputDecoration(
+            labelText: 'Sexo para referencias de laboratorio (demo)',
+            border: OutlineInputBorder(),
+          ),
+          items: const [
+            DropdownMenuItem(value: 'not_specified',
+                child: Text('No especificado')),
+            DropdownMenuItem(value: 'female', child: Text('Femenino')),
+            DropdownMenuItem(value: 'male', child: Text('Masculino')),
+          ],
+          onChanged: _busy ? null : (value) =>
+              setState(() => _patientDemoSex = value ?? 'not_specified'),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _patientDemoPhone,
+          maxLength: 20,
+          decoration: const InputDecoration(
+            labelText: 'Teléfono ficticio (opcional)',
+            hintText: '000000000',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        CheckboxListTile(
+          controlAffinity: ListTileControlAffinity.leading,
+          value: _syntheticPatientConfirmed,
+          onChanged: _busy ? null : (value) =>
+              setState(() => _syntheticPatientConfirmed = value ?? false),
+          title: const Text('Confirmo que la ficha contiene únicamente datos '
+              'inventados para la demostración.'),
+        ),
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            onPressed: _busy ? null : _saveDemoPatient,
+            icon: const Icon(Icons.save_outlined),
+            label: const Text('Guardar ficha de prueba'),
+          ),
+        ),
+      ],
+    ]),
+    icon: Icons.badge_outlined,
+  );
+
   Widget _bodyForSection() => switch (_section) {
     0 => _dashboard(),
     1 => _ordersView(),
     2 => _newOrderView(),
     3 => _samplesView(),
     4 => _resultsView(),
-    _ => _reportsView(),
+    5 => _reportsView(),
+    _ => _demoPatientView(),
   };
 
   Widget _content() {
