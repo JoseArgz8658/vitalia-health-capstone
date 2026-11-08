@@ -21,7 +21,7 @@ export interface SilManualInput {
 export function createSilService(db: Pool) {
   async function appendAudit(client:PoolClient,orderId:string,actorId:string,
     action:'order_created'|'sample_received'|'results_simulated'|'results_manual',
-    details:Record<string,string|number>) {
+    details:Record<string,unknown>) {
     await client.query(
       `INSERT INTO public.vitalia_sil_audit
        (id,order_id,actor_id,action,details) VALUES($1,$2,$3,$4,$5::jsonb)`,
@@ -93,18 +93,21 @@ export function createSilService(db: Pool) {
     async summary() {
       const result=await db.query<{
         total:number;pendingSample:number;pendingResults:number;
-        pendingReview:number;patients:number;
+        pendingReview:number;returned:number;approved:number;patients:number;
       }>(
         `SELECT
            COUNT(*)::int AS total,
            COUNT(*) FILTER (WHERE status='registered')::int AS "pendingSample",
            COUNT(*) FILTER (WHERE status='sampled')::int AS "pendingResults",
            COUNT(*) FILTER (WHERE status='results_recorded')::int AS "pendingReview",
+           COUNT(*) FILTER (WHERE status='review_rejected')::int AS returned,
+           COUNT(*) FILTER (WHERE status='review_approved')::int AS approved,
            COUNT(DISTINCT patient_id)::int AS patients
          FROM public.vitalia_sil_orders`);
       return {summary:result.rows[0]};
     },
-    async listOrders(limit=20,offset=0,status?:'registered'|'sampled'|'results_recorded',
+    async listOrders(limit=20,offset=0,
+      status?:'registered'|'sampled'|'results_recorded'|'review_rejected'|'review_approved',
       search='') {
       const clauses:string[]=[];
       const params:Array<string|number>=[];
@@ -202,15 +205,28 @@ export function createSilService(db: Pool) {
       let failed = false;
       try {
         await client.query('BEGIN');
-        const updated = await client.query(
-          `UPDATE public.vitalia_sil_orders SET status='results_recorded'
-           WHERE id=$1 AND status='sampled' RETURNING id`,[orderId]);
-        if (!updated.rows.length) throw new SilConflictError();
+        const order=await client.query<{status:string}>(
+          `SELECT status FROM public.vitalia_sil_orders WHERE id=$1 FOR UPDATE`,[orderId]);
+        if(!order.rows.length) throw new SilNotFoundError();
+        const wasReturned=order.rows[0].status==='review_rejected';
+        if(order.rows[0].status!=='sampled' && !(wasReturned && source==='manual'))
+          throw new SilConflictError();
         const codes=await client.query<{exam_code:string}>(
           'SELECT exam_code FROM public.vitalia_sil_order_exams WHERE order_id=$1',[orderId]);
         const allowed=new Set(codes.rows.map(item=>item.exam_code));
         if(results.some(item=>!allowed.has(item.examCode??'hemograma')))
           throw new SilConflictError();
+        let previousResults:unknown[]=[];
+        if(wasReturned) {
+          const previous=await client.query(
+            `SELECT exam_code AS "examCode",analyte,
+               numeric_value::float8 AS "numericValue",unit
+             FROM public.vitalia_sil_results
+             WHERE order_id=$1 ORDER BY exam_code,analyte`,[orderId]);
+          previousResults=previous.rows;
+          await client.query(
+            `DELETE FROM public.vitalia_sil_results WHERE order_id=$1`,[orderId]);
+        }
         for (const item of results) {
           await client.query(
             `INSERT INTO public.vitalia_sil_results
@@ -219,8 +235,13 @@ export function createSilService(db: Pool) {
             [randomUUID(),orderId,item.examCode??'hemograma',item.analyte,
               item.numericValue,item.unit,item.referenceMin??null,item.referenceMax??null,source]);
         }
+        await client.query(
+          `UPDATE public.vitalia_sil_orders SET status='results_recorded'
+           WHERE id=$1`,[orderId]);
         await appendAudit(client,orderId,actorId,
-          source==='manual'?'results_manual':'results_simulated',{count:results.length});
+          wasReturned?'results_corrected':
+          source==='manual'?'results_manual':'results_simulated',
+          wasReturned?{count:results.length,previousResults}:{count:results.length});
         await client.query('COMMIT');
         return {orderId,status:'results_recorded',count:results.length,synthetic:true};
       } catch (error) {
@@ -278,6 +299,46 @@ export function createSilService(db: Pool) {
       return {...recorded,analyzerId,simulated:true,
         notice:'SIMULACIÓN: resultados de prueba, sin validez clínica.'};
     },
+    async reviewOrder(orderId:string,actorId:string,
+      decision:'approve'|'return',note:string) {
+      if(decision==='return' && note.trim().length<10)
+        throw new SilConflictError();
+      const client=await db.connect();
+      let failed=false;
+      try{
+        await client.query('BEGIN');
+        const current=await client.query<{status:string}>(
+          `SELECT status FROM public.vitalia_sil_orders WHERE id=$1 FOR UPDATE`,[orderId]);
+        if(!current.rows.length)throw new SilNotFoundError();
+        if(current.rows[0].status!=='results_recorded')
+          throw new SilConflictError();
+        const checks=await client.query<{expected:number;actual:number;matched:number}>(
+          `SELECT
+            (SELECT COUNT(*)::int FROM public.vitalia_sil_order_exams e
+              JOIN public.vitalia_sil_exam_analytes a ON a.exam_code=e.exam_code
+              WHERE e.order_id=$1) AS expected,
+            (SELECT COUNT(*)::int FROM public.vitalia_sil_results r
+              WHERE r.order_id=$1) AS actual,
+            (SELECT COUNT(*)::int FROM public.vitalia_sil_results r
+              JOIN public.vitalia_sil_exam_analytes a
+              ON a.exam_code=r.exam_code AND a.analyte=r.analyte
+              WHERE r.order_id=$1) AS matched`,[orderId]);
+        const check=checks.rows[0];
+        if(!check || check.expected===0 || check.expected!==check.actual ||
+          check.expected!==check.matched) throw new SilConflictError();
+        const status=decision==='approve'?'review_approved':'review_rejected';
+        await client.query(
+          `UPDATE public.vitalia_sil_orders SET status=$2 WHERE id=$1`,
+          [orderId,status]);
+        await appendAudit(client,orderId,actorId,status,
+          {decision,note:note.trim(),resultCount:check.actual});
+        await client.query('COMMIT');
+        return {orderId,status,decision};
+      }catch(error){
+        try{await client.query('ROLLBACK');}catch{failed=true;}
+        throw error;
+      }finally{client.release(failed);}
+    },
     async getOrder(orderId: string) {
       const order = await db.query(
         `SELECT o.id,'VH-' || lpad(o.order_number::text,6,'0') AS "orderNumber",
@@ -325,7 +386,9 @@ export function createSilService(db: Pool) {
       ]);
       return {order:order.rows[0],exams:exams.rows,
         sample:samples.rows[0]??null,samples:samples.rows,
-        requiredContainers:required.rows,results:results.rows,audit:audit.rows};
+        requiredContainers:required.rows,results:results.rows,audit:audit.rows,
+        latestReview:audit.rows.filter(item=>
+          item.action==='review_approved'||item.action==='review_rejected').at(-1)??null};
     },
   };
 }
