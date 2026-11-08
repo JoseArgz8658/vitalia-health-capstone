@@ -314,8 +314,14 @@ void main() {
           200,
         );
       }
+      if (req.url.path.endsWith('/summary')) {
+        return http.Response(
+          '{"summary":{"total":0,"pendingSample":0,"pendingResults":0,"pendingReview":0,"patients":0}}',
+          200,
+        );
+      }
       if (req.url.path.endsWith('/orders')) {
-        return http.Response('{"orders":[]}', 200);
+        return http.Response('{"orders":[],"total":0,"limit":20,"offset":0}', 200);
       }
       return http.Response('{}', 404);
     });
