@@ -44,6 +44,22 @@ if (-not (Test-Path $secretPath)) {
 # Get-Content $secretPath
 ```
 
+## Recepción de solicitudes médicas ficticias (migración 034)
+
+**Nuevo módulo del operador: `Recibir solicitud`.** Esta es la entrada documental a nuestro flujo de órdenes, sin implementar admisión, caja, facturación ni toma real de muestras. Conservamos la opción `Nueva orden` para las pruebas manuales anteriores; en el flujo documental se recomienda `Recibir solicitud`.
+
+1. El operador crea o consulta una **Ficha paciente DEMO**, vinculada a una cuenta ficticia `@example.invalid`. La cuenta usa correo/contraseña para autenticarse, pero la asociación clínica se decide mediante `patient_id` interno, identificador ficticio, nombres, apellidos y fecha de nacimiento. El correo **nunca** es prueba de identidad clínica.
+2. El operador selecciona una **solicitud médica PDF ficticia** (máximo 2 MiB, con texto seleccionable) que contenga identificador `DEMO-...`, nombre/apellido y fecha de nacimiento idénticos a la ficha. `POST /api/sil/medical-requests/preview` lee el PDF mediante el parser existente, comprueba esos campos, propone códigos del catálogo mediante coincidencias textuales y **no escribe en PostgreSQL**.
+3. Las sugerencias de prestaciones **no utilizan IA generativa**: esta etapa usa prelectura y normalización determinista. No adjudicarle a un LLM verificación de identidad ni de una orden firmada. PDF escaneado que necesite OCR, identidades ambiguas o datos incompatibles quedan **bloqueados**, sin comprobante de creación.
+4. Con identidad cotejada, se entrega un comprobante efímero (10 minutos) enlazado a la cuenta del operador y `patient_id`. El profesional operador revisa manualmente **sucursal, profesional solicitante que figura en el documento (no se verifica matrícula ni firma), fecha, número de solicitud y prestaciones**.
+5. Solo con una casilla de confirmación explícita, `POST /api/sil/medical-requests/confirm` crea **en una única transacción** la orden interna, las prestaciones, el PDF original, su SHA-256, la referencia documental, la sucursal y eventos de auditoría. Si la misma solicitud/documento se envía de nuevo, se bloquea por paciente + huella SHA-256. Si falla la operación, la transacción se revierte.
+6. La orden queda en `registered`; el operador sigue con las muestras declaradas y resultados. Los PDF de solicitudes son **internos**; no se publican en `Mis informes` del paciente. Operador y validador pueden consultar el documento original mediante `GET /api/sil/orders/:id/medical-request/file`, que deja una entrada de auditoría. Administrador y paciente no pueden abrirlo.
+7. Se conserva la posibilidad técnica de registrar órdenes **manuales ficticias** por compatibilidad con pruebas previas, sin fingir una solicitud médica. Una solicitud registrada se identifica en los detalles y auditoría.
+
+**Seguridad y alcance:** estos campos no sustituyen verificación profesional real de identidad, legitimidad de prescripción, firma, credenciales sanitarias o manejo de datos sensibles; están diseñados exclusivamente para el entorno aislado del laboratorio de pruebas. No introducir RUN ni documentos de pacientes reales. No se crean cuentas de paciente desde PDFs. Sin vínculo comprobable no hay orden nueva.
+
+**Despliegue local:** detener SOLO `vitalia-sil-demo`, ejecutar migración `034_sil_medical_requests_demo` con el migrador existente contra **`vitalia_dev` de `vitalia-postgres-sil-persistent`**, verificarla, ejecutar las pruebas PostgreSQL, luego reiniciar únicamente la API SIL y Flutter. Conservar `vitalia_sil_test_data`, los cuatro secretos permanentes y los contenedores de la aplicación principal. No introducir SQL directamente en producción.
+
 ## Resultados mediante PDF e IA: borrador + corrección manual
 
 **Cambio de alcance del operador:** `Automático` significa **seleccionar un PDF de resultados ficticios y ejecutar extracción de IA**, NO pulsar un simulador para inventar valores. El simulador de plantillas sigue disponible únicamente para pruebas técnicas antiguas por API, pero se retiró de la interfaz del operador. `Muestras` registra por separado la **recepción física declarada de los tubos**; un PDF nunca prueba que se haya recibido una muestra.
