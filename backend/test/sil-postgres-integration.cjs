@@ -48,6 +48,9 @@ async function main() {
     const auditFixVersion=await db.query(
       "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='032_sil_audit_download'");
     assert.equal(auditFixVersion.rowCount,1,'Migración 032 ausente');
+    const demoIdentityVersion=await db.query(
+      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='033_sil_branches_patient_demo'");
+    assert.equal(demoIdentityVersion.rowCount,1,'Migración 033 ausente');
     await db.query(
       `INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code)
        VALUES($1,$2,'synthetic-test-only','paciente'),
@@ -179,16 +182,38 @@ async function main() {
     const reportOrder=await sil.createOrder(patientId,actorId,['glicemia']);
     reportOrderId=reportOrder.id;
     const fakePdf=Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n');
+    const branches=await sil.branches();
+    assert.equal(branches.branches.length,3);
+    const syntheticIdentifier='DEMO-'+randomUUID().slice(0,12).replaceAll('-','').toUpperCase();
+    const patientEmail='sil-ci-'+patientId+'@example.invalid';
+    const patientDemo=await sil.savePatientProfileDemo(patientEmail,{
+      syntheticIdentifier,givenNames:'Paciente Ficticio',familyNames:'Prueba',
+      birthDate:'1990-01-01',sexForReference:'not_specified',
+      contactPhoneDemo:'000000000'
+    });
+    assert.equal(patientDemo.patient.syntheticIdentifier,syntheticIdentifier);
     const pdfInput={
       fileName:'informe-demo.pdf',
-      issuingLaboratory:'Laboratorio de demostracion',
+      branchCode:'perez-vitacura',
+      authorizedProfessionalName:'Profesional Demostracion',
+      patientIdentifierFromPdf:syntheticIdentifier,
       authorizationReference:'AUTORIZACION-EXTERNA-TEST',
       externallyAuthorizedAt:new Date(Date.now()-86400000).toISOString(),
       patientMatchConfirmed:true,
     };
+    await assert.rejects(sil.attachExternalReport(
+      reportOrderId,actorId,{...pdfInput,patientIdentifierFromPdf:'DEMO-ERRONEO'},fakePdf),
+      SilConflictError);
+    await assert.rejects(sil.attachExternalReport(
+      reportOrderId,actorId,{...pdfInput,branchCode:'sucursal-inexistente'},fakePdf),
+      SilConflictError);
     const receivedPdf=await sil.attachExternalReport(
       reportOrderId,actorId,pdfInput,fakePdf);
     assert.equal(receivedPdf.status,'report_attached');
+    await assert.rejects(sil.savePatientProfileDemo(patientEmail,{
+      syntheticIdentifier:'DEMO-CAMBIADO',givenNames:'Otro',familyNames:'Ficticio',
+      birthDate:'1990-01-01',sexForReference:'male'
+    }),SilConflictError);
     assert.equal((await sil.getOrder(reportOrderId)).order.status,'report_attached');
     assert.equal((await sil.listPatientReports(patientId)).reports.length,0);
     await assert.rejects(sil.downloadPatientReport(patientId,receivedPdf.id),SilNotFoundError);
@@ -209,7 +234,7 @@ async function main() {
     assert.deepEqual(externalHistory.audit.map(event=>event.action),[
       'order_created','external_report_attached',
       'external_report_published','external_report_downloaded']);
-    console.log('PRUEBA PDF: autorización externa, publicación y privacidad por paciente.');
+    console.log('PRUEBA PDF: tres sucursales ficticias, ficha DEMO, identidad, publicación y privacidad.');
     success=true;
   } finally {
     try {
@@ -223,6 +248,8 @@ async function main() {
         await db.query('DELETE FROM public.vitalia_sil_orders WHERE id=$1',[id]);
       }
       // La migración 017 crea roles automáticamente por trigger; primero eliminar dependientes.
+      await db.query('DELETE FROM public.vitalia_sil_patient_profiles_demo WHERE patient_id=ANY($1::uuid[])',
+        [[patientId,actorId,outsiderPatientId]]);
       await db.query('DELETE FROM public.vitalia_account_roles WHERE account_id=ANY($1::uuid[])',[[patientId,actorId,outsiderPatientId]]);
       await db.query('DELETE FROM public.vitalia_accounts WHERE id=ANY($1::uuid[])',[[patientId,actorId,outsiderPatientId]]);
       const remaining=await db.query(
