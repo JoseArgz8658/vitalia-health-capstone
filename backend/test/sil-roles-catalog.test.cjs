@@ -16,6 +16,7 @@ function setup(role) {
   };
   const service = {
     catalog: jest.fn(async () => ({exams: []})),
+    summary: jest.fn(async () => ({summary:{total:2,pendingSample:1,pendingResults:1,pendingReview:0,patients:1}})),
     listOrders: jest.fn(async () => ({orders: []})),
     findPatientByEmail: jest.fn(async (email) => ({id: patientId, email})),
     createOrder: jest.fn(async (_patient,_actor,codes) => ({
@@ -36,6 +37,25 @@ function authorized(req) {
 }
 
 describe('SIL: permisos y catálogo multiprestación', () => {
+  test('operador recibe indicadores globales y listado filtrado',async () => {
+    const {app,service}=setup('operador_laboratorio');
+    const summary=await authorized(request(app).get('/api/sil/summary')).expect(200);
+    expect(summary.body.summary.total).toBe(2);
+    await authorized(request(app).get('/api/sil/orders')
+      .query({limit:10,offset:0,status:'registered',search:'paciente@example.invalid'}))
+      .expect(200);
+    expect(service.listOrders).toHaveBeenCalledWith(10,0,'registered','paciente@example.invalid');
+  });
+  test('rechaza filtros arbitrarios y estados desconocidos',async () => {
+    const {app,service}=setup('operador_laboratorio');
+    await authorized(request(app).get('/api/sil/orders')
+      .query({status:'published'})).expect(400);
+    await authorized(request(app).get('/api/sil/orders')
+      .query({unknown:'value'})).expect(400);
+    await authorized(request(app).get('/api/sil/orders')
+      .query({limit:10000})).expect(400);
+    expect(service.listOrders).not.toHaveBeenCalled();
+  });
   test('administrador consulta catálogo pero no registra órdenes',async () => {
     const {app,service}=setup('administrador');
     await authorized(request(app).get('/api/sil/catalog')).expect(200);
