@@ -226,7 +226,7 @@ async function main() {
         `SELECT
           (SELECT COUNT(*)::int FROM public.vitalia_sil_orders WHERE id=ANY($1::uuid[])) AS orders,
           (SELECT COUNT(*)::int FROM public.vitalia_accounts WHERE id=ANY($2::uuid[])) AS accounts`,
-        [[orderId,simulatedOrderId,multiOrderId,reportOrderId].filter(Boolean),[patientId,actorId]]);
+        [[orderId,simulatedOrderId,multiOrderId,reportOrderId].filter(Boolean),[patientId,actorId,outsiderPatientId]]);
       assert.equal(remaining.rows[0].orders,0);
       assert.equal(remaining.rows[0].accounts,0);
       clean=true;
