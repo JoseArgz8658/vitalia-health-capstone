@@ -32,6 +32,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   final _patientController = TextEditingController();
   final _searchController = TextEditingController();
   final _barcodeController = TextEditingController();
+  final _receiptNoteController = TextEditingController();
+  final Map<String, TextEditingController> _manualControllers = {};
+  String? _containerCode;
   final _selectedExams = <String>{'hemograma'};
 
   List<Map<String, dynamic>> _catalog = [];
@@ -60,6 +63,10 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     _patientController.dispose();
     _searchController.dispose();
     _barcodeController.dispose();
+    _receiptNoteController.dispose();
+    for (final controller in _manualControllers.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -148,9 +155,32 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     if (!mounted) return;
     final selected = Map<String, dynamic>.from(response);
     final order = Map<String, dynamic>.from(selected['order'] as Map);
+    final required = (selected['requiredContainers'] as List? ?? []);
+    final samples = (selected['samples'] as List? ?? []);
+    final received = samples.map((item) => (item as Map)['containerCode']).toSet();
+    final pending = required
+        .where((item) => !received.contains((item as Map)['code']))
+        .toList();
+    for (final controller in _manualControllers.values) {
+      controller.dispose();
+    }
+    _manualControllers.clear();
+    final codes = (selected['exams'] as List? ?? [])
+        .map((item) => (item as Map)['code'])
+        .toSet();
+    for (final exam in _catalog) {
+      if (!codes.contains(exam['code'])) continue;
+      for (final analyte in (exam['analytes'] as List? ?? [])) {
+        final name = (analyte as Map)['analyte'] as String;
+        final code = exam['code'] as String;
+        _manualControllers['$code::$name'] = TextEditingController();
+      }
+    }
     setState(() {
       _selected = selected;
       _barcodeController.clear();
+      _receiptNoteController.clear();
+      _containerCode = pending.isEmpty ? null : (pending.first as Map)['code'] as String;
       _section = order['status'] == 'results_recorded' ? 4 : 3;
     });
   }
@@ -188,11 +218,52 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     if (!RegExp(r'^[A-Z0-9-]{3,40}$').hasMatch(barcode)) {
       throw const AuthFailure('Código de muestra inválido: usa letras, números o guiones.');
     }
+    final container = _containerCode;
+    if (container == null) {
+      throw const AuthFailure('No hay tubos pendientes de recepción.');
+    }
     final id = order['id'] as String;
-    await widget.api.silRequest('/orders/$id/sample', body: {'barcode': barcode});
+    await widget.api.silRequest('/orders/$id/sample', body: {
+      'barcode': barcode,
+      'containerCode': container,
+      if (_receiptNoteController.text.trim().isNotEmpty)
+        'receiptNote': _receiptNoteController.text.trim(),
+    });
     await _openOrder(id);
     await _refreshAll();
     if (mounted) setState(() => _message = 'Recepción de muestra registrada.');
+  });
+
+  Future<void> _recordManual() => _run(() async {
+    final order = _selected?['order'] as Map?;
+    if (order == null || order['status'] != 'sampled') {
+      throw const AuthFailure('La orden debe tener todas sus muestras recibidas.');
+    }
+    final values = <Map<String, dynamic>>[];
+    for (final entry in _manualControllers.entries) {
+      final input = entry.value.text.trim().replaceAll(',', '.');
+      final numeric = double.tryParse(input);
+      if (numeric == null || !numeric.isFinite ||
+          numeric < -1000000000 || numeric > 1000000000) {
+        throw AuthFailure('Ingresa un valor numérico válido para ${entry.key.split('::').last}.');
+      }
+      final parts = entry.key.split('::');
+      values.add({
+        'examCode': parts.first,
+        'analyte': parts.last,
+        'numericValue': numeric,
+      });
+    }
+    if (values.isEmpty) {
+      throw const AuthFailure('Esta orden no tiene parámetros definidos.');
+    }
+    final id = order['id'] as String;
+    await widget.api.silRequest('/orders/$id/results', body: {'results': values});
+    await _openOrder(id);
+    await _refreshAll();
+    if (mounted) {
+      setState(() => _message = 'Resultados registrados. Pendientes de revisión profesional.');
+    }
   });
 
   Future<void> _processSample() => _run(() async {
