@@ -49,7 +49,8 @@ class AuthApi {
     final validPath = RegExp(
       r'^/(?:catalog|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results))?)?)$',
     );
-    if (!validPath.hasMatch(path)) {
+    if (!validPath.hasMatch(path) &&
+        !RegExp(r'^/patients\?email=[A-Za-z0-9%._@+~-]{3,254}$').hasMatch(path)) {
       throw const AuthFailure('Ruta de laboratorio inválida.');
     }
     final token = _token;
@@ -992,7 +993,7 @@ class AuthApi {
     String password, {
     String mode = 'paciente',
   }) async {
-    if (!['paciente', 'profesional', 'administrador'].contains(mode))
+    if (!['paciente', 'profesional', 'administrador', 'operador_laboratorio', 'validador_laboratorio'].contains(mode))
       throw const AuthFailure('Modo de acceso inválido.');
     clear();
     try {
@@ -1024,7 +1025,7 @@ class AuthApi {
   Future<Map<String, dynamic>> me() async {
     final data = await _request('me', get: true);
     final user = data['user'] as Map<String, dynamic>;
-    if (!['paciente', 'profesional', 'administrador'].contains(user['role'])) {
+    if (!['paciente', 'profesional', 'administrador', 'operador_laboratorio', 'validador_laboratorio'].contains(user['role'])) {
       clear();
       throw const AuthFailure('La cuenta no tiene un rol autorizado.');
     }
