@@ -239,6 +239,9 @@ class DirectorioPacientesSilState extends State<DirectorioPacientesSil> {
         Wrap(spacing: 13, runSpacing: 4, children: [
           Text('${patient['syntheticIdentifier'] ?? 'Sin identificador DEMO'}',
               style: Theme.of(context).textTheme.bodySmall),
+          if (patient['birthDate'] != null)
+            Text('Nac.: ${patient['birthDate']}',
+                style: Theme.of(context).textTheme.bodySmall),
           Text('${_orderCount(patient)} órdenes',
               style: Theme.of(context).textTheme.bodySmall),
           if (patient['lastOrderNumber'] != null)
@@ -266,6 +269,7 @@ class DirectorioPacientesSilState extends State<DirectorioPacientesSil> {
       columns: const [
         DataColumn(label: Text('Paciente y cuenta')),
         DataColumn(label: Text('Identificador')),
+        DataColumn(label: Text('Fecha nac.')),
         DataColumn(label: Text('Ficha')),
         DataColumn(label: Text('Órdenes')),
         DataColumn(label: Text('Última')),
@@ -289,6 +293,7 @@ class DirectorioPacientesSilState extends State<DirectorioPacientesSil> {
                   ]),
               )),
               DataCell(Text('${patient['syntheticIdentifier'] ?? '—'}')),
+              DataCell(Text('${patient['birthDate'] ?? '—'}')),
               DataCell(_status(patient)),
               DataCell(Text('${_orderCount(patient)}')),
               DataCell(Text('${patient['lastOrderNumber'] ?? '—'}')),
