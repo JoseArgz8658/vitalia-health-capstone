@@ -40,6 +40,35 @@ class _OperatorApi extends AuthApi {
         };
       case '/branches':
         return {'branches': []};
+      case '/patients/list':
+        return {
+          'patients': [
+            {
+              'id': _id,
+              'email': 'paciente.sil@example.invalid',
+              'givenNames': 'Paciente',
+              'familyNames': 'Ficticio',
+              'birthDate': '1990-01-01',
+              'syntheticIdentifier': 'DEMO-1111',
+              'orderCount': 1,
+            },
+          ],
+          'total': 1,
+          'limit': 20,
+          'offset': 0,
+        };
+      case '/patients/profile':
+        return {
+          'patient': {
+            'id': _id,
+            'email': 'paciente.sil@example.invalid',
+            'givenNames': 'Paciente',
+            'familyNames': 'Ficticio',
+            'birthDate': '1990-01-01',
+            'syntheticIdentifier': 'DEMO-1111',
+            'sexForReference': 'not_specified',
+          },
+        };
       case '/summary':
         return {
           'summary': {
@@ -119,8 +148,8 @@ void main() {
     expect(find.text('Por revisar · 1'), findsOneWidget);
     expect(find.byType(NavigationRail), findsNothing);
     expect(find.byType(NavigationBar), findsNothing);
-    expect(find.text('Revisión (1)'), findsOneWidget);
-    await tester.tap(find.text('Revisión (1)'));
+    expect(find.text('Revisión interna (1)'), findsOneWidget);
+    await tester.tap(find.text('Revisión interna (1)'));
     await tester.pumpAndSettle();
     expect(find.text('Bandeja de revisión de resultados'), findsOneWidget);
     expect(api.calls.last.queryParameters['status'], 'results_recorded');
@@ -162,6 +191,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Bandeja de revisión de resultados'), findsOneWidget);
     expect(api.calls.last.queryParameters['status'], 'results_recorded');
+  });
+
+  testWidgets('módulo Pacientes permite abrir ficha y consultar sus órdenes', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 960);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = _OperatorApi();
+    await tester.pumpWidget(MaterialApp(
+      home: OperadorLaboratorioPage(api: api, onExpired: () {}),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Pacientes'));
+    await tester.pumpAndSettle();
+    expect(find.text('Directorio de pacientes'), findsOneWidget);
+    expect(api.calls.last.path, '/patients/list');
+
+    final open = find.text('Ficha').first;
+    await tester.ensureVisible(open);
+    await tester.tap(open);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('DEMO-1111'), findsWidgets);
+    expect(find.text('Guardar ficha de prueba'), findsOneWidget);
+
+    final orders = find.text('Ver órdenes');
+    await tester.ensureVisible(orders);
+    await tester.tap(orders);
+    await tester.pumpAndSettle();
+    expect(api.calls.last.queryParameters['search'],
+      'paciente.sil@example.invalid');
+    expect(find.text('Buscar y gestionar órdenes'), findsOneWidget);
   });
 
   testWidgets('recibe un tubo sin etiqueta y muestra el código asignado', (
@@ -249,7 +311,7 @@ void main() {
 
     expect(find.byType(NavigationRail), findsNothing);
     expect(find.text('Recibir solicitud'), findsOneWidget);
-    expect(find.text('Pacientes DEMO'), findsOneWidget);
+    expect(find.text('Pacientes'), findsOneWidget);
     final orders = find.text('Ver todas las órdenes');
     await tester.ensureVisible(orders);
     await tester.tap(orders);
