@@ -212,7 +212,10 @@ void main() {
 
     // La tabla también tiene una cabecera llamada «Ficha». Seleccionar
     // el botón de acción de la fila y no el encabezado de la columna.
-    final open = find.widgetWithText(TextButton, 'Ficha').first;
+    final open = find.ancestor(
+      of: find.text('Ficha'),
+      matching: find.byWidgetPredicate((widget) => widget is TextButton),
+    );
     await tester.ensureVisible(open);
     await tester.tap(open);
     await tester.pumpAndSettle();
