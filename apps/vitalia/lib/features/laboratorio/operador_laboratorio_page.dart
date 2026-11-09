@@ -309,6 +309,16 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     }
   }
 
+  List<String> _requestIdentityFailures(Map<String,dynamic> preview) {
+    final identity=preview['identity'] as Map? ?? {};
+    return [
+      if(identity['identifierMatches']!=true)'identificador ficticio',
+      if(identity['givenNamesMatch']!=true)'nombres',
+      if(identity['familyNamesMatch']!=true)'apellidos',
+      if(identity['birthDateMatches']!=true)'fecha de nacimiento',
+    ];
+  }
+
   Future<void> _previewMedicalRequest() => _run(() async {
     final file=_requestPdf;
     if(file==null)throw const AuthFailure('Selecciona una solicitud PDF de prueba.');
@@ -324,10 +334,18 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       _requestExamCodes..clear()..addAll(suggestions.map(
         (item)=>(item as Map)['code'] as String));
       _requestHumanConfirmed=false;
+      final failures=_requestIdentityFailures(preview);
       _message=preview['previewToken']!=null
         ? 'Identidad DEMO cotejada con el documento. Revisa las prestaciones '
           'y los datos del solicitante antes de crear la orden.'
-        : 'No se pudo cotejar la identidad. No se creará una orden.';
+        : null;
+      _error=preview['previewToken']==null
+        ? failures.isEmpty
+          ? 'Solicitud no comprobable: revisa las observaciones del archivo. '
+            'No se creó ninguna orden.'
+          : 'Identidad no comprobada. Debes revisar: '
+            '${failures.join(', ')}. No se creó ninguna orden.'
+        : null;
     });
   });
 
@@ -1021,7 +1039,58 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         Text('2. Comprobación de identidad',
           style:Theme.of(context).textTheme.titleMedium),
         const SizedBox(height:8),
-        Text('Paciente: ${(_requestPreview!['patient'] as Map)['givenNames']} '
+        Container(
+          width:double.infinity,
+          padding:const EdgeInsets.all(14),
+          decoration:BoxDecoration(
+            color:_requestPreview!['previewToken']!=null
+              ? Theme.of(context).colorScheme.primaryContainer
+              : Theme.of(context).colorScheme.errorContainer,
+            borderRadius:BorderRadius.circular(10),
+          ),
+          child:Row(
+            crossAxisAlignment:CrossAxisAlignment.start,
+            children:[
+              Icon(
+                _requestPreview!['previewToken']!=null
+                  ? Icons.verified_outlined : Icons.gpp_bad_outlined,
+                color:_requestPreview!['previewToken']!=null
+                  ? Theme.of(context).colorScheme.onPrimaryContainer
+                  : Theme.of(context).colorScheme.onErrorContainer,
+              ),
+              const SizedBox(width:10),
+              Expanded(child:Column(
+                crossAxisAlignment:CrossAxisAlignment.start,
+                children:[
+                  Text(_requestPreview!['previewToken']!=null
+                      ? 'Identidad cotejada; falta revisión del operador'
+                      : 'IDENTIDAD NO COMPROBADA — ORDEN BLOQUEADA',
+                    style:Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight:FontWeight.bold,
+                      color:_requestPreview!['previewToken']!=null
+                        ? Theme.of(context).colorScheme.onPrimaryContainer
+                        : Theme.of(context).colorScheme.onErrorContainer,
+                    ),
+                  ),
+                  const SizedBox(height:5),
+                  Text(_requestPreview!['previewToken']!=null
+                    ? 'Comprueba el documento original y las prestaciones antes '
+                      'de registrar la orden.'
+                    : 'Campos por revisar: '
+                      '${_requestIdentityFailures(_requestPreview!).join(', ')}. '
+                      'La solicitud permanece sin vincular hasta corregir '
+                      'la discrepancia en el documento de origen.',
+                    style:TextStyle(color:_requestPreview!['previewToken']!=null
+                      ? Theme.of(context).colorScheme.onPrimaryContainer
+                      : Theme.of(context).colorScheme.onErrorContainer),
+                  ),
+                ],
+              )),
+            ],
+          ),
+        ),
+        const SizedBox(height:12),
+        Text('Ficha consultada: ${(_requestPreview!['patient'] as Map)['givenNames']} '
           '${(_requestPreview!['patient'] as Map)['familyNames']} '
           '(${(_requestPreview!['patient'] as Map)['identifier']})'),
         const SizedBox(height:6),
@@ -1037,7 +1106,13 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                 color:check.$2?Colors.green:Theme.of(context).colorScheme.error,
                 size:20),
               const SizedBox(width:8),
-              Text(check.$1),
+              Expanded(child:Text(check.$1)),
+              Text(check.$2?'Coincide':'REVISAR',
+                style:TextStyle(
+                  color:check.$2?Theme.of(context).colorScheme.primary
+                    :Theme.of(context).colorScheme.error,
+                  fontWeight:check.$2?FontWeight.normal:FontWeight.bold,
+                )),
             ])),
         for(final warning in (_requestPreview!['warnings'] as List? ?? []))
           Padding(padding:const EdgeInsets.symmetric(vertical:3),
