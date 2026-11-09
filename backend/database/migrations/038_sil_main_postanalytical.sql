@@ -29,6 +29,23 @@ CREATE INDEX vitalia_sil_main_staff_actor_idx
 
 -- Asociacion a cuenta de paciente solo tras comprobacion manual de identidad.
 -- No se permite usar coincidencia de correo como verificacion clinica.
+-- Invitación de operador: token de un solo uso entregado por canal
+-- externo verificado. Nunca almacenar el token en texto claro.
+CREATE TABLE public.vitalia_sil_main_operator_invites (
+ id uuid PRIMARY KEY,
+ lab_id uuid NOT NULL REFERENCES public.vitalia_sil_main_laboratories(id),
+ email text NOT NULL
+   CHECK(email=lower(btrim(email)) AND length(email) BETWEEN 3 AND 254),
+ token_hash text NOT NULL UNIQUE CHECK(token_hash ~ '^[a-f0-9]{64}$'),
+ issued_by uuid NOT NULL REFERENCES public.vitalia_accounts(id),
+ expires_at timestamptz NOT NULL CHECK(expires_at > created_at),
+ consumed_at timestamptz,
+ created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX vitalia_sil_main_operator_invites_email_idx
+ ON public.vitalia_sil_main_operator_invites(email,lab_id)
+ WHERE consumed_at IS NULL;
+
 CREATE TABLE public.vitalia_sil_main_patients (
  lab_id uuid NOT NULL REFERENCES public.vitalia_sil_main_laboratories(id),
  patient_id uuid NOT NULL REFERENCES public.vitalia_accounts(id),
@@ -113,8 +130,9 @@ CREATE TABLE public.vitalia_sil_main_audit (
  order_id uuid REFERENCES public.vitalia_sil_main_orders(id),
  actor_id uuid NOT NULL REFERENCES public.vitalia_accounts(id),
  action text NOT NULL CHECK(action IN (
-    'laboratory_created','staff_granted','patient_identity_linked',
-    'order_created','report_attached','report_published','report_downloaded')),
+    'laboratory_created','operator_invited','operator_activated',
+    'staff_granted','patient_identity_linked','order_created',
+    'report_attached','report_published','report_downloaded')),
  details jsonb NOT NULL DEFAULT '{}'::jsonb
     CHECK(jsonb_typeof(details)='object'),
  created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
