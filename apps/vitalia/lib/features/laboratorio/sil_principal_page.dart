@@ -45,6 +45,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   bool _externallyAuthorized = false;
   bool _confirmedMatch = false;
   bool _reviewConfirmed = false;
+  bool _reviewPdfDownloaded = false;
   String _staffKind = 'operator';
   String? _labId;
   String? _requestOrderId;
@@ -152,6 +153,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _requestOrderId=null;
       _uploadOrderId=null;
       _reviewOrderId=null;
+      _reviewPdfDownloaded=false;
+      _reviewConfirmed=false;
       _notice=null;
       _error=null;
     });
@@ -352,9 +355,24 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     await _loadOrders();
   }
 
+  Future<void> _downloadReportForReview() async {
+    final lab=_labId,orderId=_reviewOrderId;
+    if(lab==null||orderId==null){
+      throw const AuthFailure('Selecciona un informe pendiente.');
+    }
+    final bytes=await widget.api.silMainDownloadReportForReview(
+      labId:lab,orderId:orderId,
+    );
+    final pdf=XFile.fromData(bytes,
+      name:'informe-pendiente-$orderId.pdf',mimeType:'application/pdf');
+    await pdf.saveTo('informe-pendiente-$orderId.pdf');
+    if(mounted)setState(()=>_reviewPdfDownloaded=true);
+  }
+
   Future<void> _publishReport() async {
     final lab=_labId,orderId=_reviewOrderId;
-    if(lab==null||orderId==null||!_reviewConfirmed){
+    if(lab==null||orderId==null||
+       !_reviewPdfDownloaded||!_reviewConfirmed){
       throw const AuthFailure('Selecciona el informe y confirma la revisión profesional.');
     }
     await widget.api.silMainRequest(
@@ -364,6 +382,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if(mounted)setState((){
       _reviewOrderId=null;
       _reviewConfirmed=false;
+      _reviewPdfDownloaded=false;
     });
     await _loadOrders();
   }
@@ -681,7 +700,19 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
             ),
         ],
-        onChanged:_busy?null:(v)=>setState(()=>_reviewOrderId=v),
+        onChanged:_busy?null:(v)=>setState((){
+          _reviewOrderId=v;
+          _reviewPdfDownloaded=false;
+          _reviewConfirmed=false;
+        }),
+      ),
+      const SizedBox(height:10),
+      OutlinedButton.icon(
+        onPressed:_busy||_reviewOrderId==null
+            ?null
+            :()=>_execute(_downloadReportForReview,showNotice:false),
+        icon:const Icon(Icons.picture_as_pdf_outlined),
+        label:const Text('Descargar PDF para revisión'),
       ),
       const SizedBox(height:8),
       const Text(
@@ -695,7 +726,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         controlAffinity:ListTileControlAffinity.leading,
         title:const Text('Confirmo revisión profesional y autorización externa'),
         value:_reviewConfirmed,
-        onChanged:_busy?null:(v)=>setState(()=>_reviewConfirmed=v??false),
+        onChanged:_busy||!_reviewPdfDownloaded
+            ?null
+            :(v)=>setState(()=>_reviewConfirmed=v??false),
       ),
       _action('Publicar informe',Icons.verified_outlined,_publishReport),
     ]);
