@@ -40,11 +40,12 @@ CREATE TABLE public.vitalia_sil_main_operator_invites (
  issued_by uuid NOT NULL REFERENCES public.vitalia_accounts(id),
  expires_at timestamptz NOT NULL CHECK(expires_at > created_at),
  consumed_at timestamptz,
+ revoked_at timestamptz,
  created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX vitalia_sil_main_operator_invites_email_idx
  ON public.vitalia_sil_main_operator_invites(email,lab_id)
- WHERE consumed_at IS NULL;
+ WHERE consumed_at IS NULL AND revoked_at IS NULL;
 
 CREATE TABLE public.vitalia_sil_main_patients (
  lab_id uuid NOT NULL REFERENCES public.vitalia_sil_main_laboratories(id),
