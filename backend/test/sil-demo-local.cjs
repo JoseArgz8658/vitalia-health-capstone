@@ -8,6 +8,8 @@ const {randomUUID}=require('node:crypto');
 const {createAuthRouter}=require('../dist/auth/router');
 const {createSilRouter}=require('../dist/sil/router');
 const {createSilService}=require('../dist/sil/service');
+const {createSilPortalRouterDemo}=require('../dist/sil/portal-router-demo');
+const {createSilPortalActivationDemo}=require('../dist/sil/portal-activation-demo');
 const {createCredentialAuthenticator}=require('../dist/auth/credentials');
 const {hashPassword}=require('../dist/auth/password');
 const {issueSession,findSessionAccount,revokeSession}=require('../dist/auth/sessions');
@@ -84,6 +86,10 @@ async function main(){
       "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='035_sil_retire_validator_role'");
     if(operatorReviewVersion.rows.length!==1)
       throw new Error('Falta la migración 035_sil_retire_validator_role.');
+    const portalVersion=await db.query(
+      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='036_sil_portal_invites_demo'");
+    if(portalVersion.rows.length!==1)
+      throw new Error('Falta migración DEMO 036. Aplicar solo en vitalia_dev con la guía.');
     const operatorEmail='operador.sil@example.invalid';
     const adminEmail='admin.sil@example.invalid';
     const patientEmail='paciente.sil@example.invalid';
@@ -105,6 +111,8 @@ async function main(){
     app.use(express.json({limit:'32kb'}));
     app.get('/api/health',(_req,res)=>res.json({status:'ok',service:'sil-demo-only'}));
     app.use('/api/auth',createAuthRouter(auth));
+    const portalDemo=createSilPortalActivationDemo(db);
+    app.use('/api/sil',createSilPortalRouterDemo(auth,portalDemo));
     app.use('/api/sil',createSilRouter(auth,createSilService(db),{
       demoReviewOperatorId:operatorId,
     }));
@@ -123,6 +131,7 @@ async function main(){
     console.log('Administrador: '+adminEmail);
     console.log('Paciente de pruebas (UUID): '+patientId);
     console.log('Claves: configuradas localmente, no se imprimen en registros.');
+    console.log('Portal DEMO: invitaciones de dos canales y buzón SIMULADO. Sin correos reales.');
     console.log('Cuentas persistentes: no se eliminan al detener Docker.');
   }catch(error){
     console.error('No pudo arrancar el laboratorio:',error.message);
