@@ -17,9 +17,8 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
   options:{demoReviewOperatorId?:string}={}) {
   const router=Router();
   function canReview(account:{id:string;role:string}) {
-    return account.role==='validador_laboratorio' ||
-      (account.role==='operador_laboratorio' && process.env.VITALIA_SIL_DEMO==='YES' &&
-        account.id===options.demoReviewOperatorId);
+    return account.role==='operador_laboratorio' && process.env.VITALIA_SIL_DEMO==='YES' &&
+      account.id===options.demoReviewOperatorId;
   }
   router.use(async(req,res,next)=>{
     res.set('Cache-Control','no-store');
@@ -42,8 +41,7 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
       next();
       return;
     }
-    // Un único laboratorio en este MVP, con separación real de funciones.
-    if(!['administrador','operador_laboratorio','validador_laboratorio'].includes(account.role)) {
+    if(!['administrador','operador_laboratorio'].includes(account.role)) {
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
     }
     const reportAction=req.method==='POST' &&
@@ -338,8 +336,7 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     res.status(201).json({publication:published});
   });
   router.get('/orders/:id/medical-request/file',async(req,res)=>{
-    if(!['operador_laboratorio','validador_laboratorio']
-      .includes(res.locals.account.role)){
+    if(res.locals.account.role!=='operador_laboratorio'){
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
     }
     if(!uuid.safeParse(req.params.id).success){

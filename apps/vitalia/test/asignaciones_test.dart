@@ -366,70 +366,17 @@ void main() {
     auth.close();
   });
 
-  testWidgets('validador consulta resultados sin controles de operador',
-      (tester) async {
-    var approved = false;
-    final auth = makeAuth('validador_laboratorio', (req) async {
-      if (req.url.path == '/api/sil/orders') {
-        return http.Response(jsonEncode({
-          'orders': approved ? [] : [{
-            'id': id,
-            'orderNumber': 'VH-000007',
-            'patientEmail': 'paciente@example.invalid',
-            'status': 'results_recorded',
-            'createdAt': '2026-11-08T04:00:00Z',
-          }],
-          'total': approved ? 0 : 1,
-        }), 200);
-      }
-      if (req.url.path == '/api/sil/orders/$id' && req.method == 'GET') {
-        return http.Response(jsonEncode({
-          'order': {
-            'id': id,
-            'orderNumber': 'VH-000007',
-            'patientEmail': 'paciente@example.invalid',
-            'status': approved ? 'review_approved' : 'results_recorded',
-            'createdAt': '2026-11-08T04:00:00Z',
-          },
-          'exams': [{'name': 'Hemograma'}],
-          'results': [{
-            'examCode': 'hemograma', 'analyte': 'Hemoglobina',
-            'numericValue': 13.2, 'unit': 'g/dL',
-            'referenceMin': 12, 'referenceMax': 16,
-          }],
-          'audit': [],
-        }), 200);
-      }
-      if (req.url.path == '/api/sil/orders/$id/review') {
-        expect(req.method, 'POST');
-        expect(jsonDecode(req.body)['decision'], 'approve');
-        approved = true;
-        return http.Response('{"review":{"status":"review_approved"}}', 201);
-      }
+  testWidgets('el enlace anterior abre el acceso del operador', (tester) async {
+    final auth = makeAuth('operador_laboratorio', (_) async {
       return http.Response('{}', 404);
     });
     await tester.pumpWidget(
       VitaliaMvpApp(api: auth, initialRoute: '/validacion'),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Acceso de validación'), findsOneWidget);
-    await tester.enterText(
-      find.byType(TextFormField).at(0), 'validador_laboratorio@example.com');
-    await tester.enterText(find.byType(TextFormField).at(1), 'clave de prueba');
-    await tester.tap(find.text('Iniciar sesión'));
-    await tester.pumpAndSettle();
-    expect(find.text('Panel de validación'), findsOneWidget);
-    expect(find.text('Registrar orden'), findsNothing);
-    await tester.tap(find.textContaining('VH-000007').first);
-    await tester.pumpAndSettle();
-    expect(find.text('Hemoglobina'), findsOneWidget);
-    await tester.ensureVisible(find.text('Aprobar revisión interna'));
-    await tester.tap(find.text('Aprobar revisión interna'));
-    await tester.pumpAndSettle();
-    expect(find.text('Aprobar revisión'), findsOneWidget);
-    await tester.tap(find.text('Confirmar'));
-    await tester.pumpAndSettle();
-    expect(approved, isTrue);
+    expect(find.text('Acceso del laboratorio'), findsOneWidget);
+    expect(find.text('La revisión se realiza desde el acceso del laboratorio.'), findsOneWidget);
+    expect(find.text('Acceso de validación'), findsNothing);
     await tester.pumpWidget(const SizedBox());
     auth.close();
   });

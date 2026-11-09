@@ -3,12 +3,18 @@ import { type Pool } from 'pg';
 import { z } from 'zod';
 
 type Queryable = Pick<Pool, 'query'>;
-export type AccountRole = 'paciente' | 'profesional' | 'administrador' | 'operador_laboratorio' | 'validador_laboratorio';
+export const accountRoleSchema = z.enum([
+  'paciente', 'profesional', 'administrador', 'operador_laboratorio',
+]);
+export type AccountRole = z.infer<typeof accountRoleSchema>;
 export interface AccountSummary {
   id: string; email: string; role: AccountRole; createdAt: Date;
 }
 // Uso interno de autenticación; nunca devolver este objeto directamente desde una API.
-export interface AccountCredentials extends AccountSummary { passwordHash: string }
+export interface AccountCredentials extends Omit<AccountSummary, 'role'> {
+  role: string;
+  passwordHash: string;
+}
 interface AccountRow {
   id: string; email: string; role_code: AccountRole; created_at: Date; password_hash?: string;
 }
@@ -54,12 +60,13 @@ export async function insertPatientAccount(
 export async function findAccountCredentialsByEmail(
   db: Queryable, email: string,
 ): Promise<AccountCredentials | null> {
-  const result = await db.query<AccountRow>(
+  const result = await db.query<Omit<AccountRow, 'role_code'> & {role_code:string}>(
     `SELECT id, email, password_hash, role_code, created_at
      FROM public.vitalia_accounts WHERE email = $1`, [normalizeEmail(email)],
   );
   if (result.rows.length === 0) return null;
   const row = result.rows[0];
   if (!row.password_hash) throw new Error('Credenciales almacenadas inválidas.');
-  return { ...summary(row), passwordHash: row.password_hash };
+  return { id: row.id, email: row.email, role: row.role_code,
+    createdAt: row.created_at, passwordHash: row.password_hash };
 }

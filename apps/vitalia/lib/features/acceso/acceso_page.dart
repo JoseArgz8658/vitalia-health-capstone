@@ -11,12 +11,10 @@ class AccesoPage extends StatefulWidget {
     this.notice,
     this.adminMode = false,
     this.laboratoryMode = false,
-    this.validatorMode = false,
   });
   final AuthApi? api;
   final bool adminMode;
   final bool laboratoryMode;
-  final bool validatorMode;
   final String? notice;
   final ValueChanged<Map<String, dynamic>>? onAuthenticated;
   @override
@@ -52,9 +50,7 @@ class _AccesoPageState extends State<AccesoPage> {
       final user = await widget.api!.login(
         _correo.text,
         _clave.text,
-        mode: widget.validatorMode
-            ? 'validador_laboratorio'
-            : widget.laboratoryMode
+        mode: widget.laboratoryMode
             ? 'operador_laboratorio'
             : widget.adminMode
             ? 'administrador'
@@ -139,9 +135,7 @@ class _AccesoPageState extends State<AccesoPage> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            widget.validatorMode
-                                ? 'Acceso de validación'
-                                : widget.laboratoryMode
+                            widget.laboratoryMode
                                 ? 'Acceso del laboratorio'
                                 : widget.adminMode
                                 ? 'Acceso de administración'
@@ -151,7 +145,7 @@ class _AccesoPageState extends State<AccesoPage> {
                             textAlign: TextAlign.center,
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
-                          if (!widget.adminMode && !widget.laboratoryMode && !widget.validatorMode)
+                          if (!widget.adminMode && !widget.laboratoryMode)
                             TextButton.icon(
                               onPressed: _busy
                                   ? null

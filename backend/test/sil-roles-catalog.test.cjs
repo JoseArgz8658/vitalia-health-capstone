@@ -123,18 +123,14 @@ describe('SIL: permisos y catálogo multiprestación', () => {
       expect(restricted.service.confirmMedicalRequest).not.toHaveBeenCalled();
     }
   });
-  test('solo operador y validador pueden consultar el PDF original de solicitud',async()=>{
+  test('solo operador puede consultar el PDF original de solicitud',async()=>{
     const file='/api/sil/orders/'+actorId+'/medical-request/file';
-    for(const role of ['operador_laboratorio','validador_laboratorio']){
-      const authorizedRole=setup(role);
-      const response=await authorized(request(authorizedRole.app).get(file))
-        .expect(200);
-      expect(response.headers['content-type']).toMatch(/application\/pdf/);
-      expect(response.headers['cache-control']).toContain('no-store');
-      expect(authorizedRole.service.downloadMedicalRequest).toHaveBeenCalledWith(
-        actorId,actorId);
-    }
-    for(const role of ['paciente','administrador']){
+    const operator=setup('operador_laboratorio');
+    const response=await authorized(request(operator.app).get(file)).expect(200);
+    expect(response.headers['content-type']).toMatch(/application\/pdf/);
+    expect(response.headers['cache-control']).toContain('no-store');
+    expect(operator.service.downloadMedicalRequest).toHaveBeenCalledWith(actorId,actorId);
+    for(const role of ['paciente','administrador','validador_laboratorio']){
       const denied=setup(role);
       await authorized(request(denied.app).get(file)).expect(403);
       expect(denied.service.downloadMedicalRequest).not.toHaveBeenCalled();
@@ -232,31 +228,15 @@ describe('SIL: permisos y catálogo multiprestación', () => {
     await authorized(request(app).get('/api/sil/catalog')).expect(403);
     await authorized(request(app).get('/api/sil/orders')).expect(403);
   });
-  test('responsable de validación consulta pero no procesa',async () => {
-    const {app,service}=setup('validador_laboratorio');
-    await authorized(request(app).get('/api/sil/orders')).expect(200);
-    await authorized(request(app).post('/api/sil/orders/'+actorId+'/simulate'))
-      .send({}).expect(403);
-    expect(service.simulateAnalyzer).not.toHaveBeenCalled();
-  });
-  test('fuera del permiso de demo, solo validador puede aprobar o devolver',async () => {
-    const review={decision:'approve',note:'Valores comprobados en revisión interna.'};
-    const validator=setup('validador_laboratorio');
-    await authorized(request(validator.app).post('/api/sil/orders/'+actorId+'/review'))
-      .send(review).expect(201);
-    expect(validator.service.reviewOrder).toHaveBeenCalledWith(
-      actorId,actorId,'approve',review.note);
-
-    const operator=setup('operador_laboratorio');
-    await authorized(request(operator.app).post('/api/sil/orders/'+actorId+'/review'))
-      .send(review).expect(403);
-    const admin=setup('administrador');
-    await authorized(request(admin.app).post('/api/sil/orders/'+actorId+'/review'))
-      .send(review).expect(403);
-    expect(operator.service.reviewOrder).not.toHaveBeenCalled();
-    expect(admin.service.reviewOrder).not.toHaveBeenCalled();
-    await authorized(request(validator.app).post('/api/sil/orders/'+actorId+'/sample'))
-      .send({barcode:'TUBO-0001',containerCode:'edta'}).expect(403);
+  test('el rol retirado, el operador sin permiso y el administrador no pueden revisar',async () => {
+    for(const role of ['validador_laboratorio','operador_laboratorio','administrador']){
+      const {app,service}=setup(role);
+      await authorized(request(app).post('/api/sil/orders/'+actorId+'/review'))
+        .send({decision:'approve'}).expect(403);
+      expect(service.reviewOrder).not.toHaveBeenCalled();
+    }
+    await authorized(request(setup('validador_laboratorio').app)
+      .get('/api/sil/orders')).expect(403);
   });
   test('solo el operador autorizado puede revisar en el entorno demo',async () => {
     const reviewPath='/api/sil/orders/'+actorId+'/review';
@@ -281,7 +261,7 @@ describe('SIL: permisos y catálogo multiprestación', () => {
     }
   });
   test('devolución requiere motivo suficiente y rechaza parámetros extra',async () => {
-    const {app,service}=setup('validador_laboratorio');
+    const {app,service}=setup('operador_laboratorio',{demoReviewOperatorId:actorId});
     for(const payload of [
       {decision:'return',note:''},
       {decision:'return',note:'muy corto'},

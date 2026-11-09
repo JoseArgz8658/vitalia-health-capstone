@@ -1,11 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { type Pool } from 'pg';
 import { z } from 'zod';
-import { type AccountSummary, findAccountCredentialsByEmail } from '../accounts/repository';
+import { accountRoleSchema, type AccountSummary, findAccountCredentialsByEmail } from '../accounts/repository';
 import { hashPassword, verifyPassword } from './password';
 
 const inputSchema = z.object({
-  mode: z.enum(['paciente','profesional','administrador','operador_laboratorio','validador_laboratorio']).default('paciente'),
+  mode: accountRoleSchema.default('paciente'),
   email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
   password: z.string().min(1).refine(value => Buffer.byteLength(value, 'utf8') <= 1024),
 }).strict();

@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_selector/file_selector.dart';
 
 import '../../core/auth_api.dart';
-import 'sil_review_confirmation.dart';
 
 enum _OperatorSection {
   dashboard,
@@ -802,7 +801,25 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       setState(() => _error = 'Indica un motivo de devolución de al menos 10 caracteres.');
       return;
     }
-    final confirmed = await confirmSilReview(context, approve: approve);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(approve ? 'Aprobar revisión' : 'Devolver orden'),
+        content: Text(approve
+            ? 'La revisión interna quedará aprobada. La publicación del informe es un paso separado.'
+            : 'La orden volverá a corrección. Los valores y el motivo quedarán registrados en auditoría.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Confirmar'),
+          ),
+        ],
+      ),
+    );
     if (!mounted || confirmed != true) return;
     await _run(() async {
       await widget.api.silRequest('/orders/${order['id']}/review', body: {
@@ -1613,7 +1630,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         'Revisa la observación, corrige y reenvía los resultados.',
       'results_recorded' when _canReview => 'Coteja los resultados y registra tu decisión.',
       'results_recorded' => 'La orden está en la bandeja de revisión.',
-      'review_approved' => 'El validador completó la revisión interna.',
+      'review_approved' => 'La revisión interna está completa.',
       'report_attached' => 'Comprueba el PDF incorporado antes de publicarlo.',
       'report_published' =>
         'El PDF ya está disponible en el portal del paciente.',

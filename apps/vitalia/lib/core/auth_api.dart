@@ -1256,7 +1256,7 @@ class AuthApi {
     String password, {
     String mode = 'paciente',
   }) async {
-    if (!['paciente', 'profesional', 'administrador', 'operador_laboratorio', 'validador_laboratorio'].contains(mode))
+    if (!['paciente', 'profesional', 'administrador', 'operador_laboratorio'].contains(mode))
       throw const AuthFailure('Modo de acceso inválido.');
     clear();
     try {
@@ -1288,7 +1288,7 @@ class AuthApi {
   Future<Map<String, dynamic>> me() async {
     final data = await _request('me', get: true);
     final user = data['user'] as Map<String, dynamic>;
-    if (!['paciente', 'profesional', 'administrador', 'operador_laboratorio', 'validador_laboratorio'].contains(user['role'])) {
+    if (!['paciente', 'profesional', 'administrador', 'operador_laboratorio'].contains(user['role'])) {
       clear();
       throw const AuthFailure('La cuenta no tiene un rol autorizado.');
     }

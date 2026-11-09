@@ -23,13 +23,12 @@ async function main(){
   }
   const operatorPassword=process.env.VITALIA_SIL_OPERATOR_PASSWORD;
   const adminPassword=process.env.VITALIA_SIL_ADMIN_PASSWORD;
-  const validatorPassword=process.env.VITALIA_SIL_VALIDATOR_PASSWORD;
   const patientPassword=process.env.VITALIA_SIL_PATIENT_PASSWORD;
-  if(!operatorPassword || !adminPassword || !validatorPassword || !patientPassword ||
+  if(!operatorPassword || !adminPassword || !patientPassword ||
      operatorPassword.length<16 || adminPassword.length<16 ||
-     validatorPassword.length<16 || patientPassword.length<16 ||
-     new Set([operatorPassword,adminPassword,validatorPassword,patientPassword]).size!==4) {
-    throw new Error('Configura cuatro contraseñas locales distintas de al menos 16 caracteres.');
+     patientPassword.length<16 ||
+     new Set([operatorPassword,adminPassword,patientPassword]).size!==3) {
+    throw new Error('Configura tres contraseñas locales distintas de al menos 16 caracteres.');
   }
   const db=new Pool({host:'postgres',port:5432,database:'vitalia_dev',
     user:'vitalia',password:process.env.PGPASSWORD,max:3,
@@ -81,13 +80,15 @@ async function main(){
       "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='034_sil_medical_requests_demo'");
     if(requestVersion.rows.length!==1)
       throw new Error('Falta la migración 034_sil_medical_requests_demo.');
+    const operatorReviewVersion=await db.query(
+      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='035_sil_retire_validator_role'");
+    if(operatorReviewVersion.rows.length!==1)
+      throw new Error('Falta la migración 035_sil_retire_validator_role.');
     const operatorEmail='operador.sil@example.invalid';
     const adminEmail='admin.sil@example.invalid';
-    const validatorEmail='validador.sil@example.invalid';
     const patientEmail='paciente.sil@example.invalid';
     const operatorId=await ensureAccount(operatorEmail,'operador_laboratorio',operatorPassword);
     await ensureAccount(adminEmail,'administrador',adminPassword);
-    await ensureAccount(validatorEmail,'validador_laboratorio',validatorPassword);
     const patientId=await ensureAccount(
       patientEmail,'paciente',patientPassword);
 
@@ -120,7 +121,6 @@ async function main(){
     console.log('Vitalia Health SIL: laboratorio de pruebas disponible.');
     console.log('Operador: '+operatorEmail);
     console.log('Administrador: '+adminEmail);
-    console.log('Validador: '+validatorEmail);
     console.log('Paciente de pruebas (UUID): '+patientId);
     console.log('Claves: configuradas localmente, no se imprimen en registros.');
     console.log('Cuentas persistentes: no se eliminan al detener Docker.');

@@ -7,6 +7,12 @@ function db(grants=['paciente','profesional']){return {query:jest.fn(async(q,arg
 test.each(['paciente','profesional'])('cuenta autentica con credencial del modo autorizado %s',async mode=>{const d=db(),auth=await createCredentialAuthenticator(d);const a=await auth({email:row.email,password:'correcta',mode});expect(a.role).toBe(mode);expect(a.id).toBe(id);expect(a.password_hash).toBeUndefined();});
 test('omitir modo equivale a paciente, no a detectar el rol de la cuenta',async()=>{const d=db(['profesional']);const auth=await createCredentialAuthenticator(d);expect(await auth({email:row.email,password:'correcta'})).toBeNull();expect((await auth({email:row.email,password:'correcta',mode:'profesional'})).role).toBe('profesional');});
 test.each(['administrador','desconocido'])('seleccionar %s no concede permisos',async mode=>{const d=db(),auth=await createCredentialAuthenticator(d);expect(await auth({email:row.email,password:'correcta',mode})).toBeNull();});
+test('credenciales rechazan el modo retirado antes de consultar la cuenta',async()=>{
+  const d=db(['validador_laboratorio']);
+  const auth=await createCredentialAuthenticator(d);
+  expect(await auth({email:row.email,password:'correcta',mode:'validador_laboratorio'})).toBeNull();
+  expect(d.query).not.toHaveBeenCalled();
+});
 test('modo desactivado no se infiere del role_code legado',async()=>{const d=db([]),auth=await createCredentialAuthenticator(d);expect(await auth({email:row.email,password:'correcta',mode:'paciente'})).toBeNull();});
 test('autenticación rechaza role arbitrario y contraseña incorrecta',async()=>{const d=db(),auth=await createCredentialAuthenticator(d);expect(await auth({email:row.email,password:'correcta',role:'administrador'})).toBeNull();expect(await auth({email:row.email,password:'incorrecta',mode:'profesional'})).toBeNull();});
 test('sesión se emite con modo autorizado y no acepta una concesión ausente',async()=>{const d={query:jest.fn(async()=>({rows:[]}))};await expect(issueSession(d,id,'profesional')).rejects.toThrow();expect(d.query.mock.calls[0][1][2]).toBe('profesional');expect(d.query.mock.calls[0][0]).toContain('FROM public.vitalia_account_roles');});

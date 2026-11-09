@@ -1,7 +1,6 @@
 import '../features/incorporacion/activar_invitacion_page.dart';
 import '../features/asignaciones/asignaciones_page.dart';
 import '../features/laboratorio/operador_laboratorio_page.dart';
-import '../features/laboratorio/validador_laboratorio_page.dart';
 import '../features/laboratorio/paciente_informes_sil_page.dart';
 import '../features/laboratorio/administracion_laboratorio_page.dart';
 import '../features/perfil/perfil_page.dart';
@@ -151,24 +150,15 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
             },
           ),
         );
-      if (settings.name == '/laboratorio')
+      if (settings.name == '/laboratorio' || settings.name == '/validacion')
         return MaterialPageRoute<void>(
           settings: settings,
           builder: (_) => AccesoPage(
             api: _api,
             laboratoryMode: true,
-            onAuthenticated: (user) {
-              _signedIn(user);
-              _navigator.currentState?.popUntil((r) => r.isFirst);
-            },
-          ),
-        );
-      if (settings.name == '/validacion')
-        return MaterialPageRoute<void>(
-          settings: settings,
-          builder: (_) => AccesoPage(
-            api: _api,
-            validatorMode: true,
+            notice: settings.name == '/validacion'
+                ? 'La revisión se realiza desde el acceso del laboratorio.'
+                : null,
             onAuthenticated: (user) {
               _signedIn(user);
               _navigator.currentState?.popUntil((r) => r.isFirst);
@@ -200,14 +190,6 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
             key: ValueKey(_user!['id']),
             api: _api,
             onExpired: _expired,
-            onLogout: _logout,
-          )
-        : _user!['role'] == 'validador_laboratorio'
-        ? ValidadorLaboratorioPage(
-            key: ValueKey(_user!['id']),
-            api: _api,
-            onExpired: _expired,
-            email: _user!['email'] as String,
             onLogout: _logout,
           )
         : _user!['role'] == 'administrador'

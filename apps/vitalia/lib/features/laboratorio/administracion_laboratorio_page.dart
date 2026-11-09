@@ -7,12 +7,10 @@ class AdministracionLaboratorioPage extends StatelessWidget {
     super.key,
     required this.email,
     required this.onLogout,
-    this.validatorMode = false,
   });
 
   final String email;
   final VoidCallback onLogout;
-  final bool validatorMode;
 
   @override
   Widget build(BuildContext context) {
@@ -41,36 +39,26 @@ class AdministracionLaboratorioPage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(
-                      validatorMode
-                          ? Icons.verified_user_outlined
-                          : Icons.admin_panel_settings_outlined,
+                      Icons.admin_panel_settings_outlined,
                       size: 36,
                       color: theme.colorScheme.primary,
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      validatorMode
-                          ? 'Responsable de validación'
-                          : 'Administración de Vitalia Health',
+                      'Administración de Vitalia Health',
                       style: theme.textTheme.headlineSmall,
                     ),
                     const SizedBox(height: 12),
                     Text('Cuenta: $email'),
                     const SizedBox(height: 16),
-                    Text(
-                      validatorMode
-                          ? 'La revisión y validación profesional se habilitarán '
-                            'cuando el registro de resultados y la auditoría '
-                            'estén implementados.'
-                          : 'Este acceso está reservado para la configuración '
-                            'y gestión de usuarios del sistema. La recepción '
-                            'de muestras y los resultados corresponden al '
-                            'rol Operador de laboratorio.',
+                    const Text(
+                      'Este acceso está reservado para la configuración y gestión '
+                      'de usuarios del sistema. La recepción de muestras y el '
+                      'seguimiento de resultados se realizan desde Laboratorio.',
                     ),
                     const SizedBox(height: 12),
                     const Text(
-                      'Las opciones administrativas y de validación no '
-                      'están habilitadas en esta etapa.',
+                      'La configuración administrativa está pendiente en esta etapa.',
                     ),
                   ],
                 ),

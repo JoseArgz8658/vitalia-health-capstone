@@ -1,12 +1,11 @@
 # Vitalia Health — laboratorio de demostración (Windows/Docker)
 
-Esta guía solo aplica a `vitalia-postgres-test` y la red `vitalia-fase7-test-net`. No ejecutar con contenedores de producción ni con la base principal de Vitalia.
+Esta guía solo aplica a `vitalia-postgres-sil-persistent` y la red `vitalia-fase7-test-net`. No ejecutar con contenedores de producción ni con la base principal de Vitalia.
 
 ## Roles implementados
 
-- **Operador de laboratorio** (`operador_laboratorio`): búsqueda de paciente existente por correo, catálogo, órdenes con una o varias prestaciones, recepción de muestra y registro de resultados de demostración.
+- **Operador de laboratorio** (`operador_laboratorio`): búsqueda de paciente existente por correo, catálogo, órdenes con una o varias prestaciones, recepción de muestras, registro de resultados y revisión interna desde **Por revisar** con la cuenta autorizada de la demo.
 - **Administrador** (`administrador`): acceso a pantalla administrativa separada, sin autorización de escritura en rutas SIL. Gestión de usuarios aún pendiente.
-- **Responsable de validación** (`validador_laboratorio`): acceso exclusivo a la bandeja de revisión, aprobación interna o devolución motivada; no puede operar muestras ni publicar resultados.
 - **Paciente**: sin acceso a rutas SIL de trabajo interno.
 
 ## Prestaciones en catálogo
@@ -18,8 +17,7 @@ Hemograma (5 analitos sintéticos), perfil lipídico (4), glicemia (1), HbA1c (1
 **No guardar ninguna contraseña en Git, documentos compartidos ni código fuente.** La nueva API lee contraseñas configuradas localmente. Correos:
 - Operador: `operador.sil@example.invalid`
 - Administrador: `admin.sil@example.invalid`
-- Validador: `validador.sil@example.invalid`
-- Paciente semilla: `paciente.sil@example.invalid` (solo para crear órdenes; todavía no se expone acceso de paciente).
+- Paciente semilla: `paciente.sil@example.invalid`.
 
 Generar una vez el archivo `$HOME\.vitalia-sil-demo.env` (fuera del repositorio) mediante PowerShell:
 
@@ -53,12 +51,12 @@ if (-not (Test-Path $secretPath)) {
 3. Las sugerencias de prestaciones **no utilizan IA generativa**: esta etapa usa prelectura y normalización determinista. No adjudicarle a un LLM verificación de identidad ni de una orden firmada. PDF escaneado que necesite OCR, identidades ambiguas o datos incompatibles quedan **bloqueados**, sin comprobante de creación.
 4. Con identidad cotejada, se entrega un comprobante efímero (10 minutos) enlazado a la cuenta del operador y `patient_id`. El profesional operador revisa manualmente **sucursal, profesional solicitante que figura en el documento (no se verifica matrícula ni firma), fecha, número de solicitud y prestaciones**.
 5. Solo con una casilla de confirmación explícita, `POST /api/sil/medical-requests/confirm` crea **en una única transacción** la orden interna, las prestaciones, el PDF original, su SHA-256, la referencia documental, la sucursal y eventos de auditoría. Si la misma solicitud/documento se envía de nuevo, se bloquea por paciente + huella SHA-256. Si falla la operación, la transacción se revierte.
-6. La orden queda en `registered`; el operador sigue con las muestras declaradas y resultados. Los PDF de solicitudes son **internos**; no se publican en `Mis informes` del paciente. Operador y validador pueden consultar el documento original mediante `GET /api/sil/orders/:id/medical-request/file`, que deja una entrada de auditoría. Administrador y paciente no pueden abrirlo.
+6. La orden queda en `registered`; el operador sigue con las muestras declaradas y resultados. Los PDF de solicitudes son **internos**; no se publican en `Mis informes` del paciente. El operador puede consultar el documento original mediante `GET /api/sil/orders/:id/medical-request/file`, que deja una entrada de auditoría. Administrador y paciente no pueden abrirlo.
 7. Se conserva la posibilidad técnica de registrar órdenes **manuales ficticias** por compatibilidad con pruebas previas, sin fingir una solicitud médica. Una solicitud registrada se identifica en los detalles y auditoría.
 
 **Seguridad y alcance:** estos campos no sustituyen verificación profesional real de identidad, legitimidad de prescripción, firma, credenciales sanitarias o manejo de datos sensibles; están diseñados exclusivamente para el entorno aislado del laboratorio de pruebas. No introducir RUN ni documentos de pacientes reales. No se crean cuentas de paciente desde PDFs. Sin vínculo comprobable no hay orden nueva.
 
-**Despliegue local:** detener SOLO `vitalia-sil-demo`, ejecutar migración `034_sil_medical_requests_demo` con el migrador existente contra **`vitalia_dev` de `vitalia-postgres-sil-persistent`**, verificarla, ejecutar las pruebas PostgreSQL, luego reiniciar únicamente la API SIL y Flutter. Conservar `vitalia_sil_test_data`, los cuatro secretos permanentes y los contenedores de la aplicación principal. No introducir SQL directamente en producción.
+**Despliegue local:** detener SOLO `vitalia-sil-demo`, ejecutar migración `034_sil_medical_requests_demo` con el migrador existente contra **`vitalia_dev` de `vitalia-postgres-sil-persistent`**, verificarla, ejecutar las pruebas PostgreSQL, luego reiniciar únicamente la API SIL y Flutter. Conservar `vitalia_sil_test_data`, las contraseñas permanentes y los contenedores de la aplicación principal. No introducir SQL directamente en producción.
 
 ## Resultados mediante PDF e IA: borrador + corrección manual
 
@@ -76,7 +74,7 @@ Ruta API para la vista previa: `POST /api/sil/orders/:id/results/preview` con `C
 
 **Dependencia Ollama:** el contenedor `vitalia-sil-demo` necesita conectividad hacia el servicio local de Ollama. Para `VITALIA_RUNTIME=container` y `VITALIA_OLLAMA_SERVICE=ollama`, usar una **red de Docker separada** compartida exclusivamente por el contenedor demo y Ollama. No conectar la aplicación principal ni PostgreSQL de producción a una red nueva sin revisión. Sin conexión a Ollama, la ruta devuelve `analysis_unavailable` y permite continuar manualmente; nunca simula una extracción como si fuera IA.
 
-Pruebas de aceptación obligatorias: acceso únicamente de operador, informe de identidad distinta rechazado, falta de muestra rechazada, PDF OCR informa limitación, errores o duplicados de analitos quedan sin precargar, ninguna consulta de previsualización escribe en PostgreSQL, y el guardado requiere confirmación y pasa al validador. Estas pruebas no prueban uso clínico real.
+Pruebas de aceptación obligatorias: acceso únicamente de operador, informe de identidad distinta rechazado, falta de muestra rechazada, PDF OCR informa limitación, errores o duplicados de analitos quedan sin precargar, ninguna consulta de previsualización escribe en PostgreSQL, y el guardado requiere confirmación y pasa a la bandeja Por revisar. Estas pruebas no prueban uso clínico real.
 
 ## IA educativa en el portal del paciente (SIL demo)
 
@@ -106,7 +104,7 @@ En la carga del PDF se elige una sucursal y se consignan por separado:
 
 La coincidencia del identificador es una **comprobación manual**, no lectura automática OCR ni validación de firma. Si no coincide, el backend rechaza la incorporación; el PDF solo puede publicarse cuando la comprobación fue registrada. Antes de operar con datos reales harían falta aislamiento multiempresa, identificación y acceso seguros, OCR verificable con manejo de errores, seguridad adicional, almacenamiento externo, y diseño normativo.
 
-No iniciar `vitalia-sil-demo` actualizado hasta ejecutar la migración 033 sobre **`vitalia_dev` de `vitalia-postgres-sil-persistent`**. Conservar el volumen `vitalia_sil_test_data` y las cuatro contraseñas ya configuradas; ninguna actualización del código requiere regenerarlas. La API principal y `vitalia-postgres-1` quedan fuera de esta prueba.
+No iniciar `vitalia-sil-demo` actualizado hasta ejecutar la migración 033 sobre **`vitalia_dev` de `vitalia-postgres-sil-persistent`**. Conservar el volumen `vitalia_sil_test_data` y las contraseñas ya configuradas; ninguna actualización del código requiere regenerarlas. La API principal y `vitalia-postgres-1` quedan fuera de esta prueba.
 
 ## Publicación postanalítica de PDF externo (MVP aislado)
 
@@ -119,9 +117,9 @@ La migración **`031_sil_external_reports`** incorpora un circuito separado para
 - **Notificación:** publicar permite ver el informe al acceder al portal, **no envía mensajes ni correos todavía**.
 - **Aislamiento:** las rutas de carga y lectura de PDF del SIL devuelven acceso denegado cuando `VITALIA_SIL_DEMO` no está activado.
 
-### Cuarta contraseña: paciente de pruebas
+### Contraseña del paciente de pruebas
 
-El archivo `$HOME\.vitalia-sil-demo.env` debe incorporar una cuarta clave permanente, **sin sustituir las tres existentes**:
+El archivo `$HOME\.vitalia-sil-demo.env` debe incorporar la clave permanente del paciente, conservando las del operador y el administrador:
 
 ```powershell
 $secretPath = Join-Path $HOME ".vitalia-sil-demo.env"
@@ -150,32 +148,11 @@ flutter run -d edge --web-hostname localhost --web-port 5173 `
 ```
 Entrar a `http://localhost:5173/#/informes` con `paciente.sil@example.invalid` y su clave del archivo local. Esta modalidad no reemplaza ni modifica el portal de documentos original; es una pantalla de demostración separada.
 
-## Contraseña permanente del validador
+## Revisión interna desde el operador
 
-El archivo de secretos que ya existe **no se debe reemplazar**. Solo agrega una tercera contraseña si falta, sin mostrarla en consola ni en chats:
+Entra a `http://localhost:5173/#/laboratorio` con `operador.sil@example.invalid` y abre **Por revisar**. La cuenta autorizada puede aprobar la revisión interna o devolver la orden con un motivo de al menos diez caracteres. Los valores anteriores quedan registrados en auditoría si la orden se corrige. La publicación al paciente usa su flujo de PDF autorizado.
 
-```powershell
-$secretPath = Join-Path $HOME ".vitalia-sil-demo.env"
-if (-not (Test-Path $secretPath)) { throw "Falta el archivo de secretos del SIL." }
-if (-not (Select-String -Path $secretPath -Pattern '^VITALIA_SIL_VALIDATOR_PASSWORD=' -Quiet)) {
-    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    try {
-        $bytes = New-Object byte[] 24
-        $rng.GetBytes($bytes)
-        $validatorSecret = [Convert]::ToBase64String($bytes)
-    } finally { $rng.Dispose() }
-    Add-Content -Encoding ASCII -Path $secretPath -Value ("VITALIA_SIL_VALIDATOR_PASSWORD=" + $validatorSecret)
-    Remove-Variable validatorSecret -ErrorAction SilentlyContinue
-}
-```
-
-**Importante:** Docker fija las variables del `--env-file` al crear el contenedor. Para introducir la nueva variable se debe detener y recrear **solo** `vitalia-sil-demo` usando la sección de recreación. Reiniciarlo con `docker start` no carga la nueva contraseña.
-
-### Revisión interna con retorno al operador
-
-La migración `030_sil_review_workflow` habilita `review_approved` y `review_rejected`, agrega eventos de auditoría y mantiene cerrada la publicación. El validador revisa órdenes con resultados completos, aprueba la revisión interna o devuelve la orden con motivo de al menos diez caracteres. El operador puede corregir todos los parámetros de una orden devuelta; los valores anteriores quedan preservados en el evento de auditoría `results_corrected`. Una revisión aprobada no se puede editar desde el SIL. Ninguna decisión implica validación clínica de resultados reales.
-
-Acceso del validador: `http://localhost:5173/#/validacion`. El rol requiere contraseña separada, guardada en el archivo local. 
+La migración `035_sil_retire_validator_role` desactiva los permisos del antiguo modo de validación y cierra sus sesiones. Las cuentas históricas y la autoría de las decisiones se conservan. El enlace anterior `/#/validacion` abre el acceso del laboratorio. La demo requiere las contraseñas del operador, administrador y paciente.
 
 La estación de trabajo del operador ahora ofrece navegación por Resumen, Órdenes, Nueva orden, Muestras y Resultados. El resumen lee métricas agregadas de PostgreSQL; la tabla permite buscar correo/número VH-000001/UUID, filtrar por estado y avanzar por páginas de 20 registros.
 
@@ -192,18 +169,18 @@ Las contraseñas se conservan en el archivo local. Al reiniciar Docker, las cuen
 Desde la raíz del repositorio:
 
 ```powershell
-git pull --ff-only origin feature/sil-simulador-analizador
+git pull --ff-only
 npm --prefix .\backend run build
 npm --prefix .\backend test
 ```
 
-**Detenerse si falla el compilador o las pruebas.** Después aplicar todas las migraciones, incluidas `027_sil_catalog`, `028_sil_order_numbers`, `029_sil_traceability`, `030_sil_review_workflow`, `031_sil_external_reports` y `032_sil_audit_download`, en `vitalia_dev` usando la misma red Docker aislada. No se debe cambiar `PGDATABASE` por `vitalia`.
+**Detenerse si falla el compilador o las pruebas.** Para actualizar una demo existente, detén solo `vitalia-sil-demo`, deja PostgreSQL encendido y ejecuta el migrador hasta la versión 035 en `vitalia_dev`. Si el contenedor demo ya monta `backend\dist` y `backend\test`, vuelve a iniciarlo con `docker start vitalia-sil-demo` cuando la migración termine correctamente.
 
 ```powershell
 $distPath = (Resolve-Path ".\backend\dist").Path
 $migrationsPath = (Resolve-Path ".\backend\database\migrations").Path
 try {
-    $env:PGPASSWORD = (docker exec vitalia-postgres-test printenv POSTGRES_PASSWORD).Trim()
+    $env:PGPASSWORD = (docker exec vitalia-postgres-sil-persistent printenv POSTGRES_PASSWORD).Trim()
     docker run --rm --network vitalia-fase7-test-net `
       --mount "type=bind,source=$distPath,target=/app/dist,readonly" `
       --mount "type=bind,source=$migrationsPath,target=/app/database/migrations,readonly" `
@@ -211,6 +188,7 @@ try {
       --env PGDATABASE=vitalia_dev --env PGUSER=vitalia `
       --env VITALIA_RUNTIME=container --entrypoint node `
       vitalia-backend:local dist/database/migrate-all.js
+    if ($LASTEXITCODE -ne 0) { throw "Fallaron las migraciones del SIL." }
 } finally {
     Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
 }
@@ -226,14 +204,14 @@ docker logs --tail 5 vitalia-sil-demo
 docker rm vitalia-sil-demo
 ```
 
-No eliminar `vitalia-postgres-test`, su base de datos ni las redes. Crear el nuevo contenedor con la red de acceso primero, unirlo a la red interna antes de arrancarlo:
+No eliminar `vitalia-postgres-sil-persistent`, su base de datos ni las redes. Crear el nuevo contenedor con la red de acceso primero, unirlo a la red interna antes de arrancarlo:
 
 ```powershell
 $testPath = (Resolve-Path ".\backend\test").Path
 $distPath = (Resolve-Path ".\backend\dist").Path
 $secretPath = Join-Path $HOME ".vitalia-sil-demo.env"
 try {
-    $env:PGPASSWORD = (docker exec vitalia-postgres-test printenv POSTGRES_PASSWORD).Trim()
+    $env:PGPASSWORD = (docker exec vitalia-postgres-sil-persistent printenv POSTGRES_PASSWORD).Trim()
     docker create --name vitalia-sil-demo `
       --network vitalia-sil-demo-access `
       --publish "127.0.0.1:3101:3000" `
@@ -268,4 +246,4 @@ flutter test
 flutter run -d edge --web-hostname localhost --web-port 5173 --dart-define=VITALIA_API_URL=http://127.0.0.1:3101
 ```
 
-Entrar a `http://localhost:5173/#/laboratorio` con el operador estable; la ruta `/#/administracion` sigue destinada al administrador. La ruta `/#/validacion` corresponde al validador. El paciente semilla puede buscarse por correo, sin UUID. No presentar datos sintéticos como informes clínicos publicados.
+Entrar a `http://localhost:5173/#/laboratorio` con el operador estable; la ruta `/#/administracion` sigue destinada al administrador. El paciente semilla puede buscarse por correo, sin UUID. No presentar datos sintéticos como informes clínicos publicados.

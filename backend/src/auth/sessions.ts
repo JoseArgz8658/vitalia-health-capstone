@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { type Pool } from 'pg';
-import { type AccountRole, type AccountSummary } from '../accounts/repository';
+import { accountRoleSchema, type AccountRole, type AccountSummary } from '../accounts/repository';
 
 type Queryable = Pick<Pool, 'query'>;
 export interface SessionGrant { token: string; expiresAt: Date }
@@ -13,6 +13,7 @@ function tokenHash(token: string): string {
 
 // Sesiones opacas de 30 minutos. Nunca se persiste el token original.
 export async function issueSession(db: Queryable, accountId: string, mode: AccountRole = 'paciente'): Promise<SessionGrant> {
+  if (!accountRoleSchema.safeParse(mode).success) throw new Error('Modo de acceso no autorizado.');
   const token = randomBytes(32).toString('hex');
   const result = await db.query<{ expires_at: Date }>(
     `INSERT INTO public.vitalia_sessions (token_hash, account_id, active_role, expires_at)
@@ -26,7 +27,7 @@ export async function issueSession(db: Queryable, accountId: string, mode: Accou
 export async function findSessionAccount(db: Queryable, token: string): Promise<AccountSummary | null> {
   if (!isSessionToken(token)) return null;
   const result = await db.query<{
-    id: string; email: string; role_code: AccountRole; created_at: Date;
+    id: string; email: string; role_code: string; created_at: Date;
   }>(
     `SELECT a.id, a.email, s.active_role AS role_code, a.created_at
      FROM public.vitalia_sessions s JOIN public.vitalia_accounts a ON a.id = s.account_id
@@ -36,7 +37,9 @@ export async function findSessionAccount(db: Queryable, token: string): Promise<
   );
   if (result.rows.length === 0) return null;
   const row = result.rows[0];
-  return { id: row.id, email: row.email, role: row.role_code, createdAt: row.created_at };
+  const role = accountRoleSchema.safeParse(row.role_code);
+  if (!role.success) return null;
+  return { id: row.id, email: row.email, role: role.data, createdAt: row.created_at };
 }
 export async function revokeSession(db: Queryable, token: string): Promise<void> {
   if (!isSessionToken(token)) return;
