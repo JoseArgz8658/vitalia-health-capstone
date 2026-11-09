@@ -5,6 +5,10 @@ const patientId='33333333-3333-4333-8333-333333333333';
 const token='a'.repeat(64);
 const sample={id,orderId:id,barcode:'LAB-DEMO-001'};
 const service={
+ listPatientsDemo:jest.fn().mockResolvedValue({
+  patients:[{email:'paciente.sil@example.invalid',syntheticIdentifier:'DEMO-0001'}],
+  total:100,limit:20,offset:40,
+ }),
  createOrder:jest.fn().mockResolvedValue({id,status:'registered'}),
  registerSample:jest.fn().mockResolvedValue(sample),
  recordManualResults:jest.fn().mockResolvedValue({orderId:id,status:'results_recorded',count:1,synthetic:true}),
@@ -99,4 +103,48 @@ test('simulador rechaza parametros de usuario o ids invalidos',async()=>{
  expect((await request(app()).post('/api/sil/orders/no-es-uuid/simulate')
   .set(bearer).send({})).status).toBe(400);
  expect(service.simulateAnalyzer).not.toHaveBeenCalled();
+});
+
+test('directorio DEMO: paginación y filtros validados, solo operador',async()=>{
+ const before=process.env.VITALIA_SIL_DEMO;
+ process.env.VITALIA_SIL_DEMO='YES';
+ try {
+  const q='/api/sil/patients/list?limit=20&offset=40&search=Ana'
+   +'&profile=complete&orders=with&sex=female&sort=recent';
+  const result=await request(app()).get(q).set(bearer);
+  expect(result.status).toBe(200);
+  expect(result.body.total).toBe(100);
+  expect(service.listPatientsDemo).toHaveBeenCalledWith(
+   20,40,'Ana','complete','with','female','recent');
+  expect((await request(app('administrador')).get(q).set(bearer)).status).toBe(403);
+  expect((await request(app('paciente')).get(q).set(bearer)).status).toBe(403);
+  for (const invalid of [
+   '?limit=500',
+   '?offset=-1',
+   '?profile=unknown',
+   '?sort=unknown',
+   '?search='+encodeURIComponent('x'.repeat(101)),
+   '?email=paciente.sil%40example.invalid',
+   '?orders=with&orders=without',
+  ]) {
+   const bad=await request(app()).get('/api/sil/patients/list'+invalid)
+    .set(bearer);
+   expect(bad.status).toBe(400);
+  }
+ } finally {
+  if(before===undefined) delete process.env.VITALIA_SIL_DEMO;
+  else process.env.VITALIA_SIL_DEMO=before;
+ }
+});
+
+test('directorio sintético no se habilita en la aplicación principal',async()=>{
+ const before=process.env.VITALIA_SIL_DEMO;
+ delete process.env.VITALIA_SIL_DEMO;
+ try {
+  const response=await request(app()).get('/api/sil/patients/list').set(bearer);
+  expect(response.status).toBe(403);
+  expect(service.listPatientsDemo).not.toHaveBeenCalled();
+ } finally {
+  if(before!==undefined)process.env.VITALIA_SIL_DEMO=before;
+ }
 });
