@@ -1107,8 +1107,16 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
           final cardWidth = (constraints.maxWidth -
                   (columns - 1) * 12) /
               columns;
-          final lastPublished =
-              _reports.isEmpty ? '—' : _date(_reports.first['publishedAt']);
+          final publishedDates = _reports
+              .map((report) => DateTime.tryParse(
+                    '${report['publishedAt'] ?? ''}',
+                  ))
+              .whereType<DateTime>()
+              .toList()
+            ..sort();
+          final lastPublished = publishedDates.isEmpty
+              ? '—'
+              : _date(publishedDates.last.toIso8601String());
           final indicators = [
             PortalIndicadorSil(
               icon: Icons.description_outlined,
