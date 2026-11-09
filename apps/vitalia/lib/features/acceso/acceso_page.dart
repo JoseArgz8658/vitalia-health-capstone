@@ -245,14 +245,16 @@ class _AccesoPageState extends State<AccesoPage> {
                                     ),
                               child: const Text('Crear cuenta de paciente'),
                             ),
-                          if (!widget.adminMode && !widget.laboratoryMode && !_professionalMode)
+                          if (const bool.fromEnvironment('VITALIA_SIL_DEMO_MODE',
+                                defaultValue: false) &&
+                              !widget.adminMode && !widget.laboratoryMode && !_professionalMode)
                             Padding(
                               padding: const EdgeInsets.symmetric(vertical: 7),
                               child: OutlinedButton.icon(
                                 onPressed: _busy ? null :
                                   () => Navigator.of(context).pushNamed('/activar-portal'),
                                 icon: const Icon(Icons.verified_user_outlined),
-                                label: const Text('Tengo invitación · Activar mi acceso'),
+                                label: const Text('Invitación DEMO · Activar acceso'),
                               ),
                             ),
                           if (!widget.adminMode && !widget.laboratoryMode)
