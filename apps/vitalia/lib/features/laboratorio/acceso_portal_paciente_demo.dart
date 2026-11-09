@@ -176,7 +176,7 @@ class _AccesoPortalPacienteDemoState extends State<AccesoPortalPacienteDemo> {
   }
 
   Future<void> _invite()async{
-    if(_sending||_data==null||_data!['canInvite']!=true)return;
+    if(_sending||_data==null||_data?['canInvite']!=true)return;
     final recipient=Map<String,dynamic>.from(_data!['patient'] as Map);
     if(!await _confirmRecipient(recipient)||!mounted)return;
     setState((){_sending=true;_error=null;});
