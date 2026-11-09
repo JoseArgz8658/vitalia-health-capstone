@@ -4,6 +4,7 @@ import 'package:vitalia_health/core/auth_api.dart';
 import 'package:vitalia_health/features/laboratorio/sil_principal_page.dart';
 
 class _StationApi extends AuthApi {
+  final reviewActions=<Map<String,dynamic>>[];
   static const allowedLab = '11111111-1111-4111-8111-111111111111';
   static const restrictedLab = '22222222-2222-4222-8222-222222222222';
   static const ownOrder = '33333333-3333-4333-8333-333333333333';
@@ -14,7 +15,12 @@ class _StationApi extends AuthApi {
     String path, {
     Map<String, dynamic>? body,
   }) async {
-    return switch (Uri.parse(path).path) {
+    final requestPath=Uri.parse(path).path;
+    if(requestPath=='/labs/$allowedLab/staff/review-permission' && body!=null){
+      reviewActions.add(body);
+      return {'membership':{'canReviewReports':body['enabled']}};
+    }
+    return switch (requestPath) {
       '/labs' => {
         'laboratories': [
           {
@@ -43,6 +49,17 @@ class _StationApi extends AuthApi {
           },
         ],
       },
+      '/labs/$allowedLab/staff' => {
+        'staff':[
+          {
+            'accountId':'55555555-5555-4555-8555-555555555555',
+            'email':'operador@laboratorio.invalid',
+            'active':true,
+            'canReviewReports':false,
+          },
+        ],
+      },
+      '/labs/$restrictedLab/staff' => {'staff':[]},
       '/labs/$restrictedLab/orders' => {'orders': []},
       '/labs/$restrictedLab/patients' => {
         'patients': [
@@ -60,7 +77,35 @@ Finder _field(String label) => find.byWidgetPredicate(
       widget is InputDecorator && widget.decoration.labelText == label,
 );
 
+
 void main() {
+  testWidgets('administración muestra operadores y autoriza revisión desde un botón', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(()=>tester.binding.setSurfaceSize(null));
+    final api=_StationApi();
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(
+      home:SilPrincipalPage(
+        api:api,role:'administrador',onExpired:(){},onLogout:(){},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(),isNull);
+    expect(find.text('Operadores y permisos de revisión'),findsOneWidget);
+    expect(find.text('operador@laboratorio.invalid'),findsOneWidget);
+    final authorize=find.widgetWithText(OutlinedButton,'Autorizar revisión');
+    await tester.ensureVisible(authorize);
+    await tester.tap(authorize);
+    await tester.pumpAndSettle();
+    expect(api.reviewActions,[
+      {
+        'accountId':'55555555-5555-4555-8555-555555555555',
+        'enabled':true,
+      }
+    ]);
+    expect(tester.takeException(),isNull);
+  });
+
   for (final width in [390.0, 1280.0]) {
     testWidgets('revisión incluye los informes propios del laboratorio a ${width.toInt()} px', (
       tester,
