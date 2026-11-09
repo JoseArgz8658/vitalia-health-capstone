@@ -24,7 +24,6 @@ ThemeData temaVitalia() {
   final colors = ColorScheme.fromSeed(
     seedColor: ColoresVitalia.azul,
     brightness: Brightness.light,
-    surface: ColoresVitalia.blanco,
   ).copyWith(
     primary: ColoresVitalia.azul,
     onPrimary: ColoresVitalia.blanco,
