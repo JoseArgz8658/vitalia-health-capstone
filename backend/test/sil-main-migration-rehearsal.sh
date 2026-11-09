@@ -35,7 +35,7 @@ echo "Historial original: 12 migraciones. Cuentas/sesiones/documentos/auditoria:
 n=12
 while [ "$n" -le 32 ]; do
   prefix="$(printf '%03d' "$n")"
-  set -- "$dir/$prefix"_"*.sql"
+  set -- "$dir"/"$prefix"_*.sql
   if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
     echo "BLOQUEADO: se esperaba un solo archivo SQL para $prefix." >&2
     exit 1
