@@ -256,15 +256,12 @@ export function createSilMainService(db:Pool) {
       const results=await db.query(
         `SELECT o.id,o.order_number AS "orderNumber",o.status,
            o.patient_id AS "patientId",o.created_at AS "createdAt",
-           EXISTS(SELECT 1 FROM public.vitalia_sil_main_reports r
-             WHERE r.order_id=o.id AND r.lab_id=o.lab_id
-               AND r.attached_by<>$4) AS "uploadedByAnotherOperator",
            ARRAY(SELECT e.exam_code FROM public.vitalia_sil_main_order_exams e
              WHERE e.order_id=o.id ORDER BY e.exam_code) AS "examCodes"
          FROM public.vitalia_sil_main_orders o
          JOIN public.vitalia_sil_main_laboratories l ON l.id=o.lab_id AND l.active
          WHERE o.lab_id=$1 ORDER BY o.created_at DESC,o.id LIMIT $2 OFFSET $3`,
-        [labId,limit,offset,accountId]);
+        [labId,limit,offset]);
       return {orders:results.rows};
     },
 
@@ -378,9 +375,8 @@ export function createSilMainService(db:Pool) {
              ON o.id=r.order_id AND o.lab_id=r.lab_id
            WHERE r.order_id=$1 AND r.lab_id=$2
              AND o.status='report_attached' AND r.published_at IS NULL
-             AND r.attached_by<>$3
            FOR SHARE OF r`,
-          [orderId,labId,operatorId]);
+          [orderId,labId]);
         if(!rows.rows.length)throw new SilMainNotFound();
         const item=rows.rows[0];
         if(item.data.length>2*1024*1024 ||
@@ -402,7 +398,6 @@ export function createSilMainService(db:Pool) {
            WHERE r.order_id=o.id AND r.order_id=$1 AND r.lab_id=$2
              AND o.lab_id=$2 AND o.status='report_attached'
              AND r.published_at IS NULL AND r.patient_match_confirmed
-             AND r.attached_by<>$3
              AND EXISTS (
                SELECT 1 FROM public.vitalia_sil_main_audit a
                WHERE a.lab_id=$2 AND a.order_id=$1 AND a.actor_id=$3

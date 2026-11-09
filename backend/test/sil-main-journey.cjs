@@ -177,7 +177,7 @@ async function operatorJourney(browser, order, base) {
     }
   };
 
-  const reportId=await stage('uploader',async ({page,id,button,click,select,confirm})=>{
+  return stage('uploader',async ({page,id,button,click,select,confirm})=>{
     await select('sil-upload-order');
     const choose=page.waitForEvent('filechooser');
     await click(button('Elegir archivo PDF (máx. 2 MiB)'),'Elegir archivo PDF');
@@ -201,29 +201,31 @@ async function operatorJourney(browser, order, base) {
     await confirm('Confirmé que el PDF corresponde al paciente de la orden');
     console.log('Microsoft Edge: datos de autorización y paciente comprobados.');
     const response=page.waitForResponse(r=>r.url().endsWith(endpoint) && r.request().method()==='POST');
-    const [uploaded]=await Promise.all([response,click(button('Adjuntar para revisión'),'Adjuntar para revisión')]);
+    const refresh=page.waitForResponse(r=>new URL(r.url()).pathname===('/api/sil/main'+base+'/orders')
+      && r.request().method()==='GET');
+    const [uploaded]=await Promise.all([
+      response,click(button('Adjuntar para revisión'),'Adjuntar para revisión'),refresh,
+    ]);
     assert.equal(uploaded.status(),201,'Carga del PDF desde la estación');
+    const reportId=(await uploaded.json()).report.id;
     console.log('Microsoft Edge: se adjuntó el PDF desde la estación del operador.');
-    return (await uploaded.json()).report.id;
-  });
 
-  await stage('reviewer',async ({page,button,click,select,confirm})=>{
     await select('sil-review-order');
     const publication=button('Publicar informe');
     await reach(page,publication,'Publicar informe');
     assert.equal(await publication.isEnabled(),false,'Se exige revisar antes de publicar');
     const download=page.waitForEvent('download');
-    const response=page.waitForResponse(r=>r.url().endsWith(endpoint+'/file') && r.request().method()==='GET');
+    const reviewResponse=page.waitForResponse(r=>r.url().endsWith(endpoint+'/file') && r.request().method()==='GET');
     await click(button('Descargar PDF para revisión'),'Descargar para revisión');
-    assert.equal((await response).status(),200);
+    assert.equal((await reviewResponse).status(),200);
     assert.deepEqual(readFileSync(await (await download).path()),pdf);
     await confirm('Confirmo que revisé el PDF y su autorización externa');
     const posted=page.waitForResponse(r=>r.url().endsWith(endpoint+'/publish') && r.request().method()==='POST');
     await click(publication,'Publicar informe');
     assert.equal((await posted).status(),201);
-    console.log('Microsoft Edge: otro operador descargó, revisó y publicó el PDF.');
+    console.log('Microsoft Edge: el mismo operador descargó, revisó y publicó el PDF.');
+    return reportId;
   });
-  return reportId;
 }
 
 async function browserJourney(order, base) {
@@ -333,27 +335,27 @@ async function main() {
     await call('reviewer','GET',path+'/file',403);
     await call('reviewer','GET',otherLab+'/orders/'+orderId+'/report/file',404);
     await admin(base+'/staff/review-permission',200,{accountId:ids.uploader,enabled:true});
-    await call('uploader','GET',path+'/file',404);
     const publish=(actor,status)=>call(actor,'POST',path+'/publish',status,{json:{operatorReviewConfirmed:true}});
     await publish('uploader',409);
     await admin(base+'/staff/review-permission',200,{accountId:ids.reviewer,enabled:true});
     await publish('reviewer',409);
-    const pending=await call('reviewer','GET',path+'/file',200);
-    assert.deepEqual(Buffer.from(await pending.arrayBuffer()),pdf);
-    await admin(base+'/staff/review-permission',200,{accountId:ids.reviewer,enabled:false});
-    await publish('reviewer',403);
-    await admin(base+'/staff/review-permission',200,{accountId:ids.reviewer,enabled:true});
     await call('reviewer','GET',path+'/file',200);
-    await publish('reviewer',201);
-    await publish('reviewer',409);
+    await publish('uploader',409); // La revisión de otra cuenta no habilita esta publicación.
+    const pending=await call('uploader','GET',path+'/file',200);
+    assert.deepEqual(Buffer.from(await pending.arrayBuffer()),pdf);
+    await admin(base+'/staff/review-permission',200,{accountId:ids.uploader,enabled:false});
+    await publish('uploader',403);
+    await admin(base+'/staff/review-permission',200,{accountId:ids.uploader,enabled:true});
+    await publish('uploader',201);
+    await publish('uploader',409);
     await call('other','GET',patientFile,404);
     const patient=await call('patient','GET',patientFile,200);
     assert.deepEqual(Buffer.from(await patient.arrayBuffer()),pdf);
     const audit=await db.query(`SELECT action,actor_id FROM public.vitalia_sil_main_audit
       WHERE order_id=$1 ORDER BY created_at,id`,[orderId]);
     for(const [action,actor] of [
-      ['report_attached','uploader'],['report_review_accessed','reviewer'],
-      ['report_published','reviewer'],['report_downloaded','patient'],
+      ['report_attached','uploader'],['report_review_accessed','uploader'],
+      ['report_published','uploader'],['report_downloaded','patient'],
     ]){
       assert.ok(audit.rows.some(row=>row.action===action && row.actor_id===ids[actor]),action);
     }
@@ -376,7 +378,7 @@ async function main() {
         console.log('\nSIL temporal listo en http://localhost:5173/#/laboratorio');
         console.log('Orden disponible: VH-'+String(ready.orderNumber).padStart(6,'0'));
         console.log('Adjunta el PDF con uploader@example.invalid.');
-        console.log('Revisa y publica con reviewer@example.invalid.');
+        console.log('Con esa misma cuenta, descarga el PDF de revisión, confirma y publica.');
         console.log('Consulta el informe con patient@example.invalid en http://localhost:5173/.');
         console.log('Contraseña de estas cuentas ficticias: '+password);
         console.log('PDF para adjuntar: '+fixture);

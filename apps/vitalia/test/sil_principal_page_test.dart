@@ -35,13 +35,11 @@ class _StationApi extends AuthApi {
             'id': ownOrder,
             'orderNumber': 1,
             'status': 'report_attached',
-            'uploadedByAnotherOperator': false,
           },
           {
             'id': otherOrder,
             'orderNumber': 2,
             'status': 'report_attached',
-            'uploadedByAnotherOperator': true,
           },
         ],
       },
@@ -58,7 +56,7 @@ Finder _field(String label) => find.byWidgetPredicate(
 
 void main() {
   for (final width in [390.0, 1280.0]) {
-    testWidgets('revisión respeta el laboratorio activo a ${width.toInt()} px', (
+    testWidgets('revisión incluye los informes propios del laboratorio a ${width.toInt()} px', (
       tester,
     ) async {
       await tester.binding.setSurfaceSize(Size(width, 760));
@@ -85,7 +83,10 @@ void main() {
           matching: find.byType(DropdownButton<String>),
         ),
       );
-      expect(dropdown.items?.map((item) => item.value), [_StationApi.otherOrder]);
+      expect(dropdown.items?.map((item) => item.value), [
+        _StationApi.ownOrder,
+        _StationApi.otherOrder,
+      ]);
       final reviewButton = find.widgetWithText(FilledButton, 'Publicar informe');
       expect(tester.widget<FilledButton>(reviewButton).onPressed, isNull);
 

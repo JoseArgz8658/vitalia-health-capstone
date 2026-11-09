@@ -75,7 +75,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     (lab)=>lab['id']==_labId && lab['canReviewReports']==true,
   );
   bool _isReviewable(Map<String,dynamic> order) =>
-    order['status']=='report_attached' && order['uploadedByAnotherOperator']==true;
+    order['status']=='report_attached';
 
   @override
   void initState(){
@@ -650,7 +650,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       ]),
       _section('Adjuntar informe autorizado',
         'Solo se reciben PDF ya validados externamente. '
-        'Publicar requiere la revisión de otro operador autorizado.',
+        'El informe queda pendiente de revisión antes de publicarlo.',
         Icons.upload_file_outlined,[
         Semantics(
           identifier:'sil-upload-order',
@@ -704,7 +704,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
 
   Widget _reviewPanel(){
     return _section('Validación y publicación',
-      'Revisa informes adjuntados por otro operador antes de publicarlos.',
+      'Revisa el PDF y confirma su autorización externa antes de publicarlo.',
       Icons.fact_check_outlined,[
       Semantics(
         identifier:'sil-review-order',
