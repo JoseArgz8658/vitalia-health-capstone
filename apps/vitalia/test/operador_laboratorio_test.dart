@@ -210,10 +210,20 @@ void main() {
     expect(find.text('Directorio de pacientes'), findsOneWidget);
     expect(api.calls.last.path, '/patients/list');
 
-    final open = find.text('Ficha').first;
+    // La tabla también tiene una cabecera llamada «Ficha». Seleccionar
+    // el botón de acción de la fila y no el encabezado de la columna.
+    final open = find.widgetWithText(TextButton, 'Ficha').first;
     await tester.ensureVisible(open);
     await tester.tap(open);
     await tester.pumpAndSettle();
+    expect(
+      api.calls.any((call) =>
+          call.path == '/patients/profile' &&
+          call.queryParameters['email'] == 'paciente.sil@example.invalid'),
+      isTrue,
+      reason: 'Debe consultar la ficha del paciente seleccionado.',
+    );
+    expect(find.text('Ficha de identificación DEMO'), findsOneWidget);
     expect(find.textContaining('DEMO-1111'), findsWidgets);
     expect(find.text('Guardar ficha de prueba'), findsOneWidget);
 
