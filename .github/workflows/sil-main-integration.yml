@@ -29,20 +29,6 @@ jobs:
   flutter:
     name: Flutter y recorrido web del SIL principal
     runs-on: ubuntu-24.04
-    services:
-      postgres:
-        image: postgres:16.15-bookworm
-        env:
-          POSTGRES_USER: vitalia_restore
-          POSTGRES_DB: vitalia_restored
-          POSTGRES_PASSWORD: isolated-ci-only
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U vitalia_restore -d vitalia_restored"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 12
     defaults:
       run:
         working-directory: apps/vitalia
@@ -71,6 +57,19 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/vitalia-browser" --no-save playwright@1.58.2
           "$RUNNER_TEMP/vitalia-browser/node_modules/.bin/playwright" install chromium
+      - name: Iniciar PostgreSQL temporal en loopback
+        run: |
+          docker run --detach --rm --name "vitalia-qa-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --network host -e POSTGRES_USER=vitalia_restore -e POSTGRES_DB=vitalia_restored \
+            -e POSTGRES_PASSWORD=isolated-ci-only postgres:16.15-bookworm -c listen_addresses=127.0.0.1
+          for attempt in {1..30}; do
+            if docker exec "vitalia-qa-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+              pg_isready -h 127.0.0.1 -U vitalia_restore -d vitalia_restored; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
       - name: Probar API, sesiones y descarga desde Chromium
         working-directory: backend
         env:
@@ -83,3 +82,6 @@ jobs:
           export VITALIA_JOURNEY_PLAYWRIGHT="$RUNNER_TEMP/vitalia-browser/node_modules/playwright"
           export VITALIA_JOURNEY_WEB="$GITHUB_WORKSPACE/apps/vitalia/build/web"
           node test/sil-main-journey.cjs
+      - name: Retirar PostgreSQL temporal
+        if: always()
+        run: docker stop "vitalia-qa-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" || true
