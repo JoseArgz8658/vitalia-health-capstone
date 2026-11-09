@@ -26,6 +26,8 @@ class ResumenInformesSilPage extends StatefulWidget {
 enum _Section { results, comparison, referral }
 
 class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
+  static const _mainSil =
+      bool.fromEnvironment('VITALIA_SIL_MAIN_MODE',defaultValue:false);
   late final _selected = <String>{
     if (widget.initialReportId case final String id) id,
   };
@@ -583,7 +585,9 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
               child: Center(
                 child: Chip(
                   avatar: const Icon(Icons.lock_outline, size: 16),
-                  label: const Text('Consulta privada · DEMO'),
+                  label: Text(
+                    _mainSil ? 'Consulta privada · Vitalia' : 'Consulta privada · DEMO',
+                  ),
                   backgroundColor: ColoresVitalia.azulSuave,
                 ),
               ),
@@ -603,7 +607,9 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   PortalHeroSil(
-                    eyebrow: 'Explorador de informes · SIL DEMO',
+                    eyebrow: _mainSil
+                        ? 'Explorador de informes · Vitalia Health'
+                        : 'Explorador de informes · SIL DEMO',
                     title: 'Comprende mejor tus exámenes',
                     subtitle:
                         'Consulta las cifras de tus documentos publicados, '
@@ -662,11 +668,14 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
                     onReports: () => Navigator.pop(context),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Vitalia Health · Lectura educativa sobre documentos '
-                    'ficticios. Conserva siempre el informe original.',
+                  Text(
+                    _mainSil
+                        ? 'Vitalia Health · Lectura educativa. '
+                          'Conserva siempre el PDF autorizado original.'
+                        : 'Vitalia Health · Lectura educativa sobre documentos '
+                          'ficticios. Conserva siempre el informe original.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
                       color: ColoresVitalia.textoSecundario,
                     ),
