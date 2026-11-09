@@ -86,9 +86,14 @@ try {
     $staged38 = Join-Path $stagedMigrations '038_sil_main_postanalytical.sql'
     Copy-LinuxText $sql38 $staged38
     $bytes38 = [System.IO.File]::ReadAllBytes($staged38)
-    $hash38 = [System.BitConverter]::ToString(
-      [System.Security.Cryptography.SHA256]::HashData($bytes38)
-    ).Replace('-','').ToLowerInvariant()
+    $sha38 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+      $hash38 = [System.BitConverter]::ToString(
+        $sha38.ComputeHash($bytes38)
+      ).Replace('-','').ToLowerInvariant()
+    } finally {
+      $sha38.Dispose()
+    }
     $sql38Content = [System.IO.File]::ReadAllText($staged38,$strictUtf8)
     # La migración y su registro se ejecutan en una sola transacción.
     $combined38 = $sql38Content + "`n" +
