@@ -204,6 +204,13 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
     assert.equal(recorded.status(),201);
     assert.equal(recorded.request().postDataJSON().values[0].numericValue,91.2);
     console.log('Microsoft Edge: el operador cotejó y guardó la sugerencia del PDF.');
+    await click(button('Ver historial de la orden'),'Ver historial de la orden');
+    const history=page.getByRole('dialog');
+    await history.getByText('Resultados registrados',{exact:true}).waitFor();
+    await history.getByText(/uploader@example[.]invalid/).first().waitFor();
+    await history.getByRole('button',{name:'Cerrar historial'}).click();
+    await history.waitFor({state:'hidden'});
+    console.log('Microsoft Edge: el operador consultó el evento real de la orden.');
     await click(button('Órdenes'),'Órdenes');
     await select('sil-upload-order');
     const choose=page.waitForEvent('filechooser');
@@ -506,6 +513,21 @@ async function main() {
     await call('other','GET',patientFile,404);
     const patient=await call('patient','GET',patientFile,200);
     assert.deepEqual(Buffer.from(await patient.arrayBuffer()),pdf);
+    const historyPath=clinical+'/audit';
+    await api('GET','/api/sil/main'+historyPath,401);
+    await call('patient','GET',historyPath,403);
+    await call('uploader','GET',otherLab+'/orders/'+orderId+'/clinical/audit',403);
+    await call('reviewer','GET',otherLab+'/orders/'+orderId+'/clinical/audit',404);
+    const historyResponse=await call('uploader','GET',historyPath,200);
+    assert.equal(historyResponse.headers.get('cache-control'),'private, no-store');
+    const {events,hasOlder}=await historyResponse.json();
+    assert.equal(hasOlder,false);
+    assert.ok(events.length>1);
+    assert.ok(events.every((event,index)=>index===0||event.createdAt<=events[index-1].createdAt));
+    assert.ok(events.some(event=>event.action==='results_recorded'&&event.staffEmail===credentials.uploader.email));
+    assert.ok(events.some(event=>event.action==='report_downloaded'&&event.staffEmail===null));
+    assert.ok(events.every(event=>Object.keys(event).sort().join(',')==='action,createdAt,staffEmail'));
+    console.log('API: historial de la orden verificado con aislamiento por laboratorio y datos mínimos.');
     const audit=await db.query(`SELECT action,actor_id FROM public.vitalia_sil_main_audit
       WHERE order_id=$1 ORDER BY created_at,id`,[orderId]);
     for(const [action,actor] of [

@@ -147,6 +147,79 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
     });
   }
 
+  Future<void> _showActivity() async {
+    final activity = await widget.api.silMainRequest('$_path/audit');
+    if (!mounted) return;
+    final events = (activity['events'] as List).cast<Map>();
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        final locale = MaterialLocalizations.of(context);
+        return AlertDialog(
+          title: const Text('Historial de actividad'),
+          scrollable: true,
+          content: SizedBox(
+            width: 440,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (events.isEmpty)
+                  const Text(
+                    'Aún no hay actividad registrada para esta orden.',
+                  ),
+                for (final event in events)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _activityLabel(event['action'] as String),
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        Text(_activityDetail(event, locale)),
+                      ],
+                    ),
+                  ),
+                if (activity['hasOlder'] == true)
+                  const Text('Se muestran los 30 eventos más recientes.'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cerrar historial'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _activityDetail(Map event, MaterialLocalizations locale) {
+    final time = DateTime.parse(event['createdAt'] as String).toLocal();
+    final actor = event['staffEmail'] ?? 'Paciente';
+    return '${locale.formatShortDate(time)} · '
+        '${locale.formatTimeOfDay(TimeOfDay.fromDateTime(time))}\n$actor';
+  }
+
+  String _activityLabel(String action) => switch (action) {
+    'order_created' => 'Orden registrada',
+    'medical_request_received' => 'Solicitud recibida',
+    'medical_request_downloaded' => 'Solicitud descargada',
+    'sample_received' => 'Muestra recibida',
+    'results_recorded' => 'Resultados registrados',
+    'results_returned' => 'Resultados devueltos para corrección',
+    'results_approved' => 'Resultados aprobados',
+    'report_attached' => 'Informe adjuntado',
+    'report_review_accessed' => 'Informe descargado para revisión',
+    'report_published' => 'Informe publicado',
+    'report_downloaded' => 'Informe descargado por el paciente',
+    _ => 'Actividad registrada',
+  };
+
   Future<void> _save(List<Map> analytes) async {
     final results = <Map<String, dynamic>>[];
     for (final row in analytes) {
@@ -214,6 +287,15 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
         if (_busy) const LinearProgressIndicator(),
         if (_error != null) Text(_error!),
         if (_details != null) ...[
+          const SizedBox(height: 12),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: OutlinedButton.icon(
+              onPressed: _busy ? null : () => _run(_showActivity),
+              icon: const Icon(Icons.history),
+              label: const Text('Ver historial de la orden'),
+            ),
+          ),
           const SizedBox(height: 12),
           const Text('Contenedores requeridos'),
           for (final row in containers)

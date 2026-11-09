@@ -366,6 +366,25 @@ export function createSilMainService(db:Pool) {
       });
     },
 
+    async recentOrderActivity(labId:string,orderId:string,operatorId:string){
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx);
+        const order=await tx.query(
+          'SELECT 1 FROM public.vitalia_sil_main_orders WHERE id=$1 AND lab_id=$2',
+          [orderId,labId]);
+        if(!order.rows.length)throw new SilMainNotFound();
+        const limit=30;
+        const events=await tx.query<{action:string;createdAt:Date;staffEmail:string|null}>(
+          `SELECT a.action,a.created_at AS "createdAt",
+             CASE WHEN a.action<>'report_downloaded' THEN actor.email END AS "staffEmail"
+           FROM public.vitalia_sil_main_audit a
+           JOIN public.vitalia_accounts actor ON actor.id=a.actor_id
+           WHERE a.lab_id=$1 AND a.order_id=$2
+           ORDER BY a.created_at DESC,a.id LIMIT $3`,[labId,orderId,limit+1]);
+        return {events:events.rows.slice(0,limit),hasOlder:events.rows.length>limit};
+      });
+    },
+
     async receiveSample(labId:string,orderId:string,operatorId:string,code:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);

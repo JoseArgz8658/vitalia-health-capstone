@@ -242,6 +242,10 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
   router.get(clinicalPath,staff,labPath,clinicalOperator,async(req,res)=>{
     res.json(await main.clinicalDetails(req.params.labId as string,req.params.orderId as string,res.locals.account.id));
   });
+  router.get(clinicalPath+'/audit',staff,labPath,clinicalOperator,async(req,res)=>{
+    res.json(await main.recentOrderActivity(req.params.labId as string,
+      req.params.orderId as string,res.locals.account.id));
+  });
   router.post(clinicalPath+'/samples',staff,labPath,clinicalOperator,async(req,res)=>{
     const data=z.object({containerCode:examCode}).strict().safeParse(req.body);
     if(!data.success){res.status(400).json({error:{code:'INVALID_SAMPLE'}});return;}

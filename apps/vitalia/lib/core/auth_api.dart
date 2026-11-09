@@ -133,7 +133,7 @@ class AuthApi {
     }
     final candidate=Uri.tryParse(path);
     final allowed=RegExp(
-      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review))?))?|staff(?:/review-permission)?|patients|patient-invitations|operator-invitations))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
+      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|staff(?:/review-permission)?|patients|patient-invitations|operator-invitations))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
     );
     final queries=candidate?.queryParametersAll ?? <String,List<String>>{};
     final isOrders=candidate?.path.endsWith('/orders') ?? false;
