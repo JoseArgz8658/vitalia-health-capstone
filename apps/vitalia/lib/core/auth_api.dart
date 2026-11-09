@@ -1590,6 +1590,73 @@ class AuthApi {
     }
   }
 
+  /// Adjunta un PDF externamente autorizado a una orden del SIL PRINCIPAL.
+  /// Requiere vinculación verificada del paciente; la publicación es
+  /// una acción posterior reservada a un profesional autorizado distinto.
+  Future<Map<String,dynamic>> silMainAttachReport({
+    required String labId,
+    required String orderId,
+    required String fileName,
+    required Uint8List bytes,
+    required String authorizationReference,
+    required String authorizedProfessionalName,
+    required DateTime externallyAuthorizedAt,
+  }) async {
+    if (!_silMainMode) {
+      throw const AuthFailure('El SIL principal no está habilitado.');
+    }
+    final id=RegExp(r'^[a-f0-9-]{36}$');
+    if(!id.hasMatch(labId)||!id.hasMatch(orderId)||
+       !fileName.toLowerCase().endsWith('.pdf')||
+       fileName.length<5||fileName.length>120||
+       bytes.length<8||bytes.length>2*1024*1024||
+       bytes[0]!=37||bytes[1]!=80||bytes[2]!=68||bytes[3]!=70||
+       authorizationReference.trim().length<6||
+       authorizedProfessionalName.trim().length<3){
+      throw const AuthFailure('Comprueba el PDF (máximo 2 MiB) y su autorización.');
+    }
+    final token=_token;
+    if(token==null||expiresAt==null||!expiresAt!.isAfter(DateTime.now())){
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+    }
+    try{
+      final response=await _client.post(
+        _base.resolve('/api/sil/main/labs/$labId/orders/$orderId/report'),
+        headers:{
+          'Authorization':'Bearer $token',
+          'Content-Type':'application/pdf',
+          'x-report-filename':Uri.encodeComponent(fileName),
+          'x-report-authorized-professional':Uri.encodeComponent(authorizedProfessionalName.trim()),
+          'x-report-authorization-ref':Uri.encodeComponent(authorizationReference.trim()),
+          'x-report-authorized-at':externallyAuthorizedAt.toUtc().toIso8601String(),
+          'x-report-patient-confirmed':'true',
+        },
+        body:bytes,
+      ).timeout(const Duration(seconds:40));
+      if(token!=_token||response.statusCode==401){
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+      }
+      if(response.statusCode>=400){
+        throw AuthFailure(switch(response.statusCode){
+          400=>'PDF inválido o falta información de autorización.',
+          403=>'No tienes permiso para adjuntar en este laboratorio.',
+          404=>'La orden no existe en el laboratorio seleccionado.',
+          409=>'La orden ya tiene informe o cambió de estado.',
+          413=>'El PDF supera los 2 MiB.',
+          _=>'No se pudo incorporar el informe.',
+        },response.statusCode);
+      }
+      return jsonDecode(response.body) as Map<String,dynamic>;
+    }on AuthFailure {rethrow;}
+    on TimeoutException {
+      throw const AuthFailure('La carga demoró demasiado.');
+    }catch(_){
+      throw const AuthFailure('No se pudo conectar al laboratorio.');
+    }
+  }
+
   /// Acceso controlado a las operaciones de activación del portal SIL DEMO.
   /// El navegador nunca consulta secretos de contraseñas existentes.
   Future<Map<String,dynamic>> silPortalRequest(
