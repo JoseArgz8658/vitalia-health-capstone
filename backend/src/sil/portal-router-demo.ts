@@ -10,7 +10,7 @@ import {
 
 const uuid=z.uuid();
 const email=z.email().max(254).refine(value=>value.endsWith('@example.invalid'));
-const code=z.string().regex(/^[A-Za-z0-9_-]{24}$/);
+const code=z.string().regex(/^[A-Za-z0-9_-]{12}$/);
 const newPatient=z.object({
   email, givenNames:z.string().trim().min(2).max(100),
   familyNames:z.string().trim().min(2).max(100),
