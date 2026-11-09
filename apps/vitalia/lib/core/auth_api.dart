@@ -311,7 +311,7 @@ class AuthApi {
         headers:{
           'Authorization':'Bearer $token',
           'Content-Type':'application/pdf',
-          'x-request-filename':Uri.encodeComponent(fileName),
+          if (!resultsPreview) 'x-request-filename':Uri.encodeComponent(fileName),
           ...headers,
         },
         body:bytes,
