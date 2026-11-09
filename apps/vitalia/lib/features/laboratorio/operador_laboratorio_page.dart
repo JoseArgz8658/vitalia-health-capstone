@@ -5,6 +5,8 @@ import 'package:file_selector/file_selector.dart';
 import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
 import 'directorio_pacientes_sil.dart';
+import 'acceso_portal_paciente_demo.dart';
+import 'nuevo_paciente_sil_dialog.dart';
 
 enum _OperatorSection {
   dashboard,
@@ -696,6 +698,20 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     _refreshOrders();
   }
 
+  Future<void> _createNewDemoPatient() async {
+    if (_busy) return;
+    final response=await showDialog<Map<String,dynamic>>(
+      context:context,
+      builder:(_)=>NuevoPacienteSilDialog(api:widget.api),
+    );
+    if(!mounted||response==null)return;
+    final patient=Map<String,dynamic>.from(response['patient'] as Map);
+    _directoryKey.currentState?.refresh();
+    await _loadDemoPatient(email:patient['email'] as String);
+    if(mounted)setState(() => _message =
+      'Ficha ficticia creada. Corrobora identidad y correo antes de activar el acceso.');
+  }
+
   Widget _patientDirectory() => DirectorioPacientesSil(
     key: _directoryKey,
     api: widget.api,
@@ -704,6 +720,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     onOpenProfile: (email) => _loadDemoPatient(email: email),
     onPrepareRequest: _prepareRequestForPatient,
     onViewOrders: _openPatientOrders,
+    onCreatePatient: _createNewDemoPatient,
   );
 
 
@@ -2757,6 +2774,13 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         if (!_demoProfileComplete)
           const Text('Completa y guarda la ficha antes de recibir una solicitud.',
             style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario)),
+        const SizedBox(height: 18),
+        AccesoPortalPacienteDemo(
+          key: ValueKey('portal-${_patientDemoLoaded!['id']}'),
+          api: widget.api,
+          patientId: _patientDemoLoaded!['id'] as String,
+          onExpired: widget.onExpired,
+        ),
       ],
     ]),
     icon: Icons.badge_outlined,
