@@ -112,6 +112,38 @@ class _PatientApi extends AuthApi {
   }
 }
 
+class _TwoReportsPatientApi extends _PatientApi {
+  @override
+  Future<Map<String, dynamic>> silRequest(
+    String path, {
+    Map<String, dynamic>? body,
+  }) async {
+    if (path == '/patient/reports') {
+      return {
+        'reports': [
+          {
+            'id': _id,
+            'fileName': 'prueba.pdf',
+            'examNames': ['Glicemia'],
+            'orderNumber': 'VH-000001',
+            'issuingLaboratory': 'Laboratorio ficticio',
+            'publishedAt': '2026-10-20',
+          },
+          {
+            'id': '00000000-0000-4000-8000-000000000002',
+            'fileName': 'prueba-2.pdf',
+            'examNames': ['Glicemia'],
+            'orderNumber': 'VH-000002',
+            'issuingLaboratory': 'Laboratorio ficticio',
+            'publishedAt': '2026-11-08',
+          },
+        ],
+      };
+    }
+    return super.silRequest(path, body: body);
+  }
+}
+
 void _phone(WidgetTester tester) {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(320, 680);
@@ -279,4 +311,52 @@ void main() {
     expect(find.text('Ir a mis informes'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('comparación solo destacada con dos informes publicados',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1366, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(MaterialApp(
+      theme: temaVitalia(),
+      home: PacienteInformesSilPage(
+        api: _TwoReportsPatientApi(),
+        email: _email,
+        onExpired: () {},
+        onLogout: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Comparar informes'), findsOneWidget);
+    expect(find.text('Cómo leer mis resultados'), findsNothing);
+    expect(find.text('08/11/2026'), findsWidgets);
+    await tester.ensureVisible(find.text('Comparar informes'));
+    await tester.tap(find.text('Comparar informes'));
+    await tester.pumpAndSettle();
+    expect(find.text('Elige hasta cuatro informes'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('cabecera completa no desborda en escritorio ancho',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1800, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(MaterialApp(
+      theme: temaVitalia(),
+      home: PacienteInformesSilPage(
+        api: _PatientApi(),
+        email: _email,
+        onExpired: () {},
+        onLogout: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Hola, Paciente'), findsOneWidget);
+    expect(find.text('Ayuda'), findsOneWidget);
+    expect(find.text('Recuperación'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
 }
