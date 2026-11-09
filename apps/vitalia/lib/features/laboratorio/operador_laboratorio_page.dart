@@ -4,6 +4,17 @@ import 'package:file_selector/file_selector.dart';
 
 import '../../core/auth_api.dart';
 
+enum _OperatorSection {
+  dashboard,
+  orders,
+  request,
+  patient,
+  manualOrder,
+  samples,
+  results,
+  report,
+}
+
 /// Estación de trabajo del operador. Publica SOLO PDFs ya autorizados fuera de Vitalia.
 class OperadorLaboratorioPage extends StatefulWidget {
   const OperadorLaboratorioPage({
@@ -23,15 +34,11 @@ class OperadorLaboratorioPage extends StatefulWidget {
 
 class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   static const _pageSize = 20;
-  static const _nav = <(IconData, String)>[
-    (Icons.dashboard_outlined, 'Resumen'),
-    (Icons.assignment_outlined, 'Órdenes'),
-    (Icons.note_add_outlined, 'Nueva orden'),
-    (Icons.science_outlined, 'Muestras'),
-    (Icons.fact_check_outlined, 'Resultados'),
-    (Icons.picture_as_pdf_outlined, 'Informes PDF'),
-    (Icons.badge_outlined, 'Ficha paciente DEMO'),
-    (Icons.assignment_outlined, 'Recibir solicitud'),
+  static const _nav = <(_OperatorSection, IconData, String)>[
+    (_OperatorSection.dashboard, Icons.dashboard_outlined, 'Resumen'),
+    (_OperatorSection.orders, Icons.assignment_outlined, 'Órdenes'),
+    (_OperatorSection.request, Icons.note_add_outlined, 'Recibir solicitud'),
+    (_OperatorSection.patient, Icons.badge_outlined, 'Pacientes DEMO'),
   ];
 
   final _patientController = TextEditingController();
@@ -87,9 +94,25 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   String? _filterStatus;
   bool _busy = false;
   bool _loading = true;
+  bool _ordersLoading = false;
   int _page = 0;
   int _total = 0;
-  int _section = 0;
+  _OperatorSection _section = _OperatorSection.dashboard;
+
+  int get _navigationIndex {
+    final index = _nav.indexWhere((item) => item.$1 == _section);
+    return index == -1 ? 1 : index;
+  }
+
+  void _goTo(_OperatorSection section) {
+    if (_busy || section == _section) return;
+    setState(() {
+      _section = section;
+      _error = null;
+      _message = null;
+    });
+    if (section == _OperatorSection.orders) _refreshOrders();
+  }
 
   @override
   void initState() {
@@ -122,6 +145,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   Future<void> _refreshAll() async {
     if (!mounted) return;
     setState(() => _loading = true);
+    final orders = _refreshOrders();
     try {
       final catalog = await widget.api.silRequest('/catalog');
       final branches = await widget.api.silRequest('/branches');
@@ -140,18 +164,23 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             .map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
       });
-      await _refreshOrders();
     } on AuthFailure catch (error) {
       _showFailure(error);
     } catch (_) {
       if (mounted) setState(() => _error = 'No se pudieron cargar los datos del laboratorio.');
     } finally {
+      await orders;
       if (mounted) setState(() => _loading = false);
     }
   }
 
   Future<void> _refreshOrders() async {
     final requestId = ++_listRequestId;
+    setState(() {
+      _ordersLoading = true;
+      _orders = [];
+      _total = 0;
+    });
     try {
       final params = <String, String>{
         'limit': '$_pageSize',
@@ -170,9 +199,15 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         _total = (response['total'] as num?)?.toInt() ?? _orders.length;
       });
     } on AuthFailure catch (error) {
-      _showFailure(error);
+      if (requestId == _listRequestId) _showFailure(error);
     } catch (_) {
-      if (mounted) setState(() => _error = 'No se pudo actualizar la lista de órdenes.');
+      if (mounted && requestId == _listRequestId) {
+        setState(() => _error = 'No se pudo actualizar la lista de órdenes.');
+      }
+    } finally {
+      if (mounted && requestId == _listRequestId) {
+        setState(() => _ordersLoading = false);
+      }
     }
   }
 
@@ -259,9 +294,12 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       _confirmExternal = false;
       _confirmPatient = false;
       _containerCode = pending.isEmpty ? null : (pending.first as Map)['code'] as String;
-      _section = ['report_attached', 'report_published'].contains(order['status'])
-          ? 5 : ['results_recorded', 'review_rejected', 'review_approved']
-          .contains(order['status']) ? 4 : 3;
+      _section = switch (order['status']) {
+        'report_attached' || 'report_published' => _OperatorSection.report,
+        'sampled' || 'results_recorded' || 'review_rejected' ||
+          'review_approved' => _OperatorSection.results,
+        _ => _OperatorSection.samples,
+      };
     });
   }
 
@@ -713,21 +751,25 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       throw const AuthFailure('Esta orden no tiene parámetros definidos.');
     }
     final id = order['id'] as String;
-    final assisted=_resultsPreviewToken!=null;
     await widget.api.silRequest('/orders/$id/results', body: {
       'results': values,
-      if(assisted)'previewToken':_resultsPreviewToken,
+      if (_resultsPreviewToken != null) 'previewToken': _resultsPreviewToken,
     });
-    await _openOrder(id);
+    if (!mounted) return;
+    _searchController.clear();
+    setState(() {
+      _selected = null;
+      _page = 0;
+      _filterStatus = null;
+      _section = _OperatorSection.orders;
+      _message = 'Resultados registrados para ${_orderCode(order)}. '
+          'Orden pendiente de revisión profesional.';
+    });
     await _refreshAll();
-    if (mounted) {
-      setState(() => _message = assisted
-        ? 'Resultados del PDF revisados y registrados por el operador. Pendientes de revisión.'
-        : 'Resultados manuales registrados. Pendientes de revisión profesional.');
-    }
   });
 
   void _search() {
+    if (_busy) return;
     if (_searchController.text.trim().length > 100) {
       setState(() => _error = 'El término de búsqueda es demasiado largo.');
       return;
@@ -747,6 +789,15 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   }
 
   String _orderCode(Map order) => '${order['orderNumber'] ?? 'Orden'}';
+
+  String _orderAction(Object? status) => switch (status) {
+    'registered' => 'Recibir muestra',
+    'sampled' => 'Ingresar resultados',
+    'review_rejected' => 'Corregir resultados',
+    'results_recorded' || 'review_approved' => 'Ver resultados',
+    'report_attached' || 'report_published' => 'Ver informe',
+    _ => 'Abrir orden',
+  };
 
   String _statusLabel(String? status) => switch (status) {
     'registered' => 'Pendiente de muestra',
@@ -852,7 +903,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               onPressed: _busy
                   ? null
                   : () => _run(() => _openOrder(order['id'] as String)),
-              child: const Text('Abrir'),
+              child: Text(_orderAction(order['status'])),
             )),
           ]);
         }).toList(),
@@ -887,7 +938,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton.icon(
-                onPressed: () => setState(() => _section = 1),
+                onPressed: _busy ? null : () => _goTo(_OperatorSection.orders),
                 icon: const Icon(Icons.arrow_forward_outlined),
                 label: const Text('Ver todas las órdenes'),
               ),
@@ -899,9 +950,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         Align(
           alignment: Alignment.centerLeft,
           child: FilledButton.icon(
-            onPressed: () => setState(() => _section = 2),
+            onPressed: _busy ? null : () => _goTo(_OperatorSection.request),
             icon: const Icon(Icons.add_circle_outline),
-            label: const Text('Registrar orden'),
+            label: const Text('Recibir solicitud de exámenes'),
           ),
         ),
       ],
@@ -909,14 +960,28 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   }
 
   Widget _ordersView() => _panel(
-    'Gestión de órdenes',
+    'Buscar y gestionar órdenes',
     'Consulta por paciente, número de orden o identificador, y filtra por estado.',
     Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Wrap(spacing: 12, runSpacing: 8, children: [
+        FilledButton.icon(
+          onPressed: _busy ? null : () => _goTo(_OperatorSection.request),
+          icon: const Icon(Icons.upload_file_outlined),
+          label: const Text('Recibir solicitud de exámenes'),
+        ),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : () => _goTo(_OperatorSection.manualOrder),
+          icon: const Icon(Icons.edit_note_outlined),
+          label: const Text('Crear orden manual'),
+        ),
+      ]),
+      const SizedBox(height: 16),
       Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
         SizedBox(
           width: 340,
           child: TextField(
             controller: _searchController,
+            enabled: !_busy,
             maxLength: 100,
             decoration: const InputDecoration(
               labelText: 'Buscar orden o correo',
@@ -939,7 +1004,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             DropdownMenuItem(value: 'report_attached', child: Text('Informe externo recibido')),
             DropdownMenuItem(value: 'report_published', child: Text('Informe publicado')),
           ],
-          onChanged: (value) {
+          onChanged: _busy ? null : (value) {
             setState(() {
               _filterStatus = value == '' ? null : value;
               _page = 0;
@@ -968,15 +1033,19 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         ),
       ]),
       const SizedBox(height: 12),
-      Text('$_total órdenes encontradas'),
-      const SizedBox(height: 10),
-      _ordersTable(),
+      if (_ordersLoading)
+        const LinearProgressIndicator(semanticsLabel: 'Actualizando órdenes')
+      else ...[
+        Text('$_total órdenes encontradas'),
+        const SizedBox(height: 10),
+        _ordersTable(),
+      ],
       const SizedBox(height: 8),
       Row(mainAxisAlignment: MainAxisAlignment.end, children: [
         Text('Página ${_page + 1}'),
         IconButton(
           tooltip: 'Página anterior',
-          onPressed: _busy || _page == 0
+          onPressed: _busy || _ordersLoading || _page == 0
               ? null
               : () {
                   setState(() => _page--);
@@ -986,7 +1055,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         ),
         IconButton(
           tooltip: 'Página siguiente',
-          onPressed: _busy || (_page + 1) * _pageSize >= _total
+          onPressed: _busy || _ordersLoading || (_page + 1) * _pageSize >= _total
               ? null
               : () {
                   setState(() => _page++);
@@ -1278,12 +1347,36 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     Align(
       alignment: Alignment.centerLeft,
       child: OutlinedButton.icon(
-        onPressed: () => setState(() => _section = 1),
+        onPressed: _busy ? null : () => _goTo(_OperatorSection.orders),
         icon: const Icon(Icons.assignment_outlined),
         label: const Text('Consultar órdenes'),
       ),
     ),
   );
+
+  Widget _orderNavigation(Map order) {
+    final status = order['status'];
+    final steps = [
+      (_OperatorSection.samples, 'Muestras'),
+      (_OperatorSection.results, 'Resultados'),
+      if (status == 'registered' || status == 'report_attached' ||
+          status == 'report_published')
+        (_OperatorSection.report, 'Informe externo'),
+    ];
+    return Wrap(spacing: 8, runSpacing: 8, children: [
+      OutlinedButton.icon(
+        onPressed: _busy ? null : () => _goTo(_OperatorSection.orders),
+        icon: const Icon(Icons.arrow_back),
+        label: const Text('Volver a órdenes'),
+      ),
+      for (final (section, label) in steps)
+        ChoiceChip(
+          label: Text(label),
+          selected: _section == section,
+          onSelected: _busy ? null : (_) => _goTo(section),
+        ),
+    ]);
+  }
 
   Widget _orderHeader(Map<String, dynamic> order) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1464,23 +1557,19 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             const Text('Los tubos requeridos están registrados. Puedes ingresar '
                 'los resultados manualmente o analizar un PDF con IA.'),
             const SizedBox(height: 12),
-            Wrap(spacing: 12, runSpacing: 10, children: [
-              FilledButton.icon(
-                onPressed: _busy ? null : () => setState(() => _section = 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : () => _goTo(_OperatorSection.results),
                 icon: const Icon(Icons.edit_note_outlined),
-                label: const Text('Ingresar resultados manualmente'),
+                label: const Text('Ir a resultados'),
               ),
-              OutlinedButton.icon(
-                onPressed: _busy ? null : () => setState(() => _section = 4),
-                icon: const Icon(Icons.document_scanner_outlined),
-                label: const Text('Analizar PDF con IA'),
-              ),
-            ]),
+            ),
           ],
           if (['results_recorded','review_rejected','review_approved'].contains(status)) ...[
             const SizedBox(height: 12),
             OutlinedButton.icon(
-              onPressed: () => setState(() => _section = 4),
+              onPressed: _busy ? null : () => _goTo(_OperatorSection.results),
               icon: const Icon(Icons.fact_check_outlined),
               label: const Text('Ver resultados registrados'),
             ),
@@ -1931,19 +2020,31 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   );
 
   Widget _bodyForSection() => switch (_section) {
-    0 => _dashboard(),
-    1 => _ordersView(),
-    2 => _newOrderView(),
-    3 => _samplesView(),
-    4 => _resultsView(),
-    5 => _reportsView(),
-    6 => _demoPatientView(),
-    _ => _medicalRequestView(),
+    _OperatorSection.dashboard => _dashboard(),
+    _OperatorSection.orders => _ordersView(),
+    _OperatorSection.request => _medicalRequestView(),
+    _OperatorSection.patient => _demoPatientView(),
+    _OperatorSection.manualOrder => _newOrderView(),
+    _OperatorSection.samples => _samplesView(),
+    _OperatorSection.results => _resultsView(),
+    _OperatorSection.report => _reportsView(),
   };
 
   Widget _content() {
     final theme = Theme.of(context);
+    final title = switch (_section) {
+      _OperatorSection.dashboard => 'Panel del laboratorio',
+      _OperatorSection.manualOrder => 'Crear orden manual',
+      _OperatorSection.samples => 'Recepción de muestras',
+      _OperatorSection.results => 'Resultados',
+      _OperatorSection.report => 'Informe externo',
+      _ => _nav[_navigationIndex].$3,
+    };
+    final order = _selected?['order'] as Map?;
+    final isOrderDetail = _section == _OperatorSection.samples ||
+        _section == _OperatorSection.results || _section == _OperatorSection.report;
     return SingleChildScrollView(
+      key: ValueKey(_section),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 26),
       child: Center(
         child: ConstrainedBox(
@@ -1951,10 +2052,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(_nav[_section].$2 == 'Resumen'
-                  ? 'Panel del laboratorio'
-                  : _nav[_section].$2,
-                  style: theme.textTheme.headlineMedium),
+              Text(title, style: theme.textTheme.headlineMedium),
               const SizedBox(height: 5),
               Text(
                 'Gestión de órdenes, muestras y resultados.',
@@ -1969,6 +2067,21 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               if (_message != null) ...[
                 Text(_message!, style: TextStyle(color: theme.colorScheme.primary)),
                 const SizedBox(height: 10),
+              ],
+              if (isOrderDetail && order != null) ...[
+                _orderNavigation(order),
+                const SizedBox(height: 14),
+              ],
+              if (_section == _OperatorSection.manualOrder) ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _busy ? null : () => _goTo(_OperatorSection.orders),
+                    icon: const Icon(Icons.arrow_back),
+                    label: const Text('Volver a órdenes'),
+                  ),
+                ),
+                const SizedBox(height: 14),
               ],
               _bodyForSection(),
               const SizedBox(height: 28),
@@ -1992,7 +2105,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         actions: [
           IconButton(
             tooltip: 'Actualizar datos del laboratorio',
-            onPressed: _busy || _loading ? null : _refreshAll,
+            onPressed: _busy || _loading ? null : () => _run(_refreshAll),
             icon: const Icon(Icons.refresh),
           ),
           const Padding(
@@ -2014,15 +2127,14 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         return Row(children: [
           NavigationRail(
             extended: constraints.maxWidth >= 1250,
-            selectedIndex: _section,
+            selectedIndex: _navigationIndex,
             labelType: constraints.maxWidth >= 1250
                 ? NavigationRailLabelType.none
                 : NavigationRailLabelType.all,
-            onDestinationSelected: (index) =>
-                setState(() => _section = index),
+            onDestinationSelected: _busy ? null : (index) => _goTo(_nav[index].$1),
             destinations: _nav
                 .map((item) => NavigationRailDestination(
-                  icon: Icon(item.$1), label: Text(item.$2),
+                  icon: Icon(item.$2), label: Text(item.$3),
                 ))
                 .toList(),
           ),
@@ -2032,12 +2144,11 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       }),
       bottomNavigationBar: MediaQuery.sizeOf(context).width < 900
           ? NavigationBar(
-              selectedIndex: _section,
-              onDestinationSelected: (index) =>
-                  setState(() => _section = index),
+              selectedIndex: _navigationIndex,
+              onDestinationSelected: _busy ? null : (index) => _goTo(_nav[index].$1),
               destinations: _nav
                   .map((item) => NavigationDestination(
-                    icon: Icon(item.$1), label: item.$2,
+                    icon: Icon(item.$2), label: item.$3,
                   ))
                   .toList(),
             )
