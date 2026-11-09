@@ -368,6 +368,24 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     await _loadOrders();
   }
 
+  Future<void> _selectReportDate() async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final first = DateTime(1900);
+    final entered = DateTime.tryParse(_reportDate.text.trim());
+    final date = await showDatePicker(
+      context: context,
+      initialDate: entered != null && !entered.isBefore(first) && !entered.isAfter(today)
+          ? entered : today,
+      firstDate: first,
+      lastDate: today,
+      confirmText: 'Usar fecha',
+      cancelText: 'Cancelar',
+    );
+    if (date != null && mounted) {
+      _reportDate.text = date.toIso8601String().split('T').first;
+    }
+  }
+
   Future<void> _attachReport() async {
     final lab=_labId,orderId=_uploadOrderId,file=_pdf;
     if(lab==null||orderId==null||file==null||
@@ -711,8 +729,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           identifier:'sil-report-professional'),
         _field(_reportReference,'Referencia de autorización externa',
           identifier:'sil-report-reference'),
-        _field(_reportDate,'Fecha de autorización (AAAA-MM-DD)',
-          identifier:'sil-report-date'),
+        _field(_reportDate,'Fecha de autorización (AAAA-MM-DD)'),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _selectReportDate,
+          icon: const Icon(Icons.calendar_today_outlined),
+          label: const Text('Elegir fecha de autorización'),
+        ),
         CheckboxListTile(
           contentPadding:EdgeInsets.zero,
           controlAffinity:ListTileControlAffinity.leading,

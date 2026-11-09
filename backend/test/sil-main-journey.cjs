@@ -195,7 +195,6 @@ async function operatorJourney(browser, order, base) {
     for(const [key,value] of [
       ['sil-report-professional','Profesional Ficticio'],
       ['sil-report-reference','AUT-OPERADOR-EDGE'],
-      ['sil-report-date','2024-01-01'],
     ]){
       const input=id(key).locator('input[data-semantics-role="text-field"]');
       await reach(page,input,key);
@@ -205,6 +204,8 @@ async function operatorJourney(browser, order, base) {
       await focused.fill(value,{timeout:7000});
       assert.equal(await focused.inputValue(),value,key);
     }
+    await click(button('Elegir fecha de autorización'),'Elegir fecha de autorización');
+    await button('Usar fecha').click();
     await confirm('El informe ya fue autorizado fuera de Vitalia');
     await confirm('Confirmé que el PDF corresponde al paciente de la orden');
     console.log('Microsoft Edge: datos de autorización y paciente comprobados.');
