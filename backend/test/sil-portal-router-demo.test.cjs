@@ -23,8 +23,8 @@ function setup(role='operador_laboratorio'){
   provision:jest.fn(async()=>({patient:{id:patientId},portalStatus:'pending'})),
   status:jest.fn(async()=>({patient:{id:patientId},canInvite:true})),
   invite:jest.fn(async()=>({invitation:{id:patientId,delivery:'simulated_outbox'},
-    handoffCode:'x'.repeat(24)})),
-  demoMailbox:jest.fn(()=>({emailCode:'y'.repeat(24)})),
+    handoffCode:'x'.repeat(12)})),
+  demoMailbox:jest.fn(()=>({emailCode:'y'.repeat(12)})),
   activate:jest.fn(async()=>({activated:true,loginRequired:true})),
  };
  const auth={find:jest.fn(async()=>({id:operatorId,role}))};
@@ -97,8 +97,8 @@ test('la invitación exige dos confirmaciones expresas',async()=>{
 
 test('activación pública exige códigos, nueva clave y confirmación',async()=>{
  const {app,portal}=setup();
- const valid={email:'nuevo@example.invalid',emailCode:'a'.repeat(24),
-   handoffCode:'b'.repeat(24),password:'UnaClaveLargaUnica2026',
+ const valid={email:'nuevo@example.invalid',emailCode:'a'.repeat(12),
+   handoffCode:'b'.repeat(12),password:'UnaClaveLargaUnica2026',
    confirmedDetails:true};
  for(const invalid of [
   {...valid,confirmedDetails:false},
