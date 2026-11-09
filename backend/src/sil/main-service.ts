@@ -1,4 +1,5 @@
-import {randomUUID,createHash} from 'node:crypto';
+import {randomUUID,createHash,randomBytes} from 'node:crypto';
+import {hashPassword} from '../auth/password';
 import {type Pool,type PoolClient} from 'pg';
 import {identifyDocument} from '../documents/file-validation';
 import {createSilPatientReportOverview} from './patient-report-overview';
@@ -16,7 +17,8 @@ export function createSilMainService(db:Pool) {
   const mainOverview=createSilPatientReportOverview(db,undefined,'main');
   const mainEducation=createSilPatientEducation(db,undefined,mainOverview,'main');
   async function audit(tx:Pick<PoolClient,'query'>,labId:string,actorId:string,
-    action:'laboratory_created'|'staff_granted'|'patient_identity_linked'|
+    action:'laboratory_created'|'operator_invited'|'operator_activated'|
+      'staff_granted'|'patient_identity_linked'|
       'order_created'|'report_attached'|'report_published'|'report_downloaded',
     orderId:string|null=null,details:Record<string,unknown>={}) {
     await tx.query(
@@ -90,6 +92,82 @@ export function createSilMainService(db:Pool) {
            RETURNING id,display_name AS "displayName"`,[id,name,adminId]);
         await audit(tx,id,adminId,'laboratory_created');
         return {laboratory:row.rows[0]};
+      });
+    },
+
+    async inviteOperator(labId:string,email:string,adminId:string){
+      const code=randomBytes(32).toString('base64url');
+      const digest=createHash('sha256').update(code).digest('hex');
+      const normalized=email.trim().toLowerCase();
+      return transaction(async tx=>{
+        const lab=await tx.query(
+          'SELECT 1 FROM public.vitalia_sil_main_laboratories WHERE id=$1 AND active FOR UPDATE',
+          [labId]);
+        if(!lab.rows.length)throw new SilMainNotFound();
+        const existing=await tx.query(
+          'SELECT 1 FROM public.vitalia_accounts WHERE email=$1',[normalized]);
+        if(existing.rows.length)throw new SilMainConflict();
+        const recent=await tx.query<{total:number}>(
+          `SELECT count(*)::int AS total
+           FROM public.vitalia_sil_main_operator_invites
+           WHERE lab_id=$1 AND email=$2
+             AND created_at>CURRENT_TIMESTAMP-INTERVAL '1 hour'`,
+          [labId,normalized]);
+        if((recent.rows[0]?.total??0)>=3)throw new SilMainConflict();
+        await tx.query(
+          `UPDATE public.vitalia_sil_main_operator_invites
+           SET revoked_at=CURRENT_TIMESTAMP
+           WHERE lab_id=$1 AND email=$2
+             AND consumed_at IS NULL AND revoked_at IS NULL`,
+          [labId,normalized]);
+        const id=randomUUID();
+        const expiresAt=new Date(Date.now()+24*60*60*1000);
+        await tx.query(
+          `INSERT INTO public.vitalia_sil_main_operator_invites
+           (id,lab_id,email,token_hash,issued_by,expires_at)
+           VALUES($1,$2,$3,$4,$5,$6)`,
+          [id,labId,normalized,digest,adminId,expiresAt]);
+        await audit(tx,labId,adminId,'operator_invited',null,{inviteId:id});
+        // Se entrega una única vez, por canal verificado externo.
+        return {invitation:{labId,email:normalized,code,expiresAt}};
+      });
+    },
+
+    async activateOperator(email:string,code:string,password:string){
+      // Calcular scrypt fuera de la transacción para reducir el bloqueo.
+      const credential=await hashPassword(password);
+      const normalized=email.trim().toLowerCase();
+      const digest=createHash('sha256').update(code).digest('hex');
+      return transaction(async tx=>{
+        const result=await tx.query<{id:string;labId:string}>(
+          `SELECT id,lab_id AS "labId"
+           FROM public.vitalia_sil_main_operator_invites
+           WHERE email=$1 AND token_hash=$2 AND consumed_at IS NULL
+             AND revoked_at IS NULL AND expires_at>CURRENT_TIMESTAMP
+           FOR UPDATE`,[normalized,digest]);
+        if(!result.rows.length)throw new SilMainAccessDenied();
+        const invite=result.rows[0];
+        const exists=await tx.query(
+          'SELECT 1 FROM public.vitalia_accounts WHERE email=$1 FOR UPDATE',[normalized]);
+        if(exists.rows.length)throw new SilMainConflict();
+        const accountId=randomUUID();
+        await tx.query(
+          `INSERT INTO public.vitalia_accounts
+           (id,email,password_hash,role_code)
+           VALUES($1,$2,$3,'operador_laboratorio')`,
+          [accountId,normalized,credential]);
+        await tx.query(
+          `INSERT INTO public.vitalia_sil_main_staff
+           (lab_id,account_id,kind,granted_by)
+           SELECT $1,$2,'operator',issued_by
+           FROM public.vitalia_sil_main_operator_invites WHERE id=$3`,
+          [invite.labId,accountId,invite.id]);
+        await tx.query(
+          `UPDATE public.vitalia_sil_main_operator_invites
+           SET consumed_at=CURRENT_TIMESTAMP WHERE id=$1`,[invite.id]);
+        await audit(tx,invite.labId,accountId,'operator_activated',
+          null,{inviteId:invite.id});
+        return {status:'activated'};
       });
     },
 
