@@ -41,4 +41,4 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze lib/app/vitalia_mvp_app.dart lib/core/auth_api.dart
       - run: flutter test
-      - run: flutter build web
+      - run: flutter build web --dart-define=VITALIA_SIL_MAIN_MODE=true

@@ -80,8 +80,8 @@ class AuthApi {
       throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
     }
     try {
-      final isPatientRoute=uri.path.startsWith('/patient/');
-      final uri = _base.resolve(
+      final isPatientRoute = uri.path.startsWith('/patient/');
+      final target = _base.resolve(
         isPatientRoute && _silMainMode ? '/api/sil/main$path' : '/api/sil$path',
       );
       final headers = {
@@ -89,9 +89,9 @@ class AuthApi {
         'Content-Type': 'application/json',
       };
       final response = await (body == null
-              ? _client.get(uri, headers: headers)
-              : _client.post(uri, headers: headers, body: jsonEncode(body)))
-          .timeout(switch (uri.path) {
+              ? _client.get(target, headers: headers)
+              : _client.post(target, headers: headers, body: jsonEncode(body)))
+          .timeout(switch (target.path) {
             '/api/sil/patient/reports/overview' => const Duration(seconds: 130),
             '/api/sil/main/patient/reports/overview' => const Duration(seconds: 130),
             final path when path.endsWith('/chat') => const Duration(seconds: 38),
