@@ -142,6 +142,29 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
   router.get('/branches',async(_req,res)=>{
     res.json(await service.branches());
   });
+  // Directorio de fichas sintéticas: exclusivo del operador DEMO.
+  // Paginación del servidor; nunca consulta pacientes reales.
+  router.get('/patients/list',async(req,res)=>{
+    if(res.locals.account.role!=='operador_laboratorio' ||
+       process.env.VITALIA_SIL_DEMO!=='YES'){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    const parsed=z.object({
+      limit:z.coerce.number().int().min(1).max(50).default(20),
+      offset:z.coerce.number().int().min(0).max(10000).default(0),
+      search:z.string().trim().min(1).max(100).optional(),
+      profile:z.enum(['all','complete','incomplete']).default('all'),
+      orders:z.enum(['all','with','without']).default('all'),
+      sex:z.enum(['all','female','male','not_specified']).default('all'),
+      sort:z.enum(['name','recent']).default('name'),
+    }).strict().safeParse(req.query);
+    if(!parsed.success){
+      res.status(400).json({error:{code:'INVALID_PATIENT_PAGE'}});return;
+    }
+    const p=parsed.data;
+    res.json(await service.listPatientsDemo(p.limit,p.offset,p.search??'',
+      p.profile,p.orders,p.sex,p.sort));
+  });
   router.get('/patients/profile',async(req,res)=>{
     if(res.locals.account.role!=='operador_laboratorio' ||
        process.env.VITALIA_SIL_DEMO!=='YES'){
