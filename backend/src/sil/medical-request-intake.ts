@@ -96,7 +96,7 @@ export function createSilMedicalRequestIntake(
     const source=reading.text??'';
     const normalized=normalize(source);
     // Requiere identificación comprobable en el documento original.
-    const documentIds=[...new Set((source.match(/\bDEMO-[A-Z0-9-]{3,16}\b/gi)??[])
+    const documentIds=[...new Set((source.match(/(?<![A-Z0-9-])DEMO-[A-Z0-9-]{3,16}(?![A-Z0-9-])/gi)??[])
       .map(id=>id.toUpperCase()))];
     const identifierMatches=documentIds.length===1&&
       documentIds[0]===person.identifier;
