@@ -92,7 +92,7 @@ test('la invitación exige dos confirmaciones expresas',async()=>{
  expect(portal.invite).toHaveBeenCalledWith(patientId,operatorId,
   {contactConfirmed:true,identityChecked:true});
  expect(result.body).not.toHaveProperty('emailCode');
- expect(result.body.handoffCode).toHaveLength(24);
+ expect(result.body.handoffCode).toHaveLength(12);
 });
 
 test('activación pública exige códigos, nueva clave y confirmación',async()=>{
