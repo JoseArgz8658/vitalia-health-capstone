@@ -438,7 +438,11 @@ class PortalAyudaFooterSil extends StatelessWidget {
                     onPressed: () =>
                         PortalAyudaSil.contacto(context, reports),
                     icon: const Icon(Icons.support_agent_outlined),
-                    label: const Text('Contacto del laboratorio'),
+                    label: Text(
+                      constraints.maxWidth < 410
+                          ? 'Cómo contactar'
+                          : 'Contacto del laboratorio',
+                    ),
                   ),
                   OutlinedButton.icon(
                     onPressed: () =>
