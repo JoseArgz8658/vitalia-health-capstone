@@ -127,7 +127,7 @@ class _ActivarPortalSilPageState extends State<ActivarPortalSilPage>{
   }
   Widget _emailStep()=>Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
     const Text('Activa tu acceso privado',style:TextStyle(
-      fontSize:23,fontWeight:FontWeight.w750,color:ColoresVitalia.texto)),
+      fontSize:23,fontWeight:FontWeight.w700,color:ColoresVitalia.texto)),
     const SizedBox(height:8),
     const Text('Tu ficha del laboratorio ya existe. '
       'Comprueba el correo al que recibiste la invitación. '
@@ -147,14 +147,13 @@ class _ActivarPortalSilPageState extends State<ActivarPortalSilPage>{
       'Este proceso no envía ni muestra resultados clínicos. '
       'Un correo conocido no concede acceso por sí solo.'),
     const SizedBox(height:20),
-    FilledButton.icon(onPressed:_busy?_noop:_nextEmail,
+    FilledButton.icon(onPressed:_busy?null:_nextEmail,
       icon:const Icon(Icons.arrow_forward),label:const Text('Continuar')),
   ]);
-  void _noop(){}
 
   Widget _codesStep()=>Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
     const Text('Comprueba los dos canales',style:TextStyle(
-      fontSize:23,fontWeight:FontWeight.w750,color:ColoresVitalia.texto)),
+      fontSize:23,fontWeight:FontWeight.w700,color:ColoresVitalia.texto)),
     const SizedBox(height:8),
     Text('Cuenta: ${_email.text.trim().toLowerCase()}',
       style:const TextStyle(color:ColoresVitalia.textoSecundario)),
@@ -203,7 +202,7 @@ class _ActivarPortalSilPageState extends State<ActivarPortalSilPage>{
   Widget _passwordStep()=>Form(key:_formKey,child:Column(
     crossAxisAlignment:CrossAxisAlignment.stretch,children:[
       const Text('Tu acceso, tu contraseña',style:TextStyle(
-        fontSize:23,fontWeight:FontWeight.w750,color:ColoresVitalia.texto)),
+        fontSize:23,fontWeight:FontWeight.w700,color:ColoresVitalia.texto)),
       const SizedBox(height:8),
       const Text('El laboratorio no puede conocer ni recuperar tu nueva '
         'contraseña. Crea una que no utilices en otros servicios.',
