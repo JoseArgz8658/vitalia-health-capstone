@@ -91,6 +91,36 @@ CREATE TABLE public.vitalia_sil_main_order_exams (
  PRIMARY KEY(order_id,exam_code)
 );
 
+-- Solicitud médica externa ya emitida, recibida con identidad contrastada.
+-- No genera resultados, ni prueba que exista atención clínica dentro de Vitalia.
+CREATE TABLE public.vitalia_sil_main_medical_requests (
+ id uuid PRIMARY KEY,
+ order_id uuid NOT NULL UNIQUE,
+ lab_id uuid NOT NULL,
+ patient_id uuid NOT NULL,
+ document_reference text NOT NULL
+   CHECK(length(btrim(document_reference)) BETWEEN 6 AND 150),
+ prescriber_name text NOT NULL
+   CHECK(length(btrim(prescriber_name)) BETWEEN 3 AND 150),
+ request_date date NOT NULL CHECK(request_date<=CURRENT_DATE),
+ file_name text NOT NULL
+   CHECK(length(btrim(file_name)) BETWEEN 5 AND 120 AND file_name ~* '[.]pdf$'),
+ pdf_data bytea NOT NULL
+   CHECK(octet_length(pdf_data) BETWEEN 8 AND 2097152),
+ pdf_sha256 text NOT NULL CHECK(pdf_sha256 ~ '^[a-f0-9]{64}$'),
+ patient_identity_confirmed boolean NOT NULL CHECK(patient_identity_confirmed),
+ human_review_confirmed boolean NOT NULL CHECK(human_review_confirmed),
+ received_by uuid NOT NULL,
+ received_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ FOREIGN KEY(order_id,lab_id,patient_id)
+   REFERENCES public.vitalia_sil_main_orders(id,lab_id,patient_id),
+ FOREIGN KEY(lab_id,received_by)
+   REFERENCES public.vitalia_sil_main_staff(lab_id,account_id),
+ UNIQUE(lab_id,patient_id,pdf_sha256)
+);
+CREATE INDEX vitalia_sil_main_medical_requests_patient_idx
+ ON public.vitalia_sil_main_medical_requests(lab_id,patient_id,received_at DESC);
+
 -- PDF externo ya autorizado, con revisión documental y publicación separadas.
 -- Para el piloto el archivo se guarda en bytea, acotado a 2 MiB.
 CREATE TABLE public.vitalia_sil_main_reports (
@@ -133,6 +163,7 @@ CREATE TABLE public.vitalia_sil_main_audit (
  action text NOT NULL CHECK(action IN (
     'laboratory_created','operator_invited','operator_activated',
     'staff_granted','patient_identity_linked','order_created',
+    'medical_request_received','medical_request_downloaded',
     'report_attached','report_published','report_downloaded')),
  details jsonb NOT NULL DEFAULT '{}'::jsonb
     CHECK(jsonb_typeof(details)='object'),
