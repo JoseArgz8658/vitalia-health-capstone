@@ -247,3 +247,74 @@ flutter run -d edge --web-hostname localhost --web-port 5173 --dart-define=VITAL
 ```
 
 Entrar a `http://localhost:5173/#/laboratorio` con el operador estable; la ruta `/#/administracion` sigue destinada al administrador. El paciente semilla puede buscarse por correo, sin UUID. No presentar datos sintéticos como informes clínicos publicados.
+
+
+## Interfaz postanalítica renovada — directorio, permisos y accesibilidad
+
+Esta iteración mejora la presentación **sin ampliar el alcance SIL**: no procesa
+muestras reales, no verifica firmas ni valida clínicamente resultados. La
+migración 035 ya retiró el rol operativo de validador; se conserva el historial
+de acciones. La revisión interna se realiza desde **Revisión interna** con la
+cuenta de operador DEMO autorizada. Aprobar una revisión **no publica** un informe.
+
+### Directorio de pacientes ficticios
+
+- Ruta para el operador: `GET /api/sil/patients/list`, limitada a
+  `VITALIA_SIL_DEMO=YES`; requiere rol `operador_laboratorio`.
+- Parámetros: `limit` (1–50, predeterminado 20), `offset` (0–10000),
+  `search` (máx. 100), `profile` (all/complete/incomplete),
+  `orders` (all/with/without), `sex` (all/female/male/not_specified) y
+  `sort` (name/recent). Respuesta: `patients,total,limit,offset`.
+- El servidor devuelve solo cuentas `@example.invalid` de rol paciente.
+  El filtro busca correo, nombre, apellidos e identificador sintético
+  mediante valores SQL parametrizados. No retorna teléfono, PDF ni resultados.
+- Solo se cargan 20 filas por página: con 100 pacientes, hay cinco páginas.
+  En escritorio, la tabla ocupa todo el ancho hasta abrir la ficha; al
+  seleccionarla se presenta el detalle al lado. En celular, lista y ficha se
+  alternan, sin perder filtros.
+- Acciones visibles: `Ficha`, `Solicitud` (requiere ficha completa) y
+  `Órdenes` (si hay órdenes). Cambiar de paciente antes de una solicitud
+  descarta la prelectura y las confirmaciones anteriores.
+- No se crean cuentas desde el directorio ni se exportan datos. El portal de
+  pacientes mantiene el registro separado. La página no admite datos reales.
+
+### Verificación y actualización del entorno aislado
+
+Desde la raíz, **sin ejecutar migraciones ni cambiar volúmenes**:
+
+```powershell
+git pull --ff-only
+npm --prefix backend run check
+npm --prefix backend test
+cd apps\vitalia
+flutter analyze
+flutter test
+flutter build web
+```
+
+Si todas las pruebas son correctas, regresar a la raíz, confirmar que el
+contenedor existente monta `/app/dist` desde este repositorio y reiniciar
+**solo** `vitalia-sil-demo` para que lea el backend TypeScript compilado:
+
+```powershell
+cd ..\..
+docker inspect vitalia-sil-demo --format '{{range .Mounts}}{{println .Destination}}{{end}}'
+docker restart vitalia-sil-demo
+Invoke-RestMethod http://127.0.0.1:3101/api/health
+```
+
+Si no hay montaje `/app/dist` o falla el servidor de pruebas, **no** recrear
+contenedores a ciegas: utilizar la sección de despliegue aislado de esta guía.
+Nunca ejecutar `docker compose down -v`, `docker rm -v` contra la base
+persistente, ni reconstruir la API principal solo para probar la UI.
+
+Al abrir Flutter, apuntar específicamente a la demo SIL:
+
+```powershell
+flutter run -d edge --web-hostname localhost --web-port 5173 --dart-define=VITALIA_API_URL=http://127.0.0.1:3101
+```
+
+Pruebas automatizadas añadidas: filtros y control de acceso del directorio,
+parámetros SQL, paginación y navegación en móvil con 100 cuentas sintéticas
+**simuladas en el test**. Esas 100 cuentas no se insertan en PostgreSQL; la
+instalación conserva los pacientes existentes.
