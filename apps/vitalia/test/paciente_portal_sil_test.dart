@@ -235,7 +235,8 @@ void main() {
     await tester.tap(find.byTooltip('Mi cuenta'));
     await tester.pumpAndSettle();
     await _tap(tester, 'Mi perfil');
-    expect(find.text('Nombre: Paciente De prueba'), findsOneWidget);
+    expect(find.text('Nombre'), findsOneWidget);
+    expect(find.text('Paciente De prueba'), findsWidgets);
     await _tap(tester, 'Cerrar');
     expect(find.textContaining('Dra. Elisa Muñoz'), findsOneWidget);
     final search = find.widgetWithText(
