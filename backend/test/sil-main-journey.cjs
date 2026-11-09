@@ -205,11 +205,12 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
     assert.equal(recorded.request().postDataJSON().values[0].numericValue,91.2);
     console.log('Microsoft Edge: el operador cotejó y guardó la sugerencia del PDF.');
     await click(button('Ver historial de la orden'),'Ver historial de la orden');
-    const history=page.getByRole('dialog');
-    await history.getByText('Resultados registrados',{exact:true}).waitFor();
-    await history.getByText(/uploader@example[.]invalid/).first().waitFor();
-    await history.getByRole('button',{name:'Cerrar historial'}).click();
-    await history.waitFor({state:'hidden'});
+    const closeHistory=button('Cerrar historial');
+    await closeHistory.waitFor();
+    await page.getByText('Resultados registrados',{exact:true}).waitFor();
+    await page.getByText(/uploader@example[.]invalid/).first().waitFor();
+    await closeHistory.click();
+    await closeHistory.waitFor({state:'hidden'});
     console.log('Microsoft Edge: el operador consultó el evento real de la orden.');
     await click(button('Órdenes'),'Órdenes');
     await select('sil-upload-order');
