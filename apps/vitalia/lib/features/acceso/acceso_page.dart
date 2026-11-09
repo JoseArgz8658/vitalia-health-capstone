@@ -245,6 +245,16 @@ class _AccesoPageState extends State<AccesoPage> {
                                     ),
                               child: const Text('Crear cuenta de paciente'),
                             ),
+                          if (!widget.adminMode && !widget.laboratoryMode && !_professionalMode)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 7),
+                              child: OutlinedButton.icon(
+                                onPressed: _busy ? null :
+                                  () => Navigator.of(context).pushNamed('/activar-portal'),
+                                icon: const Icon(Icons.verified_user_outlined),
+                                label: const Text('Tengo invitación · Activar mi acceso'),
+                              ),
+                            ),
                           if (!widget.adminMode && !widget.laboratoryMode)
                             TextButton.icon(
                               onPressed: _busy
