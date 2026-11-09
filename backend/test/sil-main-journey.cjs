@@ -104,13 +104,20 @@ async function signIn(page, account, route='') {
   // En escritorio el control de accesibilidad está fuera del área visible.
   await page.locator('flt-semantics-placeholder').evaluate(button=>button.click(),
     undefined,{timeout:30000});
-  await page.getByRole('textbox').first().click();
-  await page.keyboard.insertText(account+'@example.invalid');
+  const email=page.getByRole('textbox').first();
+  const box=await email.boundingBox({timeout:10000});
+  assert.ok(box,'Campo de correo visible');
+  await page.mouse.click(box.x+box.width/2,box.y+box.height/2);
+  const emailInput=page.locator('input:focus:not([type="password"])');
+  await emailInput.fill(account+'@example.invalid',{timeout:10000});
   await page.keyboard.press('Tab');
-  await page.keyboard.insertText(password);
+  const passwordInput=page.locator('input[type="password"]:focus');
+  await passwordInput.fill(password,{timeout:10000});
   const response=page.waitForResponse(r=>r.url().endsWith('/api/auth/login') && r.request().method()==='POST');
-  await page.getByRole('button',{name:'Iniciar sesión'}).click();
-  assert.equal((await response).status(),200,'Acceso desde Edge de '+account);
+  const [login]=await Promise.all([
+    response,page.getByRole('button',{name:'Iniciar sesión'}).click(),
+  ]);
+  assert.equal(login.status(),200,'Acceso desde Edge de '+account);
   console.log('Microsoft Edge: inició sesión '+account+'.');
 }
 
