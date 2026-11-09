@@ -6,7 +6,8 @@ param(
   [string]$BackupFile,
   [Parameter(Mandatory = $true)]
   [ValidatePattern('^[a-fA-F0-9]{64}$')]
-  [string]$ExpectedSha256
+  [string]$ExpectedSha256,
+  [switch]$IncludeMainFoundation
 )
 
 $ErrorActionPreference = 'Stop'
@@ -77,6 +78,52 @@ try {
     $migration = $matchesForNumber[0]
     Copy-LinuxText $migration.FullName (Join-Path $stagedMigrations $migration.Name)
   }
+  if ($IncludeMainFoundation) {
+    $sql38 = Join-Path $sqlDir '038_sil_main_postanalytical.sql'
+    if (-not (Test-Path -LiteralPath $sql38 -PathType Leaf)) {
+      throw 'Falta migracion 038 principal.'
+    }
+    $staged38 = Join-Path $stagedMigrations '038_sil_main_postanalytical.sql'
+    Copy-LinuxText $sql38 $staged38
+    $bytes38 = [System.IO.File]::ReadAllBytes($staged38)
+    $hash38 = [System.BitConverter]::ToString(
+      [System.Security.Cryptography.SHA256]::HashData($bytes38)
+    ).Replace('-','').ToLowerInvariant()
+    $sql38Content = [System.IO.File]::ReadAllText($staged38,$strictUtf8)
+    # La migración y su registro se ejecutan en una sola transacción.
+    $combined38 = $sql38Content + "`n" +
+      "INSERT INTO public.vitalia_schema_migrations(version,checksum) VALUES('038_sil_main_postanalytical','$hash38');`n" +
+      @'
+DO $
+BEGIN
+ IF (SELECT count(*) FROM public.vitalia_schema_migrations) <> 34
+   OR EXISTS(
+     SELECT FROM public.vitalia_schema_migrations
+     WHERE left(version,3) BETWEEN '033' AND '037'
+   )
+   OR NOT EXISTS (
+     SELECT FROM public.vitalia_schema_migrations
+     WHERE version='012_preliminary_assistant'
+   )
+   OR NOT EXISTS (
+     SELECT FROM public.vitalia_schema_migrations
+     WHERE version='012_profiles_locations'
+   )
+   OR to_regclass('public.vitalia_sil_main_laboratories') IS NULL
+   OR to_regclass('public.vitalia_sil_main_patients') IS NULL
+   OR to_regclass('public.vitalia_sil_main_staff') IS NULL
+   OR to_regclass('public.vitalia_sil_main_orders') IS NULL
+   OR to_regclass('public.vitalia_sil_main_reports') IS NULL
+   OR to_regclass('public.vitalia_sil_main_audit') IS NULL THEN
+   RAISE EXCEPTION 'SIL principal 038 no está completo en la copia aislada';
+ END IF;
+END $;
+'@
+    [System.IO.File]::WriteAllText(
+      (Join-Path $stagedMigrations '038_apply_ensayo.sql'),
+      $combined38, $strictUtf8
+    )
+  }
   Write-Host 'SHA256 comprobado. Iniciando PostgreSQL temporal sin red...'
   # La misma version que usa compose.yaml. No hay red ni puertos publicados.
   $id = & docker run --detach --pull=never --name $container --network none --env POSTGRES_USER=vitalia_restore --env POSTGRES_DB=vitalia_restored --env POSTGRES_HOST_AUTH_METHOD=trust --env PGUSER=vitalia_restore --env PGDATABASE=vitalia_restored --env PGHOST=/var/run/postgresql --env VITALIA_ISOLATED_REHEARSAL=YES postgres:16.15-bookworm
@@ -128,6 +175,12 @@ try {
   Write-Host 'Ensayando SQL 012-032 exclusivamente en la copia temporal...'
   & docker exec $container sh "$workdir/run.sh"
   Assert-Docker 'ejecucion y validacion del ensayo'
+  if ($IncludeMainFoundation) {
+    Write-Host 'Ensayando esquema SIL principal 038 sin tablas DEMO...'
+    & docker exec $container psql -X --username=$user --dbname=$db --set=ON_ERROR_STOP=1 --single-transaction --file="$workdir/migrations/038_apply_ensayo.sql"
+    Assert-Docker 'migracion 038 principal y validacion en copia aislada'
+    Write-Host 'SIL PRINCIPAL 038 ENSAYADO EN COPIA AISLADA'
+  }
   $approved = $true
 }
 finally {
@@ -148,5 +201,8 @@ if ($approved) {
   Write-Host 'MIGRACIONES SIL 012-032 ENSAYADAS CON EXITO' -ForegroundColor Green
   Write-Host 'Respaldo original: intacto.'
   Write-Host 'Bases existentes: sin cambios.'
-  Write-Host 'Migraciones DEMO 033-037: pendientes de redisenar.'
+  Write-Host 'Migraciones DEMO 033-037: no aplicadas.'
+  if ($IncludeMainFoundation) {
+    Write-Host 'SIL principal 038: esquema y ledger verificados.'
+  }
 }
