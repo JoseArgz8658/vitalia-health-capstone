@@ -49,9 +49,12 @@ class _AccesoPortalPacienteDemoState extends State<AccesoPortalPacienteDemo> {
       if(e.status==401){widget.onExpired();return;}
       setState((){_loading=false;_error=e.message;});
     }catch(_){
-      if(mounted&&current==_request)setState((){
-        _loading=false;_error='No se pudo consultar el acceso al portal.';
-      });
+      if (mounted && current == _request) {
+        setState(() {
+          _loading = false;
+          _error = 'No se pudo consultar el acceso al portal.';
+        });
+      }
     }
   }
 
@@ -184,9 +187,13 @@ class _AccesoPortalPacienteDemoState extends State<AccesoPortalPacienteDemo> {
       final response=await widget.api.silPortalRequest(
         '/portal/patients/${widget.patientId}/invitations',
         body:{'contactConfirmed':true,'identityChecked':true});
-      if(!mounted)return;
+      if (!mounted) return;
+      // La solicitud ya terminó: desactivar el indicador indeterminado
+      // ANTES de abrir el comprobante. El diálogo queda abierto hasta que
+      // el operador confirma su entrega, sin animación infinita detrás.
+      setState(() => _sending = false);
       await _showHandoff(response);
-      if(mounted)_load();
+      if (mounted) _load();
     }on AuthFailure catch(e){
       if(e.status==401){widget.onExpired();return;}
       if(mounted)setState(()=>_error=e.message);
