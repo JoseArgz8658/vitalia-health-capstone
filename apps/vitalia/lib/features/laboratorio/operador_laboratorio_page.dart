@@ -8,6 +8,7 @@ enum _OperatorSection {
   dashboard,
   orders,
   request,
+  reviewQueue,
   patient,
   manualOrder,
   samples,
@@ -42,6 +43,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     (_OperatorSection.dashboard, Icons.dashboard_outlined, 'Resumen'),
     (_OperatorSection.orders, Icons.assignment_outlined, 'Órdenes'),
     (_OperatorSection.request, Icons.note_add_outlined, 'Recibir solicitud'),
+    (_OperatorSection.reviewQueue, Icons.fact_check_outlined, 'Revisión'),
     (_OperatorSection.patient, Icons.badge_outlined, 'Pacientes DEMO'),
   ];
 
@@ -114,6 +116,10 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   }
 
   void _goTo(_OperatorSection section) {
+    if (section == _OperatorSection.reviewQueue) {
+      _openQueue('results_recorded');
+      return;
+    }
     if (_busy || section == _section) return;
     setState(() {
       _section = section;
@@ -127,7 +133,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     if (_busy) return;
     _searchController.clear();
     setState(() {
-      _section = _OperatorSection.orders;
+      _section = status == 'results_recorded'
+          ? _OperatorSection.reviewQueue
+          : _OperatorSection.orders;
       _filterStatus = status;
       _page = 0;
       _error = null;
@@ -838,7 +846,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       setState(() {
         _selected = null;
         _page = 0;
-        _section = _OperatorSection.orders;
+        _section = _OperatorSection.reviewQueue;
         _filterStatus = 'results_recorded';
         _searchController.clear();
         _message = approve
@@ -1270,11 +1278,19 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     );
   }
 
-  Widget _ordersView() => _panel(
-    'Buscar y gestionar órdenes',
-    'Busca por folio o correo del paciente y filtra por estado.',
+  Widget _ordersView() {
+    final reviewing = _section == _OperatorSection.reviewQueue;
+    return _panel(
+    reviewing ? 'Bandeja de revisión de resultados' : 'Buscar y gestionar órdenes',
+    reviewing
+        ? 'Órdenes pendientes de cotejo interno. La revisión no publica informes al paciente.'
+        : 'Busca por folio o correo del paciente y filtra por estado.',
     Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Wrap(spacing: 12, runSpacing: 8, children: [
+      if (reviewing) ...[
+        const Text('Selecciona «Revisar resultados» para cotejar los valores con el documento original y registrar una aprobación o devolución. La publicación es independiente.'),
+        const SizedBox(height: 12),
+      ],
+      if (!reviewing) Wrap(spacing: 12, runSpacing: 8, children: [
         FilledButton.icon(
           onPressed: _busy ? null : () => _goTo(_OperatorSection.request),
           icon: const Icon(Icons.upload_file_outlined),
@@ -1304,7 +1320,12 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             onSubmitted: (_) => _search(),
           ),
         ),
-        SizedBox(width: 290, child: DropdownButton<String>(
+        if (reviewing)
+          const Chip(
+            avatar: Icon(Icons.fact_check_outlined, size: 17),
+            label: Text('Pendientes de revisión'),
+          )
+        else SizedBox(width: 290, child: DropdownButton<String>(
           isExpanded: true,
           value: _filterStatus ?? '',
           items: const [
@@ -1331,9 +1352,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           label: const Text('Buscar'),
         ),
         TextButton.icon(
-          onPressed: _busy ? null : () => _openQueue(null),
+          onPressed: _busy ? null : () => _openQueue(reviewing ? 'results_recorded' : null),
           icon: const Icon(Icons.clear),
-          label: const Text('Limpiar filtros'),
+          label: Text(reviewing ? 'Limpiar búsqueda' : 'Limpiar filtros'),
         ),
       ]),
       const SizedBox(height: 12),
@@ -1369,8 +1390,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         ),
       ]),
     ]),
-    icon: Icons.assignment_outlined,
+    icon: reviewing ? Icons.fact_check_outlined : Icons.assignment_outlined,
   );
+  }
 
   Widget _medicalRequestView() => _panel(
     'Recepción de solicitud de exámenes',
@@ -2489,6 +2511,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   Widget _bodyForSection() => switch (_section) {
     _OperatorSection.dashboard => _dashboard(),
     _OperatorSection.orders => _ordersView(),
+    _OperatorSection.reviewQueue => _ordersView(),
     _OperatorSection.request => _medicalRequestView(),
     _OperatorSection.patient => _demoPatientView(),
     _OperatorSection.manualOrder => _newOrderView(),
@@ -2523,6 +2546,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     final title = switch (_section) {
       _OperatorSection.dashboard => 'Panel del laboratorio',
       _OperatorSection.manualOrder => 'Crear orden manual',
+      _OperatorSection.reviewQueue => 'Revisión de resultados',
       _OperatorSection.samples => 'Recepción de muestras',
       _OperatorSection.results => 'Resultados',
       _OperatorSection.report => 'Informe externo',
@@ -2531,6 +2555,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     final subtitle = switch (_section) {
       _OperatorSection.orders =>
         'Encuentra una orden y continúa desde su estado actual.',
+      _OperatorSection.reviewQueue =>
+        'Revisa las órdenes pendientes, registra tu decisión y conserva su trazabilidad.',
       _OperatorSection.request =>
         'Coteja la solicitud con la ficha del paciente y registra la orden.',
       _OperatorSection.patient =>
@@ -2612,106 +2638,66 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     );
   }
 
-  Widget _desktopNavigation(bool expanded) {
-    final toggle = IconButton(
-      tooltip: expanded ? 'Plegar menú' : 'Expandir menú',
-      color: Colors.white,
-      onPressed: () => setState(() => _railExpanded = !expanded),
-      icon: Icon(expanded ? Icons.menu_open : Icons.menu),
-    );
-    final reviewIcon = Badge.count(
-      count: _pendingReviews,
-      isLabelVisible: _pendingReviews > 0,
-      backgroundColor: const Color(0xFFB9EEEA),
-      textColor: _navy,
-      child: const Icon(Icons.fact_check_outlined),
-    );
-    return NavigationRailTheme(
-      data: const NavigationRailThemeData(
-        backgroundColor: _navy,
-        indicatorColor: Color(0xFF22546A),
-        selectedIconTheme: IconThemeData(color: Color(0xFFC5F5F0)),
-        unselectedIconTheme: IconThemeData(color: Color(0xFFC4D4E0)),
-        selectedLabelTextStyle:
-            TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-        unselectedLabelTextStyle: TextStyle(color: Color(0xFFDAE5EE)),
-      ),
-      child: NavigationRail(
-        extended: expanded,
-        scrollable: true,
-        minWidth: 72,
-        minExtendedWidth: 224,
-        selectedIndex: _navigationIndex,
-        labelType: NavigationRailLabelType.none,
-        useIndicator: true,
-        leading: expanded
-            ? SizedBox(
-                width: 202,
-                child: Row(children: [
-                  const Expanded(
-                      child: Padding(
-                    padding: EdgeInsets.only(left: 8),
-                    child: Text('ÁREA DE TRABAJO',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: Color(0xFFB9EEEA),
-                            fontSize: 11,
-                            letterSpacing: 1)),
-                  )),
-                  toggle,
-                ]))
-            : toggle,
-        onDestinationSelected: _busy ? null : (index) => _goTo(_nav[index].$1),
-        destinations: _nav
-            .map((item) => NavigationRailDestination(
-                  icon: expanded
-                      ? Icon(item.$2)
-                      : Tooltip(message: item.$3, child: Icon(item.$2)),
-                  label: Text(item.$3),
-                ))
-            .toList(),
-        trailing: _canReview
-            ? Padding(
-                padding: const EdgeInsets.only(top: 14),
-                child: expanded
-                    ? TextButton.icon(
-                        style: TextButton.styleFrom(
-                            foregroundColor: const Color(0xFFC5F5F0)),
-                        onPressed:
-                            _busy ? null : () => _openQueue('results_recorded'),
-                        icon: reviewIcon,
-                        label: const Text('Bandeja de revisión'),
+  /// Navegación horizontal: permite dedicar el ancho útil a las órdenes.
+  Widget _topNavigation({required bool compact}) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: Row(children: [
+      for (final (section, icon, label) in _nav)
+        Padding(
+          padding: const EdgeInsets.only(right: 3),
+          child: TextButton.icon(
+            onPressed: _busy
+                ? null
+                : () => section == _OperatorSection.orders
+                    ? _openQueue(null)
+                    : _goTo(section),
+            style: TextButton.styleFrom(
+              foregroundColor: section == _section ? _navy : const Color(0xFF415367),
+              backgroundColor: section == _section
+                  ? const Color(0xFFE5F5F3)
+                  : Colors.transparent,
+              padding: EdgeInsets.symmetric(horizontal: compact ? 9 : 12, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: compact
+                ? const SizedBox.shrink()
+                : section == _OperatorSection.reviewQueue
+                    ? Badge.count(
+                        count: _pendingReviews,
+                        isLabelVisible: _pendingReviews > 0,
+                        child: Icon(icon, size: 18),
                       )
-                    : IconButton(
-                        tooltip: 'Abrir bandeja por revisar',
-                        color: const Color(0xFFC5F5F0),
-                        onPressed:
-                            _busy ? null : () => _openQueue('results_recorded'),
-                        icon: reviewIcon,
-                      ),
-              )
-            : null,
-      ),
-    );
-  }
+                    : Icon(icon, size: 18),
+            label: Text(section == _OperatorSection.reviewQueue
+                ? 'Revisión ($_pendingReviews)'
+                : label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
+          ),
+        ),
+    ]),
+  );
 
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    final compactToolbar = width < 700;
+    final phoneNavigation = width < 900;
     return Scaffold(
       backgroundColor: _workspace,
       appBar: AppBar(
+        titleSpacing: 16,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        title: Row(mainAxisSize: MainAxisSize.min, children: [
+        title: Row(children: [
           Image.asset('assets/branding/vitalia-simbolo.png',
               width: 31, height: 31, excludeFromSemantics: true),
           const SizedBox(width: 8),
-          const Flexible(
-              child: Text('Vitalia Health',
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: _navy, fontWeight: FontWeight.w700))),
+          const Text('Vitalia Health',
+              style: TextStyle(color: _navy, fontWeight: FontWeight.w700)),
+          if (!phoneNavigation) ...[
+            const SizedBox(width: 18),
+            Expanded(child: _topNavigation(compact: width < 1250)),
+          ],
         ]),
         actions: [
           IconButton(
@@ -2719,13 +2705,13 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             onPressed: _busy || _loading ? null : () => _run(_refreshAll),
             icon: const Icon(Icons.refresh),
           ),
-          if (!compactToolbar)
+          if (width >= 1550)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 10),
               child: Center(child: Text('Operador de laboratorio')),
             ),
           if (widget.onLogout != null)
-            if (compactToolbar)
+            if (width < 1250)
               IconButton(
                 tooltip: 'Cerrar sesión',
                 onPressed: _busy ? null : widget.onLogout,
@@ -2739,30 +2725,33 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               ),
         ],
       ),
-      body: LayoutBuilder(builder: (context, constraints) {
-        if (constraints.maxWidth < 900) {
-          return _content();
-        }
-        return Row(children: [
-          _desktopNavigation(_railExpanded ?? constraints.maxWidth >= 1200),
-          Expanded(child: _content()),
-        ]);
-      }),
-      bottomNavigationBar: width < 900
+      body: _content(),
+      bottomNavigationBar: phoneNavigation
           ? NavigationBar(
               backgroundColor: Colors.white,
               indicatorColor: const Color(0xFFD6EEEC),
               labelBehavior:
                   NavigationDestinationLabelBehavior.onlyShowSelected,
               selectedIndex: _navigationIndex,
-              onDestinationSelected:
-                  _busy ? null : (index) => _goTo(_nav[index].$1),
-              destinations: _nav
-                  .map((item) => NavigationDestination(
-                        icon: Icon(item.$2),
-                        label: item.$3,
-                      ))
-                  .toList(),
+              onDestinationSelected: _busy
+                  ? null
+                  : (index) {
+                      final section = _nav[index].$1;
+                      section == _OperatorSection.orders
+                          ? _openQueue(null)
+                          : _goTo(section);
+                    },
+              destinations: _nav.map((item) {
+                final icon = item.$1 == _OperatorSection.reviewQueue
+                    ? Badge.count(
+                        count: _pendingReviews,
+                        isLabelVisible: _pendingReviews > 0,
+                        child: Icon(item.$2),
+                      )
+                    : Icon(item.$2);
+                return NavigationDestination(
+                    icon: icon, label: item.$3);
+              }).toList(),
             )
           : null,
     );
