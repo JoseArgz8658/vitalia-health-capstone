@@ -27,8 +27,22 @@ jobs:
       - run: npm test
 
   flutter:
-    name: Flutter - pruebas y compilacion web
+    name: Flutter y recorrido web del SIL principal
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.15-bookworm
+        env:
+          POSTGRES_USER: vitalia_restore
+          POSTGRES_DB: vitalia_restored
+          POSTGRES_PASSWORD: isolated-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vitalia_restore -d vitalia_restored"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
     defaults:
       run:
         working-directory: apps/vitalia
@@ -41,4 +55,31 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze lib/app/vitalia_mvp_app.dart lib/core/auth_api.dart
       - run: flutter test
-      - run: flutter build web --dart-define=VITALIA_SIL_MAIN_MODE=true
+      - run: >-
+          flutter build web --no-web-resources-cdn
+          --dart-define=VITALIA_SIL_MAIN_MODE=true
+          --dart-define=VITALIA_API_URL=http://127.0.0.1:3119
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci && npm run build
+        working-directory: backend
+      - name: Preparar Chromium
+        working-directory: backend
+        run: |
+          npm install --prefix "$RUNNER_TEMP/vitalia-browser" --no-save playwright@1.58.2
+          "$RUNNER_TEMP/vitalia-browser/node_modules/.bin/playwright" install chromium
+      - name: Probar API, sesiones y descarga desde Chromium
+        working-directory: backend
+        env:
+          VITALIA_ISOLATED_REHEARSAL: 'YES'
+          PGHOST: 127.0.0.1
+          PGUSER: vitalia_restore
+          PGDATABASE: vitalia_restored
+          PGPASSWORD: isolated-ci-only
+        run: |
+          export VITALIA_JOURNEY_PLAYWRIGHT="$RUNNER_TEMP/vitalia-browser/node_modules/playwright"
+          export VITALIA_JOURNEY_WEB="$GITHUB_WORKSPACE/apps/vitalia/build/web"
+          node test/sil-main-journey.cjs

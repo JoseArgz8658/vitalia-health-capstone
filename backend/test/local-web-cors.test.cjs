@@ -91,3 +91,29 @@ describe('origen local de Flutter', () => {
     expect((await request(createApp()).get('/api/health')).status).toBe(200);
   });
 });
+
+test('SIL principal admite las cabeceras PDF solo en el POST local de carga', async () => {
+  const previous = process.env.VITALIA_SIL_MAIN_MODE;
+  const id = '11111111-1111-4111-8111-111111111111';
+  const base = '/api/sil/main/labs/'+id+'/orders/'+id;
+  const preflight = (path, headers, origin='http://localhost:5173', method='POST') =>
+    request(createApp()).options(path).set('Origin',origin)
+      .set('Access-Control-Request-Method',method)
+      .set('Access-Control-Request-Headers',headers);
+  const report = 'authorization,content-type,x-report-filename,x-report-authorized-professional,x-report-authorization-ref,x-report-authorized-at,x-report-patient-confirmed';
+  const medical = 'authorization,content-type,x-request-filename,x-request-prescriber,x-request-reference,x-request-date,x-request-identity-confirmed,x-request-reviewed';
+  try {
+    process.env.VITALIA_SIL_MAIN_MODE='YES';
+    expect((await preflight(base+'/report',report)).status).toBe(204);
+    expect((await preflight(base+'/medical-request',medical)).status).toBe(204);
+    expect((await preflight(base+'/report',medical)).status).toBe(403);
+    expect((await preflight(base+'/report/file',report)).status).toBe(403);
+    expect((await preflight(base+'/report',report,'http://localhost:5173','GET')).status).toBe(403);
+    expect((await preflight(base+'/report',report,'https://other.example.invalid')).status).toBe(403);
+    delete process.env.VITALIA_SIL_MAIN_MODE;
+    expect((await preflight(base+'/report',report)).status).toBe(403);
+  } finally {
+    if(previous===undefined)delete process.env.VITALIA_SIL_MAIN_MODE;
+    else process.env.VITALIA_SIL_MAIN_MODE=previous;
+  }
+});
