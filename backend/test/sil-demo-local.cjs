@@ -23,6 +23,9 @@ async function main(){
      !process.env.PGPASSWORD) {
     throw new Error('Solo se permite la base Docker aislada vitalia_dev.');
   }
+  // Buzón de simulación: sólo este ejecutable y la base aislada lo habilitan.
+  // Nunca publicar este servidor fuera del loopback de la máquina de pruebas.
+  process.env.VITALIA_SIL_DEV_MAILBOX='YES';
   const operatorPassword=process.env.VITALIA_SIL_OPERATOR_PASSWORD;
   const adminPassword=process.env.VITALIA_SIL_ADMIN_PASSWORD;
   const patientPassword=process.env.VITALIA_SIL_PATIENT_PASSWORD;
