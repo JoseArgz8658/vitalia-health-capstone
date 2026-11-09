@@ -103,7 +103,6 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   bool _loading = true;
   bool _ordersLoading = false;
   bool _canReview = false;
-  bool? _railExpanded;
   int _page = 0;
   int _total = 0;
   _OperatorSection _section = _OperatorSection.dashboard;
@@ -1290,7 +1289,10 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         const Text('Selecciona «Revisar resultados» para cotejar los valores con el documento original y registrar una aprobación o devolución. La publicación es independiente.'),
         const SizedBox(height: 12),
       ],
-      if (!reviewing) Wrap(spacing: 12, runSpacing: 8, children: [
+      if (!reviewing) ...[
+      const Text('Accesos: recibe una solicitud médica PDF para vincularla con una orden o crea una orden manual para un paciente registrado.'),
+      const SizedBox(height: 10),
+      Wrap(spacing: 12, runSpacing: 8, children: [
         FilledButton.icon(
           onPressed: _busy ? null : () => _goTo(_OperatorSection.request),
           icon: const Icon(Icons.upload_file_outlined),
@@ -1302,6 +1304,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           label: const Text('Crear orden manual'),
         ),
       ]),
+      ],
       const SizedBox(height: 16),
       Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
         SizedBox(
@@ -1361,7 +1364,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       if (_ordersLoading)
         const LinearProgressIndicator(semanticsLabel: 'Actualizando órdenes')
       else ...[
-        Text('$_total órdenes encontradas'),
+        Text(reviewing
+            ? '$_total órdenes pendientes de revisión'
+            : '$_total órdenes encontradas'),
         const SizedBox(height: 10),
         _orderList(),
       ],
@@ -1396,9 +1401,46 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
 
   Widget _medicalRequestView() => _panel(
     'Recepción de solicitud de exámenes',
-    'Vincula una solicitud médica ficticia a una orden interna. '
-    'Los datos del paciente deben constar en una ficha previamente registrada.',
+    'Vincula un documento médico ficticio con un paciente registrado, sin crear la orden hasta comprobar su identidad.',
     Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+      LayoutBuilder(builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 720;
+        final step = _requestPreview == null ? 0
+            : _requestPreview!['previewToken'] == null ? 1 : 2;
+        final steps = <(IconData, String, String)>[
+          (Icons.person_search_outlined, 'Identificar', 'Buscar la cuenta y cargar el PDF'),
+          (Icons.verified_user_outlined, 'Cotejar identidad', 'Comparar ficha y solicitud original'),
+          (Icons.fact_check_outlined, 'Completar orden', 'Verificar prestaciones y confirmar'),
+        ];
+        return Wrap(spacing: 10, runSpacing: 10, children: [
+          for (var i=0; i<steps.length; i++)
+            SizedBox(
+              width: wide ? (constraints.maxWidth-20)/3 : constraints.maxWidth,
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: i==step ? const Color(0xFFE5F5F3) : _workspace,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: i==step ? _teal : _line),
+                ),
+                child: Row(children: [
+                  Icon(steps[i].$1, color: i==step ? _teal : _navy),
+                  const SizedBox(width: 9),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${i+1}. ${steps[i].$2}',
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                      Text(steps[i].$3,
+                        style: Theme.of(context).textTheme.bodySmall),
+                    ],
+                  )),
+                ]),
+              ),
+            ),
+        ]);
+      }),
+      const SizedBox(height: 20),
       Text('1. Identificar paciente y cargar solicitud',
         style:Theme.of(context).textTheme.titleMedium),
       const SizedBox(height:8),
@@ -1425,10 +1467,10 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         ),
       ]),
       const SizedBox(height:10),
-      const Text('El sistema detecta prestaciones del catálogo por texto '
-        'y coteja identificador DEMO, nombres y fecha de nacimiento. '
-        'No verifica firmas ni habilitación profesional. '
-        'Un PDF escaneado sin texto deberá procesarse con OCR en una versión posterior.'),
+      const Text('Formato admitido: PDF ficticio con texto seleccionable, máximo 2 MiB. '
+        'Se cotejan identificador DEMO, nombres, apellidos y fecha de nacimiento. '
+        'La detección de prestaciones es preliminar: el operador debe revisar el original. '
+        'No se validan firmas ni habilitación profesional. Los PDF escaneados sin texto no están soportados.'),
       if(_requestPreview!=null)...[
         const Divider(height:28),
         Text('2. Comprobación de identidad',
@@ -2401,9 +2443,12 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
 
   Widget _demoPatientView() => _panel(
     'Ficha de identificación (solo datos ficticios)',
-    'Los datos de esta pantalla solo sirven para probar la correspondencia '
-    'del PDF con la cuenta del paciente. No ingreses RUT ni teléfonos reales.',
+    'Consulta y completa el perfil utilizado para cotejar la solicitud médica. No ingreses RUT, teléfonos ni datos personales reales.',
     Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const Text('Paso 1 · Busca una cuenta de prueba existente. '
+          'Paso 2 · Comprueba o completa sus datos ficticios. '
+          'Paso 3 · Guarda la ficha para utilizarla al recibir una solicitud.'),
+      const SizedBox(height: 16),
       TextField(
         controller: _patientController,
         enabled: !_busy,
@@ -2424,6 +2469,19 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       ),
       if (_patientDemoLoaded != null) ...[
         const SizedBox(height: 18),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE5F5F3),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Row(children: [
+            Icon(Icons.verified_user_outlined, color: _teal),
+            SizedBox(width: 10),
+            Expanded(child: Text('Ficha encontrada. Revisa los campos antes de guardar; esta ficha sirve para el cotejo de identidad DEMO.')),
+          ]),
+        ),
+        const SizedBox(height: 14),
         Text('Cuenta: ${_patientDemoLoaded!['email']}',
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 12),
@@ -2641,6 +2699,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   /// Navegación horizontal: permite dedicar el ancho útil a las órdenes.
   Widget _topNavigation({required bool compact}) => SingleChildScrollView(
     scrollDirection: Axis.horizontal,
+    primary: false,
     child: Row(children: [
       for (final (section, icon, label) in _nav)
         Padding(
