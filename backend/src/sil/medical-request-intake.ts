@@ -3,11 +3,25 @@ import {type Pool} from 'pg';
 import {readPdfText,type PdfReadResult} from '../pdf/reader';
 import {identifyDocument} from '../documents/file-validation';
 import {SilConflictError,SilNotFoundError} from './service';
+import {readSilDemoIdentifiers} from './identifiers';
 
+function suggestRequestReference(text: string): string | null {
+  const labelledReference = /(?:^|\|)[ \t]*(?:n[uú]mero de (?:la )?solicitud|referencia(?: de (?:la )?solicitud)?)(?:[ \t]*:[ \t]*|[ \t]+)([A-Z0-9](?:[A-Z0-9._/-]{1,98})[A-Z0-9])\.?[ \t]*(?=$|\|)/gim;
+  const references = [...new Set([...text.matchAll(labelledReference)]
+    .map((match) => match[1]).filter((reference) => /\d/.test(reference)))];
+  return references.length === 1 ? references[0] : null;
+}
+
+type IntakeIdentity={
+  identifier:string;
+  givenNames:string;
+  familyNames:string;
+  birthDate:string;
+};
 type IntakeReceipt={
   actorId:string;
   patientId:string;
-  patientIdentifier:string;
+  identity:IntakeIdentity;
   bytes:Buffer;
   fileName:string;
   sha256:string;
@@ -96,8 +110,7 @@ export function createSilMedicalRequestIntake(
     const source=reading.text??'';
     const normalized=normalize(source);
     // Requiere identificación comprobable en el documento original.
-    const documentIds=[...new Set((source.match(/(?<![A-Z0-9-])DEMO-[A-Z0-9-]{3,16}(?![A-Z0-9-])/gi)??[])
-      .map(id=>id.toUpperCase()))];
+    const documentIds=readSilDemoIdentifiers(source);
     const identifierMatches=documentIds.length===1&&
       documentIds[0]===person.identifier;
     const givenNamesMatch=matchesName(normalized,person.givenNames);
@@ -132,7 +145,10 @@ export function createSilMedicalRequestIntake(
       prune();
       previewToken=randomUUID();
       receipts.set(previewToken,{
-        actorId,patientId:person.id,patientIdentifier:person.identifier,
+        actorId,patientId:person.id,identity:{
+          identifier:person.identifier,givenNames:person.givenNames,
+          familyNames:person.familyNames,birthDate:person.birthDate,
+        },
         bytes:Buffer.from(bytes),fileName,sha256:createHash('sha256').update(bytes).digest('hex'),
         expiresAt:Date.now()+10*60_000,
       });
@@ -143,7 +159,9 @@ export function createSilMedicalRequestIntake(
         givenNames:person.givenNames,familyNames:person.familyNames,
         birthDate:person.birthDate},
       identity:{identifierMatches,givenNamesMatch,familyNamesMatch,birthDateMatches},
-      suggestedExams:selected,warnings,previewToken,confirmed:false as const,
+      suggestedExams:selected,
+      suggestedDocumentReference:verified?suggestRequestReference(source):null,
+      warnings,previewToken,confirmed:false as const,
       extractionMethod:'text_catalog_match' as const,
       // No devolver el contenido clínico del PDF al cliente.
     };
@@ -167,13 +185,19 @@ export function createSilMedicalRequestIntake(
     let failed=false;
     try{
       await client.query('BEGIN');
-      const verified=await client.query<{identifier:string}>(
-        `SELECT p.synthetic_identifier AS identifier
+      const verified=await client.query<IntakeIdentity>(
+        `SELECT p.synthetic_identifier AS identifier,
+           p.given_names AS "givenNames",p.family_names AS "familyNames",
+           p.birth_date::text AS "birthDate"
          FROM public.vitalia_sil_patient_profiles_demo p
          JOIN public.vitalia_accounts a ON a.id=p.patient_id
          WHERE p.patient_id=$1 AND a.role_code='paciente'
          FOR UPDATE OF p`,[receipt.patientId]);
-      if(verified.rows[0]?.identifier!==receipt.patientIdentifier)
+      const identity=verified.rows[0];
+      if(!identity||identity.identifier!==receipt.identity.identifier||
+         identity.givenNames!==receipt.identity.givenNames||
+         identity.familyNames!==receipt.identity.familyNames||
+         identity.birthDate!==receipt.identity.birthDate)
         throw new SilConflictError();
       const branch=await client.query(
         'SELECT 1 FROM public.vitalia_sil_branches WHERE code=$1 AND active=true',

@@ -25,7 +25,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
   final _patient = TextEditingController();
   final _barcode = TextEditingController();
   final _orderLookup = TextEditingController();
-  final _recentOrders = <String>[];
+  final _recentOrders = <String, String>{};
   List<Map<String, dynamic>> _catalog = [];
   List<Map<String, dynamic>> _orders = [];
   final Set<String> _selectedExams = {'hemograma'};
@@ -115,15 +115,32 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
   Future<void> _load(String id) async {
     final result = await widget.api.silRequest('/orders/$id');
     if (!mounted) return;
+    final folio = (result['order'] as Map)['orderNumber'] as String;
     setState(() {
       _data = result;
       _orderId = id;
-      _orderLookup.text = id;
+      _orderLookup.text = folio;
+      _barcode.clear();
       _recentOrders.remove(id);
-      _recentOrders.insert(0, id);
-      if (_recentOrders.length > 5) _recentOrders.removeLast();
+      _recentOrders[id] = folio;
+      if (_recentOrders.length > 5) _recentOrders.remove(_recentOrders.keys.first);
     });
   }
+
+  Future<void> _lookupByFolio() => _run(() async {
+    final folio = _orderLookup.text.trim().toUpperCase();
+    if (!RegExp(r'^VH-\d{6}$').hasMatch(folio)) {
+      throw const AuthFailure('Ingresa un folio de orden como VH-000013.');
+    }
+    final response = await widget.api.silRequest('/orders?search=$folio');
+    for (final order in (response['orders'] as List? ?? [])) {
+      if ((order as Map)['orderNumber'] == folio) {
+        await _load(order['id'] as String);
+        return;
+      }
+    }
+    throw const AuthFailure('No se encontró una orden con ese folio.');
+  });
 
   Map<String, dynamic>? get _order {
     final value = _data?['order'];
@@ -131,6 +148,15 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
   }
 
   String get _status => (_order?['status'] as String?) ?? '';
+
+  Map? get _nextTube {
+    final received = (_data?['samples'] as List? ?? [])
+        .map((sample) => (sample as Map)['containerCode']).toSet();
+    for (final tube in (_data?['requiredContainers'] as List? ?? []).cast<Map>()) {
+      if (!received.contains(tube['code'])) return tube;
+    }
+    return null;
+  }
 
   String get _statusLabel => switch (_status) {
     'registered' => 'Orden registrada',
@@ -172,12 +198,16 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
 
   Future<void> _registerSample() => _run(() async {
     final barcode = _barcode.text.trim().toUpperCase();
-    if (!RegExp(r'^[A-Z0-9-]{3,40}$').hasMatch(barcode)) {
+    if (barcode.isNotEmpty && !RegExp(r'^[A-Z0-9-]{3,40}$').hasMatch(barcode)) {
       throw const AuthFailure('Usa entre 3 y 40 caracteres: letras, números o guiones.');
     }
+    final tube = _nextTube;
+    if (tube == null) throw const AuthFailure('No hay tubos pendientes.');
     await widget.api.silRequest('/orders/$_orderId/sample', body: {
-      'barcode': barcode,
+      'containerCode': tube['code'],
+      if (barcode.isNotEmpty) 'barcode': barcode,
     });
+    if (!mounted) return;
     await _load(_orderId!);
     await _refreshOverview();
     if (mounted) setState(() => _message = 'Muestra registrada correctamente.');
@@ -415,7 +445,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                     );
                     final lookupPanel = _panel(
                       'Consultar orden',
-                      'Busca por identificador o usa una orden reciente.',
+                      'Busca por folio o usa una orden reciente.',
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -423,30 +453,28 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                             controller: _orderLookup,
                             enabled: !_busy,
                             decoration: const InputDecoration(
-                              labelText: 'Identificador de orden (UUID)',
+                              labelText: 'Folio de orden',
+                              hintText: 'VH-000013',
                               border: OutlineInputBorder(),
                             ),
                           ),
                           const SizedBox(height: 12),
                           OutlinedButton.icon(
-                            onPressed: _busy
-                                ? null
-                                : () => _run(
-                                    () => _load(_orderLookup.text.trim())),
+                            onPressed: _busy ? null : _lookupByFolio,
                             icon: const Icon(Icons.search),
                             label: const Text('Consultar orden'),
                           ),
                           if (_recentOrders.isNotEmpty) ...[
                             const SizedBox(height: 14),
                             const Text('Consultadas en esta sesión'),
-                            ..._recentOrders.map((id) => ListTile(
+                            ..._recentOrders.entries.toList().reversed.map((entry) => ListTile(
                               dense: true,
                               contentPadding: EdgeInsets.zero,
-                              title: Text(id, maxLines: 1,
+                              title: Text(entry.value, maxLines: 1,
                                   overflow: TextOverflow.ellipsis),
                               leading: const Icon(Icons.history),
                               trailing: const Icon(Icons.chevron_right),
-                              onTap: _busy ? null : () => _run(() => _load(id)),
+                              onTap: _busy ? null : () => _run(() => _load(entry.key)),
                             )),
                           ],
                         ],
@@ -493,7 +521,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                                 .join(', ');
                             return ListTile(
                               contentPadding: EdgeInsets.zero,
-                              title: Text(item['patientEmail'] as String? ?? 'Paciente'),
+                              title: Text('${item['orderNumber']} · ${item['patientEmail'] ?? 'Paciente'}'),
                               subtitle: Text('${_labelForStatus(item['status'] as String? ?? '')} · ${codes}'),
                               trailing: const Icon(Icons.chevron_right),
                               onTap: _busy ? null : () => _run(() => _load(id)),
@@ -511,7 +539,7 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          SelectableText('Orden: $_orderId'),
+                          SelectableText('Orden: ${current?['orderNumber']}'),
                           const SizedBox(height: 6),
                           Text('Exámenes: ${(_data?['exams'] as List? ?? []).map((item) => (item as Map)['name']).join(', ')}'),
                           if (current?['createdAt'] != null)
@@ -524,26 +552,28 @@ class _LaboratorioSimuladoPageState extends State<LaboratorioSimuladoPage> {
                           const SizedBox(height: 10),
                           OutlinedButton.icon(
                             onPressed: () {
-                              Clipboard.setData(ClipboardData(text: _orderId!));
+                              Clipboard.setData(ClipboardData(text: current!['orderNumber'] as String));
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Identificador copiado')),
+                                const SnackBar(content: Text('Folio copiado')),
                               );
                             },
                             icon: const Icon(Icons.copy_outlined),
-                            label: const Text('Copiar identificador'),
+                            label: const Text('Copiar folio'),
                           ),
-                          if (_status == 'registered') ...[
+                          if (_status == 'registered' && _nextTube != null) ...[
                             const Divider(height: 32),
                             Text('Recepción de muestra',
                                 style: theme.textTheme.titleLarge),
+                            Text('Tubo a registrar: ${_nextTube!['label']}'),
                             const SizedBox(height: 10),
                             TextField(
                               controller: _barcode,
                               enabled: !_busy,
                               textCapitalization: TextCapitalization.characters,
                               decoration: const InputDecoration(
-                                labelText: 'Código de muestra',
-                                hintText: 'HEM-0001',
+                                labelText: 'Código de etiqueta existente (opcional)',
+                                helperText: 'Vitalia asigna un código si lo dejas vacío.',
+                                helperMaxLines: 2,
                                 border: OutlineInputBorder(),
                               ),
                             ),

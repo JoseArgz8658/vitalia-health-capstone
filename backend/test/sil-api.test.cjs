@@ -55,6 +55,13 @@ test('registrar muestra requiere código válido',async()=>{
  expect((await request(app()).post('/api/sil/orders/'+id+'/sample').set(bearer)
   .send({barcode:'abc/def',containerCode:'edta'})).status).toBe(400);
 });
+test('operador registra un tubo sin escribir un código interno',async()=>{
+ const res=await request(app()).post('/api/sil/orders/'+id+'/sample').set(bearer)
+  .send({containerCode:'edta'});
+ expect(res.status).toBe(201);
+ expect(service.registerSample).toHaveBeenCalledWith(
+  id,undefined,'edta','11111111-1111-4111-8111-111111111111',undefined);
+});
 test('registro manual de resultados de prueba válido',async()=>{
  const results=[{examCode:'hemograma',analyte:'Hemoglobina',numericValue:13.2}];
  const res=await request(app()).post('/api/sil/orders/'+id+'/results').set(bearer).send({results});

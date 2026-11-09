@@ -296,6 +296,9 @@ describe('SIL: permisos y catálogo multiprestación', () => {
     await authorized(request(operator.app)
       .post('/api/sil/patients/profile')).send(demo).expect(200);
     expect(operator.service.savePatientProfileDemo).toHaveBeenCalled();
+    const {syntheticIdentifier,...withoutId}=demo;
+    await authorized(request(operator.app)
+      .post('/api/sil/patients/profile')).send(withoutId).expect(200);
     await authorized(request(operator.app)
       .post('/api/sil/patients/profile'))
       .send({...demo,email:'persona@gmail.com'}).expect(400);

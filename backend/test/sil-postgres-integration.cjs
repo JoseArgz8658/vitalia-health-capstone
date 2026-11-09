@@ -70,9 +70,9 @@ async function main() {
     await assert.rejects(
       sil.recordManualResults(orderId,[{examCode:'hemograma',
         analyte:'Hemoglobina',numericValue:13.2}],actorId),SilConflictError);
-    const sample=await sil.registerSample(
-      orderId,'TEST-'+randomUUID().slice(0,30),'edta',actorId);
+    const sample=await sil.registerSample(orderId,undefined,'edta',actorId);
     assert.equal(sample.orderId,orderId);
+    assert.equal(sample.barcode,'LAB-'+sample.id.toUpperCase());
     assert.equal(sample.status,'sampled');
     await assert.rejects(sil.registerSample(
       orderId,'TEST-'+randomUUID().slice(0,30),'edta',actorId),SilConflictError);
@@ -187,14 +187,20 @@ async function main() {
     const fakePdf=Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\n%%EOF\n');
     const branches=await sil.branches();
     assert.equal(branches.branches.length,3);
-    const syntheticIdentifier='DEMO-'+randomUUID().slice(0,12).replaceAll('-','').toUpperCase();
     const patientEmail='sil-ci-'+patientId+'@example.invalid';
-    const patientDemo=await sil.savePatientProfileDemo(patientEmail,{
-      syntheticIdentifier,givenNames:'Paciente Ficticio',familyNames:'Prueba',
+    const profile={
+      givenNames:'Paciente Ficticio',familyNames:'Prueba',
       birthDate:'1990-01-01',sexForReference:'not_specified',
       contactPhoneDemo:'000000000'
+    };
+    const patientDemo=await sil.savePatientProfileDemo(patientEmail,profile);
+    const syntheticIdentifier=patientDemo.patient.syntheticIdentifier;
+    assert.match(syntheticIdentifier,/^DEMO-[0-9A-F]{16}$/);
+    const editedProfile=await sil.savePatientProfileDemo(patientEmail,{
+      ...profile,syntheticIdentifier:'DEMO-CAMBIADO',contactPhoneDemo:'000000001'
     });
-    assert.equal(patientDemo.patient.syntheticIdentifier,syntheticIdentifier);
+    assert.equal(editedProfile.patient.syntheticIdentifier,syntheticIdentifier);
+    assert.equal(editedProfile.patient.contactPhoneDemo,'000000001');
     const pdfInput={
       fileName:'informe-demo.pdf',
       branchCode:'perez-vitacura',

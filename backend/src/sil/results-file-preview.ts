@@ -3,6 +3,7 @@ import {readPdfText,type PdfReadResult} from '../pdf/reader';
 import {createLocalExtractor,type LocalExtractionResult} from '../ai/local-extractor';
 import {identifyDocument} from '../documents/file-validation';
 import {SilConflictError,SilNotFoundError} from './service';
+import {readSilDemoIdentifiers} from './identifiers';
 
 type PreviewState='ready'|'needs_manual'|'needs_ocr'|'analysis_unavailable'|'identity_mismatch';
 type PreviewItem={
@@ -65,7 +66,7 @@ export function createSilResultsFilePreview(db:Pick<Pool,'query'>,options:{
     const identifier=found.rows[0].identifier;
     // El entorno de demo no acepta exámenes reales ni atribuye un documento
     // a una cuenta solo por el correo ingresado.
-    const demoIds=[...new Set(text.match(/\bDEMO-[0-9]{3,12}\b/gi)??[])];
+    const demoIds=readSilDemoIdentifiers(text);
     if(!identifier||!demoIds.includes(identifier)||demoIds.some(id=>id!==identifier)){
       return base('identity_mismatch',[
         'El identificador ficticio del PDF no corresponde a la ficha del paciente. No se utilizó la IA.',

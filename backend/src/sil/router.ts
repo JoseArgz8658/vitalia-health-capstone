@@ -5,6 +5,7 @@ import {type AuthServices} from '../auth/router';
 import {isSessionToken} from '../auth/sessions';
 import {SilConflictError,SilNotFoundError,type SilServices} from './service';
 import {SilEducationNotFound,SilEducationBusy,SilEducationUnavailable} from './patient-education';
+import {silDemoIdentifier} from './identifiers';
 
 const uuid = z.uuid();
 const resultSchema = z.object({
@@ -157,7 +158,7 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     }
     const parsed=z.object({
       email:z.email().max(254).refine(v=>v.endsWith('@example.invalid')),
-      syntheticIdentifier:z.string().regex(/^DEMO-[A-Z0-9-]{3,16}$/),
+      syntheticIdentifier:z.string().regex(silDemoIdentifier).optional(),
       givenNames:z.string().trim().min(2).max(100),
       familyNames:z.string().trim().min(2).max(100),
       birthDate:z.iso.date().refine(v=>v>='1900-01-01' &&
@@ -214,7 +215,7 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
   });
   router.post('/orders/:id/sample',async(req,res)=>{
     const data=z.object({
-      barcode:z.string().trim().regex(/^[A-Z0-9-]{3,40}$/),
+      barcode:z.string().trim().regex(/^[A-Z0-9-]{3,40}$/).optional(),
       containerCode:z.enum(['edta','serum','fluoride']),
       receiptNote:z.string().trim().max(300).optional(),
     }).strict().safeParse(req.body);
@@ -306,7 +307,7 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
           !Array.from(name).some(ch=>ch.charCodeAt(0)<32)),
       branchCode:z.string().regex(/^[a-z0-9-]{3,50}$/),
       authorizedProfessionalName:z.string().trim().min(3).max(120),
-      patientIdentifierFromPdf:z.string().regex(/^DEMO-[A-Z0-9-]{3,16}$/),
+      patientIdentifierFromPdf:z.string().regex(silDemoIdentifier),
       authorizationReference:z.string().trim().min(3).max(120),
       externallyAuthorizedAt:z.string().min(10).max(40),
       patientMatchConfirmed:z.literal(true),

@@ -57,7 +57,6 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   final _receiptNoteController = TextEditingController();
   final _reportProfessional = TextEditingController();
   final _reportPatientIdentifier = TextEditingController();
-  final _patientDemoId = TextEditingController();
   final _patientDemoGiven = TextEditingController();
   final _patientDemoFamily = TextEditingController();
   final _patientDemoBirth = TextEditingController();
@@ -145,7 +144,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     _reportProfessional.dispose();
     _reportPatientIdentifier.dispose();
     for (final controller in [
-      _patientDemoId, _patientDemoGiven, _patientDemoFamily,
+      _patientDemoGiven, _patientDemoFamily,
       _patientDemoBirth, _patientDemoPhone,
     ]) { controller.dispose(); }
     _reportReference.dispose();
@@ -344,6 +343,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       ]);
       if(file==null||!mounted)return;
       final length=await file.length();
+      if(!mounted)return;
       if(length<8||length>2*1024*1024){
         setState(()=>_error='La solicitud debe ser un PDF ficticio de hasta 2 MiB.');
         return;
@@ -353,6 +353,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         _requestPreview=null;
         _requestHumanConfirmed=false;
         _requestExamCodes.clear();
+        _requestDocumentReference.clear();
+        _requestPrescriberName.clear();
+        _requestDate=null;
         _error=null;
       });
     }catch(_){
@@ -382,6 +385,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     final suggestions=(preview['suggestedExams'] as List? ?? []);
     setState((){
       _requestPreview=preview;
+      if (_requestDocumentReference.text.trim().isEmpty) {
+        _requestDocumentReference.text=preview['suggestedDocumentReference'] as String? ?? '';
+      }
       _requestExamCodes..clear()..addAll(suggestions.map(
         (item)=>(item as Map)['code'] as String));
       _requestHumanConfirmed=false;
@@ -470,7 +476,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     final order = _selected?['order'] as Map?;
     if (order == null) throw const AuthFailure('Selecciona una orden.');
     final barcode = _barcodeController.text.trim().toUpperCase();
-    if (!RegExp(r'^[A-Z0-9-]{3,40}$').hasMatch(barcode)) {
+    if (barcode.isNotEmpty && !RegExp(r'^[A-Z0-9-]{3,40}$').hasMatch(barcode)) {
       throw const AuthFailure('Código de muestra inválido: usa letras, números o guiones.');
     }
     final container = _containerCode;
@@ -478,15 +484,18 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       throw const AuthFailure('No hay tubos pendientes de recepción.');
     }
     final id = order['id'] as String;
-    await widget.api.silRequest('/orders/$id/sample', body: {
-      'barcode': barcode,
+    final response = await widget.api.silRequest('/orders/$id/sample', body: {
+      if (barcode.isNotEmpty) 'barcode': barcode,
       'containerCode': container,
       if (_receiptNoteController.text.trim().isNotEmpty)
         'receiptNote': _receiptNoteController.text.trim(),
     });
     await _openOrder(id);
     await _refreshAll();
-    if (mounted) setState(() => _message = 'Recepción de muestra registrada.');
+    final code = (response['sample'] as Map?)?['barcode'] as String? ?? barcode;
+    if (mounted) setState(() => _message = code.isEmpty
+        ? 'Recepción de muestra registrada.'
+        : 'Recepción de muestra registrada. Código $code.');
   });
 
   Future<void> _selectReportPdf() async {
@@ -605,7 +614,6 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     if (!mounted) return;
     setState(() {
       _patientDemoLoaded = patient;
-      _patientDemoId.text = patient['syntheticIdentifier'] as String? ?? '';
       _patientDemoGiven.text = patient['givenNames'] as String? ?? '';
       _patientDemoFamily.text = patient['familyNames'] as String? ?? '';
       _patientDemoBirth.text = patient['birthDate'] as String? ?? '';
@@ -622,7 +630,6 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     final email = _patientDemoLoaded!['email'] as String;
     final result = await widget.api.silRequest('/patients/profile', body: {
       'email': email,
-      'syntheticIdentifier': _patientDemoId.text.trim().toUpperCase(),
       'givenNames': _patientDemoGiven.text.trim(),
       'familyNames': _patientDemoFamily.text.trim(),
       'birthDate': _patientDemoBirth.text.trim(),
@@ -1401,6 +1408,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             maxLength:100,
             decoration:const InputDecoration(
               labelText:'Número o referencia de solicitud',
+              helperText:'Comprueba la referencia con el PDF original.',
               border:OutlineInputBorder()),
           ),
           const SizedBox(height:12),
@@ -1736,8 +1744,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               enabled: !_busy,
               textCapitalization: TextCapitalization.characters,
               decoration: const InputDecoration(
-                labelText: 'Código de muestra',
-                hintText: 'LAB-2026-001',
+                labelText: 'Código de etiqueta existente (opcional)',
+                helperText: 'Si el tubo no tiene etiqueta, Vitalia asigna un código.',
+                helperMaxLines: 2,
                 border: OutlineInputBorder(),
               ),
             ),
@@ -2143,15 +2152,10 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         Text('Cuenta: ${_patientDemoLoaded!['email']}',
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 12),
-        TextField(
-          controller: _patientDemoId,
-          maxLength: 21,
-          decoration: const InputDecoration(
-            labelText: 'Identificador ficticio (no utilizar RUN reales)',
-            hintText: 'DEMO-0001',
-            border: OutlineInputBorder(),
-          ),
-        ),
+        if (_patientDemoLoaded!['syntheticIdentifier'] case final String identifier)
+          SelectableText('Identificador ficticio: $identifier')
+        else
+          const Text('Vitalia asignará el identificador ficticio al guardar.'),
         const SizedBox(height: 10),
         TextField(
           controller: _patientDemoGiven,

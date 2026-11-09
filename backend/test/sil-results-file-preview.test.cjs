@@ -46,6 +46,19 @@ test('incongruencia de identidad impide usar IA y propone ingreso manual',async(
  expect(preview.items.every(x=>x.suggestedValue===null)).toBe(true);
  expect(extractor).not.toHaveBeenCalled();
 });
+test('acepta IDs automáticos alfanuméricos y detecta un segundo ID incompatible',async()=>{
+ const identifier='DEMO-0123456789ABCDEF';
+ const text=source.replace('DEMO-0001',identifier)+'Referencia: SOL-DEMO-002\n';
+ const db=fakeDb('sampled',identifier);
+ const ready=await createSilResultsFilePreview(db,{read:read(text),extract:extract()})(id,pdf);
+ expect(ready.state).toBe('ready');
+ const extractor=extract();
+ const blocked=await createSilResultsFilePreview(db,{
+   read:read(text+'Segundo paciente: DEMO-0002\n'),extract:extractor,
+ })(id,pdf);
+ expect(blocked.state).toBe('identity_mismatch');
+ expect(extractor).not.toHaveBeenCalled();
+});
 test('incidencia de IA deja solo el valor dudoso vacío para corrección humana',async()=>{
  const preview=await createSilResultsFilePreview(fakeDb(),{
   read:read(),extract:extract([{

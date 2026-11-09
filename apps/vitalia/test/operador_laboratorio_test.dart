@@ -55,6 +55,16 @@ class _OperatorApi extends AuthApi {
         return {
           'order': _order,
           'exams': [_exam],
+          if (status == 'registered')
+            'requiredContainers': [
+              {'code': 'fluoride', 'label': 'Fluoruro'},
+            ],
+        };
+      case '/orders/$_id/sample':
+        expect(body, {'containerCode': 'fluoride'});
+        status = 'sampled';
+        return {
+          'sample': {'barcode': 'LAB-AUTOMATICO'},
         };
       case '/orders/$_id/results':
         expect(body?['results'], [
@@ -73,6 +83,30 @@ class _OperatorApi extends AuthApi {
 }
 
 void main() {
+  testWidgets('recibe un tubo sin etiqueta y muestra el código asignado', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 960));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api = _OperatorApi()..status = 'registered';
+    await tester.pumpWidget(MaterialApp(
+      home: OperadorLaboratorioPage(api: api, onExpired: () {}),
+    ));
+    await tester.pumpAndSettle();
+    final receive = find.text('Recibir muestra');
+    await tester.ensureVisible(receive);
+    await tester.tap(receive);
+    await tester.pumpAndSettle();
+    expect(
+        find.text('Código de etiqueta existente (opcional)'), findsOneWidget);
+    final register = find.text('Registrar recepción del tubo');
+    await tester.ensureVisible(register);
+    await tester.tap(register);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Código LAB-AUTOMATICO'), findsOneWidget);
+    expect(find.text('Resultados de la orden'), findsOneWidget);
+  });
+
   testWidgets(
       'bandeja de resultados abre el filtro y la orden en vista estrecha', (
     tester,

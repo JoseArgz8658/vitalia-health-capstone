@@ -2,9 +2,10 @@ import {SIL_ANALYZER_ID} from './analyzer';
 import {createSilPatientEducation} from './patient-education';
 import {createSilResultsFilePreview} from './results-file-preview';
 import {createSilMedicalRequestIntake} from './medical-request-intake';
-import {randomUUID,createHash} from 'node:crypto';
+import {randomUUID,randomBytes,createHash} from 'node:crypto';
 import {identifyDocument} from '../documents/file-validation';
 import {type Pool,type PoolClient} from 'pg';
+import {silDemoIdentifier} from './identifiers';
 
 export class SilConflictError extends Error {}
 export class SilNotFoundError extends Error {}
@@ -161,12 +162,12 @@ export function createSilService(db: Pool) {
       return {patient:result.rows[0]};
     },
     async savePatientProfileDemo(email:string,input:{
-      syntheticIdentifier:string;givenNames:string;familyNames:string;
+      syntheticIdentifier?:string;givenNames:string;familyNames:string;
       birthDate:string;sexForReference:'female'|'male'|'not_specified';
       contactPhoneDemo?:string;
     }) {
       if(!email.endsWith('@example.invalid') ||
-        !/^DEMO-[A-Z0-9-]{3,16}$/.test(input.syntheticIdentifier))
+        (input.syntheticIdentifier!==undefined && !silDemoIdentifier.test(input.syntheticIdentifier)))
         throw new SilConflictError();
       const client=await db.connect();
       let failed=false;
@@ -174,9 +175,12 @@ export function createSilService(db: Pool) {
         await client.query('BEGIN');
         const patient=await client.query<{id:string}>(
           `SELECT id FROM public.vitalia_accounts WHERE email=$1
-             AND role_code='paciente' FOR UPDATE`,[email]);
+             AND role_code='paciente' FOR NO KEY UPDATE`,[email]);
         if(!patient.rows.length)throw new SilNotFoundError();
         const id=patient.rows[0].id;
+        await client.query(
+          `SELECT 1 FROM public.vitalia_sil_patient_profiles_demo
+           WHERE patient_id=$1 FOR UPDATE`,[id]);
         const previouslyIssued=await client.query(
           `SELECT 1 FROM public.vitalia_sil_external_reports
            WHERE patient_id=$1 LIMIT 1`,[id]);
@@ -191,14 +195,14 @@ export function createSilService(db: Pool) {
              sex_for_reference,contact_phone_demo)
            VALUES($1,$2,$3,$4,$5,$6,$7)
            ON CONFLICT(patient_id) DO UPDATE SET
-              synthetic_identifier=EXCLUDED.synthetic_identifier,
               given_names=EXCLUDED.given_names,
               family_names=EXCLUDED.family_names,
               birth_date=EXCLUDED.birth_date,
               sex_for_reference=EXCLUDED.sex_for_reference,
               contact_phone_demo=EXCLUDED.contact_phone_demo,
               updated_at=CURRENT_TIMESTAMP`,
-          [id,input.syntheticIdentifier,input.givenNames,input.familyNames,
+          [id,input.syntheticIdentifier??`DEMO-${randomBytes(8).toString('hex').toUpperCase()}`,
+            input.givenNames,input.familyNames,
             input.birthDate,input.sexForReference,input.contactPhoneDemo??null]);
         await client.query('COMMIT');
       }catch(error){
@@ -270,7 +274,7 @@ export function createSilService(db: Pool) {
         pageArgs);
       return {orders:result.rows,limit,offset,total:count.rows[0].total};
     },
-    async registerSample(orderId:string,barcode:string,containerCode:string,
+    async registerSample(orderId:string,existingBarcode:string|undefined,containerCode:string,
       actorId:string,receiptNote?:string) {
       const client=await db.connect();
       let failed=false;
@@ -288,6 +292,7 @@ export function createSilService(db: Pool) {
         if(!required.rows.some(row=>row.containerCode===containerCode))
           throw new SilConflictError();
         const id=randomUUID();
+        const barcode=existingBarcode??`LAB-${id.toUpperCase()}`;
         const inserted=await client.query<{registeredAt:Date}>(
           `INSERT INTO public.vitalia_sil_samples
            (id,order_id,barcode,container_code,received_by,receipt_note)

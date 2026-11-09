@@ -8,13 +8,14 @@ const source='Solicitud de exámenes ficticia\nIdentificador: DEMO-0001\n'
   +'Prestaciones: Glicemia, Hemoglobina glicosilada (HbA1c).\n'
   +'Referencia: SOL-DEMO-001.\n';
 const pdf=Buffer.from('%PDF-1.4\nsolicitud ficticia\n%%EOF');
-function createDb({duplicate=false}={}){
+function createDb({duplicate=false,birthDate='1990-01-01'}={}){
  const txQueries=[];
  const client={
   query:jest.fn(async(sql,values)=>{
    txQueries.push({sql,values});
    if(sql.includes('SELECT p.synthetic_identifier'))
-     return {rows:[{identifier:'DEMO-0001'}]};
+     return {rows:[{identifier:'DEMO-0001',givenNames:'Paciente Prueba',
+       familyNames:'Vitalia Demo',birthDate}]};
    if(sql.includes('SELECT 1 FROM public.vitalia_sil_branches'))
      return {rows:[{ok:true}]};
    if(sql.includes('SELECT code FROM public.vitalia_sil_exam_catalog'))
@@ -63,12 +64,36 @@ test('prelectura identifica paciente y sugiere prestaciones sin escribir',async(
  expect(preview.confirmed).toBe(false);
  expect(preview.extractionMethod).toBe('text_catalog_match');
  expect(preview.suggestedExams.map(x=>x.code)).toEqual(['glicemia','hba1c']);
+ expect(preview.suggestedDocumentReference).toBe('SOL-DEMO-001');
  expect(preview.identity).toEqual({
    identifierMatches:true,givenNamesMatch:true,familyNamesMatch:true,
    birthDateMatches:true,
  });
  expect(preview.previewToken).toMatch(/^[a-f0-9-]{36}$/);
  expect(db.connect).not.toHaveBeenCalled();
+});
+test.each([
+ ['Solicitud ficticia | Referencia: SOL-VH-002', 'SOL-VH-002'],
+ ['Número de solicitud  SOL-VH-002', 'SOL-VH-002'],
+ ['Referencia: SOL-VH-002\nReferencia de solicitud: SOL-VH-003', null],
+ ['Referencia: consultar el archivo', null],
+])('solo propone una referencia externa inequívoca: %s',async(line,expected)=>{
+ const {db}=createDb();
+ const intake=createSilMedicalRequestIntake(db,{read:read(
+   source.replace('Referencia: SOL-DEMO-001.',line))});
+ const preview=await intake.preview(actorId,'paciente.sil@example.invalid',
+   'solicitud-demo.pdf',pdf);
+ expect(preview.suggestedDocumentReference).toBe(expected);
+});
+test('revalida la fecha aunque la ficha conserve su identificador',async()=>{
+ const {db,txQueries}=createDb({birthDate:'1990-01-02'});
+ const intake=createSilMedicalRequestIntake(db,{read:read()});
+ const preview=await intake.preview(actorId,'paciente.sil@example.invalid',
+   'solicitud-demo.pdf',pdf);
+ expect(preview.state).toBe('requires_operator_review');
+ await expect(intake.confirm(actorId,input(preview.previewToken)))
+   .rejects.toBeInstanceOf(SilConflictError);
+ expect(txQueries.some(({sql})=>sql.includes('INSERT'))).toBe(false);
 });
 test('no asocia documento con otro identificador ni emite comprobante',async()=>{
  const {db}=createDb();
