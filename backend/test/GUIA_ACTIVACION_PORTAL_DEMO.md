@@ -26,7 +26,7 @@ mismo UUID interno y no se reasigna.
   con tokens hasheados y eventos de auditoría independientes.
 - Rutas bajo `/api/sil/portal`: alta, destinatario, invitaciones,
   buzón ficticio y activación.
-- Códigos aleatorios de 24 caracteres generados criptográficamente para
+- Códigos aleatorios de 12 caracteres generados criptográficamente para
   email y entrega presencial; hash SHA-256 en PostgreSQL, vigencia de
   20 minutos, cinco intentos máximos, tres invitaciones por hora y uso único.
 - La invitación previa se revoca al reenviar. Al activar se configura una
