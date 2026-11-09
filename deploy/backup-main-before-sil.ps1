@@ -53,8 +53,18 @@ try {
   docker exec $container sh -c $dump sh $inside
   Assert-Docker 'pg_dump y la verificacion interna con pg_restore'
 
-  $remoteHash = docker exec $container sh -c 'sha256sum "$1" | cut -d " " -f1' sh $inside
+  # Invocar sha256sum directamente: Windows PowerShell puede alterar
+  # comillas y argumentos de un comando "sh -c" anidado.
+  $remoteHashOutput = docker exec $container sha256sum $inside
   Assert-Docker 'el calculo de la huella del respaldo en Docker'
+  $hashMatch = [regex]::Match(
+    ($remoteHashOutput | Out-String).Trim(),
+    '^([0-9a-fA-F]{64})\\s+'
+  )
+  if (-not $hashMatch.Success) {
+    throw 'Docker devolvió una huella SHA256 en un formato inesperado.'
+  }
+  $remoteHash = $hashMatch.Groups[1].Value
 
   docker cp "${container}:${inside}" "$outside"
   Assert-Docker 'la copia del archivo binario fuera del contenedor'
@@ -68,7 +78,7 @@ try {
   }
 
   $hash = Get-FileHash -LiteralPath $outside -Algorithm SHA256
-  if ($hash.Hash.ToLowerInvariant() -ne ($remoteHash | Out-String).Trim().ToLowerInvariant()) {
+  if ($hash.Hash.ToLowerInvariant() -ne $remoteHash.ToLowerInvariant()) {
     throw 'La huella SHA256 local difiere del respaldo del contenedor. No utilizar este archivo.'
   }
   Write-Host ''
@@ -83,7 +93,13 @@ try {
 finally {
   if ($createdInside) {
     # Limpiar exclusivamente el archivo temporal creado por este script.
-    $cleanup = 'case "$1" in /tmp/vitalia-principal-pre-sil-*.dump) rm -f -- "$1";; *) exit 1;; esac'
-    & docker exec $container sh -c $cleanup sh $inside *> $null
+    # La ruta se genera en este script y siempre queda bajo /tmp;
+    # evitar un segundo "sh -c" al limpiar el archivo temporal.
+    if ($inside -match '^/tmp/vitalia-principal-pre-sil-[0-9]{8}-[0-9]{6}\\.dump
+  }
+}
+) {
+      & docker exec $container rm -f -- $inside *> $null
+    }
   }
 }
