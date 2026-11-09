@@ -236,7 +236,7 @@ class _AccesoPortalPacienteDemoState extends State<AccesoPortalPacienteDemo> {
                 'Se solicitará otra clave desde el buzón DEMO.',
                 style:TextStyle(fontSize:12,color:_muted)),
             ]),
-        )),
+        ),
         actions:[
           FilledButton(onPressed:()=>Navigator.pop(context),
             child:const Text('Entendido y entregado')),
@@ -359,7 +359,7 @@ class _AccesoPortalPacienteDemoState extends State<AccesoPortalPacienteDemo> {
               style:TextStyle(fontSize:11,color:_muted)),
           ],
         ]),
-      )),
+      ),
     );
   }
 }
