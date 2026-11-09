@@ -8,6 +8,19 @@ export class PortalDemoInvalidCode extends Error {}
 
 const mailbox=new Map<string,{code:string;createdAt:number;expiresAt:number}>();
 const tokenPattern=/^[A-Za-z0-9_-]{12}$/;
+function storeDemoMail(email:string,code:string) {
+  const now=Date.now();
+  for(const [key,item] of mailbox){
+    if(item.expiresAt<=now)mailbox.delete(key);
+  }
+  // Buzón efímero y acotado, incluso durante pruebas de carga.
+  if(mailbox.size>=200&&!mailbox.has(email)){
+    const oldest=mailbox.keys().next().value;
+    if(oldest!==undefined)mailbox.delete(oldest);
+  }
+  mailbox.set(email,{code,createdAt:now,expiresAt:now+20*60*1000});
+}
+
 const demoEmailPattern=/^[a-z0-9.!#$%&'*+\/?^_`{|}~-]+@example\.invalid$/;
 const sha=(value:string)=>createHash('sha256').update(value,'utf8').digest('hex');
 const secureMatch=(a:string,b:string)=>{
@@ -165,8 +178,7 @@ export function createSilPortalActivationDemo(db:Pool) {
         await client.query('COMMIT');
         // El código del correo nunca se devuelve al operador.
         // Buzón simulado, sólo activo en el servicio DEMO aislado.
-        mailbox.set(email,{code:emailCode,createdAt:Date.now(),
-          expiresAt:Date.now()+20*60*1000});
+        storeDemoMail(email,emailCode);
         return {
           invitation:{id,patientId,status:'invited',expiresInMinutes:20,
             delivery:'simulated_outbox',contactEmail:email},
