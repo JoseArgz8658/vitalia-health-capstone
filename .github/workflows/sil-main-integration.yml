@@ -1,0 +1,44 @@
+name: SIL principal - pruebas de integracion
+on:
+  push:
+    branches:
+      - feat/sil-integracion-vitalia-principal
+  pull_request:
+    paths:
+      - backend/**
+      - apps/vitalia/**
+      - .github/workflows/sil-main-integration.yml
+jobs:
+  backend:
+    name: Backend TypeScript y Jest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+
+  flutter:
+    name: Flutter - pruebas y compilacion web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/vitalia
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze lib/app/vitalia_mvp_app.dart lib/core/auth_api.dart
+      - run: flutter test
+      - run: flutter build web
