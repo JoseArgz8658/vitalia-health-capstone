@@ -12,6 +12,7 @@ class DirectorioPacientesSil extends StatefulWidget {
     required this.onOpenProfile,
     required this.onPrepareRequest,
     required this.onViewOrders,
+    this.onCreatePatient,
     this.selectedEmail,
   });
 
@@ -20,6 +21,7 @@ class DirectorioPacientesSil extends StatefulWidget {
   final ValueChanged<String> onOpenProfile;
   final ValueChanged<String> onPrepareRequest;
   final ValueChanged<String> onViewOrders;
+  final VoidCallback? onCreatePatient;
   final String? selectedEmail;
 
   @override
@@ -353,11 +355,20 @@ class DirectorioPacientesSilState extends State<DirectorioPacientesSil> {
                 Text('Cuentas ficticias · $_total resultados',
                   style: text.bodySmall),
               ]),
-              OutlinedButton.icon(
-                onPressed: _loading ? null : refresh,
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Actualizar'),
-              ),
+              Row(mainAxisSize:MainAxisSize.min,children:[
+                if(widget.onCreatePatient!=null)
+                  FilledButton.tonalIcon(
+                    onPressed: widget.onCreatePatient,
+                    icon: const Icon(Icons.person_add_alt_1_outlined,size:18),
+                    label: const Text('Nuevo paciente DEMO'),
+                  ),
+                const SizedBox(width:8),
+                OutlinedButton.icon(
+                  onPressed: _loading ? null : refresh,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Actualizar'),
+                ),
+              ]),
             ]),
           const SizedBox(height: 14),
           TextField(
