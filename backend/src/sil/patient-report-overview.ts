@@ -62,7 +62,7 @@ function explainReferralObservation(observation:string|null):string|null{
   return null;
 }
 
-export function createSilPatientReportOverview(db:Pick<Pool,'query'>,read=readPdfText){
+export function createSilPatientReportOverview(db:Pick<Pool,'query'>,read=readPdfText,source:'demo'|'main'='demo'){
   const busy=new Set<string>();
   const allow=createLoginAttemptLimiter();
   async function textFrom(pdf:Buffer|null,sha:string|null){
@@ -77,23 +77,44 @@ export function createSilPatientReportOverview(db:Pick<Pool,'query'>,read=readPd
     if(busy.has(patientId)||busy.size>=2||!allow(patientId))throw new SilEducationBusy();
     busy.add(patientId);
     try{
-      const found=await db.query<PublishedRow>(
-        `SELECT r.id,'VH-' || lpad(o.order_number::text,6,'0') AS "orderNumber",
-          r.issuing_laboratory AS laboratory,r.externally_authorized_at AS "authorizedAt",
-          r.pdf_data AS pdf,r.pdf_sha256 AS sha,
-          m.pdf_data AS "requestPdf",m.pdf_sha256 AS "requestSha",m.document_reference AS reference,
-          COALESCE((SELECT jsonb_agg(jsonb_build_object(
-            'examCode',e.exam_code,'analyte',a.analyte,'unit',a.unit) ORDER BY e.exam_code,a.analyte)
-            FROM public.vitalia_sil_order_exams e
-            JOIN public.vitalia_sil_exam_analytes a ON a.exam_code=e.exam_code
-            WHERE e.order_id=o.id),'[]'::jsonb) AS analytes
-         FROM public.vitalia_sil_external_reports r
-         JOIN public.vitalia_sil_orders o ON o.id=r.order_id AND o.patient_id=r.patient_id
-         LEFT JOIN public.vitalia_sil_medical_requests_demo m ON m.order_id=o.id
-           AND m.patient_id=r.patient_id AND m.request_review_confirmed
-         WHERE r.patient_id=$1 AND r.id=ANY($2::uuid[]) AND r.published_at IS NOT NULL
-           AND o.status='report_published'
-         ORDER BY r.externally_authorized_at,r.id`,[patientId,reportIds]);
+      const sql=source==='main'
+        ? `SELECT r.id,'VH-' || lpad(o.order_number::text,6,'0') AS "orderNumber",
+             r.issuing_laboratory AS laboratory,r.externally_authorized_at AS "authorizedAt",
+             r.pdf_data AS pdf,r.pdf_sha256 AS sha,
+             NULL::bytea AS "requestPdf",NULL::text AS "requestSha",
+             NULL::text AS reference,
+             COALESCE((SELECT jsonb_agg(jsonb_build_object(
+               'examCode',e.exam_code,'analyte',a.analyte,'unit',a.unit)
+               ORDER BY e.exam_code,a.analyte)
+               FROM public.vitalia_sil_main_order_exams e
+               JOIN public.vitalia_sil_exam_analytes a ON a.exam_code=e.exam_code
+               WHERE e.order_id=o.id),'[]'::jsonb) AS analytes
+           FROM public.vitalia_sil_main_reports r
+           JOIN public.vitalia_sil_main_orders o
+             ON o.id=r.order_id AND o.lab_id=r.lab_id AND o.patient_id=r.patient_id
+           JOIN public.vitalia_sil_main_patients p
+             ON p.lab_id=r.lab_id AND p.patient_id=r.patient_id AND p.active
+           JOIN public.vitalia_sil_main_laboratories l ON l.id=r.lab_id AND l.active
+           WHERE r.patient_id=$1 AND r.id=ANY($2::uuid[])
+             AND r.published_at IS NOT NULL AND o.status='report_published'
+           ORDER BY r.externally_authorized_at,r.id`
+        : `SELECT r.id,'VH-' || lpad(o.order_number::text,6,'0') AS "orderNumber",
+           r.issuing_laboratory AS laboratory,r.externally_authorized_at AS "authorizedAt",
+           r.pdf_data AS pdf,r.pdf_sha256 AS sha,
+           m.pdf_data AS "requestPdf",m.pdf_sha256 AS "requestSha",m.document_reference AS reference,
+           COALESCE((SELECT jsonb_agg(jsonb_build_object(
+             'examCode',e.exam_code,'analyte',a.analyte,'unit',a.unit) ORDER BY e.exam_code,a.analyte)
+             FROM public.vitalia_sil_order_exams e
+             JOIN public.vitalia_sil_exam_analytes a ON a.exam_code=e.exam_code
+             WHERE e.order_id=o.id),'[]'::jsonb) AS analytes
+          FROM public.vitalia_sil_external_reports r
+          JOIN public.vitalia_sil_orders o ON o.id=r.order_id AND o.patient_id=r.patient_id
+          LEFT JOIN public.vitalia_sil_medical_requests_demo m ON m.order_id=o.id
+            AND m.patient_id=r.patient_id AND m.request_review_confirmed
+          WHERE r.patient_id=$1 AND r.id=ANY($2::uuid[]) AND r.published_at IS NOT NULL
+            AND o.status='report_published'
+          ORDER BY r.externally_authorized_at,r.id`;
+      const found=await db.query<PublishedRow>(sql,[patientId,reportIds]);
       if(found.rows.length!==reportIds.length)throw new SilEducationNotFound();
 
       const reports=[];
