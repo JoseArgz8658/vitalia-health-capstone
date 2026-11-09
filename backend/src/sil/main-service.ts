@@ -20,7 +20,7 @@ export function createSilMainService(db:Pool) {
     action:'laboratory_created'|'operator_invited'|'operator_activated'|
       'staff_granted'|'patient_identity_linked'|
       'order_created'|'medical_request_received'|'medical_request_downloaded'|
-      'report_attached'|'report_published'|'report_downloaded',
+      'report_attached'|'report_review_accessed'|'report_published'|'report_downloaded',
     orderId:string|null=null,details:Record<string,unknown>={}) {
     await tx.query(
       `INSERT INTO public.vitalia_sil_main_audit
@@ -363,6 +363,29 @@ export function createSilMainService(db:Pool) {
         await audit(tx,labId,operatorId,'report_attached',orderId,{reportId:id});
         return {report:{id,orderId,status:'report_attached'}};
       });
+    },
+
+    async reportForReview(labId:string,orderId:string,validatorId:string){
+      await validator(labId,validatorId);
+      const rows=await db.query<{
+        id:string;fileName:string;data:Buffer;sha256:string
+      }>(
+        `SELECT r.id,r.file_name AS "fileName",r.pdf_data AS data,
+                r.pdf_sha256 AS sha256
+         FROM public.vitalia_sil_main_reports r
+         JOIN public.vitalia_sil_main_orders o
+           ON o.id=r.order_id AND o.lab_id=r.lab_id
+         WHERE r.order_id=$1 AND r.lab_id=$2
+           AND o.status='report_attached' AND r.published_at IS NULL`,
+        [orderId,labId]);
+      if(!rows.rows.length)throw new SilMainNotFound();
+      const item=rows.rows[0];
+      if(item.data.length>2*1024*1024 ||
+         createHash('sha256').update(item.data).digest('hex')!==item.sha256)
+        throw new SilMainConflict();
+      await audit(db,labId,validatorId,'report_review_accessed',
+        orderId,{reportId:item.id});
+      return {fileName:item.fileName,bytes:item.data};
     },
 
     async publishReport(labId:string,orderId:string,validatorId:string){
