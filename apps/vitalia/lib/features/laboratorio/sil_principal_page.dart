@@ -434,18 +434,21 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   }
 
   Widget _field(TextEditingController ctrl,String label,{
-    String? hint,int lines=1
+    String? hint,int lines=1,String? identifier
   })=>Padding(
     padding:const EdgeInsets.only(bottom:11),
-    child:TextField(
-      controller:ctrl,
-      maxLines:lines,
-      enabled:!_busy,
-      decoration:InputDecoration(
-        labelText:label,
-        hintText:hint,
-        border:const OutlineInputBorder(),
-        isDense:true,
+    child:Semantics(
+      identifier:identifier,
+      child:TextField(
+        controller:ctrl,
+        maxLines:lines,
+        enabled:!_busy,
+        decoration:InputDecoration(
+          labelText:label,
+          hintText:hint,
+          border:const OutlineInputBorder(),
+          isDense:true,
+        ),
       ),
     ),
   );
@@ -649,20 +652,23 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         'Solo se reciben PDF ya validados externamente. '
         'Publicar requiere la revisión de otro operador autorizado.',
         Icons.upload_file_outlined,[
-        DropdownButtonFormField<String>(
-          value:_uploadOrderId,
-          isExpanded:true,
-          decoration:const InputDecoration(
-            border:OutlineInputBorder(),labelText:'Orden disponible',
+        Semantics(
+          identifier:'sil-upload-order',
+          child:DropdownButtonFormField<String>(
+            value:_uploadOrderId,
+            isExpanded:true,
+            decoration:const InputDecoration(
+              border:OutlineInputBorder(),labelText:'Orden disponible',
+            ),
+            items:[
+              for(final order in _orders.where((v)=>v['status']=='registered'))
+                DropdownMenuItem<String>(
+                  value:order['id'] as String,
+                  child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged:_busy?null:(v)=>setState(()=>_uploadOrderId=v),
           ),
-          items:[
-            for(final order in _orders.where((v)=>v['status']=='registered'))
-              DropdownMenuItem<String>(
-                value:order['id'] as String,
-                child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
-              ),
-          ],
-          onChanged:_busy?null:(v)=>setState(()=>_uploadOrderId=v),
         ),
         const SizedBox(height:10),
         OutlinedButton.icon(
@@ -671,9 +677,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           label:Text(_pdf?.name??'Elegir archivo PDF (máx. 2 MiB)'),
         ),
         const SizedBox(height:8),
-        _field(_reportProfessional,'Profesional que autorizó el PDF'),
-        _field(_reportReference,'Referencia de autorización externa'),
-        _field(_reportDate,'Fecha de autorización (AAAA-MM-DD)'),
+        _field(_reportProfessional,'Profesional que autorizó el PDF',
+          identifier:'sil-report-professional'),
+        _field(_reportReference,'Referencia de autorización externa',
+          identifier:'sil-report-reference'),
+        _field(_reportDate,'Fecha de autorización (AAAA-MM-DD)',
+          identifier:'sil-report-date'),
         CheckboxListTile(
           contentPadding:EdgeInsets.zero,
           controlAffinity:ListTileControlAffinity.leading,
@@ -697,24 +706,27 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     return _section('Validación y publicación',
       'Revisa informes adjuntados por otro operador antes de publicarlos.',
       Icons.fact_check_outlined,[
-      DropdownButtonFormField<String>(
-        value:_reviewOrderId,
-        isExpanded:true,
-        decoration:const InputDecoration(
-          border:OutlineInputBorder(),labelText:'Informe pendiente de revisión',
+      Semantics(
+        identifier:'sil-review-order',
+        child:DropdownButtonFormField<String>(
+          value:_reviewOrderId,
+          isExpanded:true,
+          decoration:const InputDecoration(
+            border:OutlineInputBorder(),labelText:'Informe pendiente de revisión',
+          ),
+          items:[
+            for(final order in _orders.where(_isReviewable))
+              DropdownMenuItem<String>(
+                value:order['id'] as String,
+                child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged:_busy?null:(v)=>setState((){
+            _reviewOrderId=v;
+            _reviewPdfDownloaded=false;
+            _reviewConfirmed=false;
+          }),
         ),
-        items:[
-          for(final order in _orders.where(_isReviewable))
-            DropdownMenuItem<String>(
-              value:order['id'] as String,
-              child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
-            ),
-        ],
-        onChanged:_busy?null:(v)=>setState((){
-          _reviewOrderId=v;
-          _reviewPdfDownloaded=false;
-          _reviewConfirmed=false;
-        }),
       ),
       const SizedBox(height:10),
       OutlinedButton.icon(

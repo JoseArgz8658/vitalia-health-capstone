@@ -66,28 +66,111 @@ async function api(method, path, status, {token, json, bytes, headers={}} = {}) 
   return response;
 }
 
-async function browserJourney(publishedId) {
+async function signIn(page, account, route='') {
+  await page.goto('http://localhost:5173/'+route,{waitUntil:'domcontentloaded'});
+  // En escritorio el control de accesibilidad está fuera del área visible.
+  await page.locator('flt-semantics-placeholder').evaluate(button=>button.click(),
+    undefined,{timeout:30000});
+  await page.getByRole('textbox').first().click();
+  await page.keyboard.insertText(account+'@example.invalid');
+  await page.keyboard.press('Tab');
+  await page.keyboard.insertText(password);
+  const response=page.waitForResponse(r=>r.url().endsWith('/api/auth/login') && r.request().method()==='POST');
+  await page.getByRole('button',{name:'Iniciar sesión'}).click();
+  assert.equal((await response).status(),200,'Acceso desde Edge de '+account);
+}
+
+async function reach(page, locator, description) {
+  // Flutter desplaza su propia vista y crea nodos accesibles al entrar en pantalla.
+  await page.mouse.move(455,550);
+  for(let attempt=0;attempt<14;attempt++){
+    const rect=await locator.boundingBox({timeout:400}).catch(()=>null);
+    if(rect && rect.y>=50 && rect.y+rect.height<=page.viewportSize().height-5)return locator;
+    await page.mouse.wheel(0,rect && rect.y<50 ? -280 : 410);
+    await page.waitForTimeout(170);
+  }
+  throw new Error('Control de operador fuera de alcance: '+description);
+}
+
+async function operatorJourney(browser, order, base) {
+  const name='VH-'+String(order.orderNumber).padStart(6,'0');
+  const endpoint='/api/sil/main'+base+'/orders/'+order.id+'/report';
+  const stage=async (account, task)=>{
+    const page=await browser.newPage({viewport:{width:1440,height:1150}});
+    try {
+      await signIn(page,account,'#/laboratorio');
+      await page.getByRole('button',{name:'Cerrar sesión'}).waitFor();
+      const id=value=>page.locator('[flt-semantics-identifier="'+value+'"]');
+      const button=label=>page.getByRole('button',{name:label,exact:true});
+      const checkbox=label=>page.getByRole('checkbox',{name:label,exact:true});
+      const click=async (locator,label)=>(await reach(page,locator,label)).click();
+      const select=async (control)=>{
+        await click(id(control),control);
+        await page.getByRole('menuitem',{name:new RegExp(name)}).click({timeout:7000});
+      };
+      return await task({page,id,button,checkbox,click,select});
+    } finally {
+      await page.close();
+    }
+  };
+
+  const reportId=await stage('uploader',async ({page,id,button,checkbox,click,select})=>{
+    await select('sil-upload-order');
+    const choose=page.waitForEvent('filechooser');
+    await click(button('Elegir archivo PDF (máx. 2 MiB)'),'Elegir archivo PDF');
+    await (await choose).setFiles({name:'informe-operador.pdf',mimeType:'application/pdf',buffer:pdf});
+    for(const [key,value] of [
+      ['sil-report-professional','Profesional Ficticio'],
+      ['sil-report-reference','AUT-OPERADOR-EDGE'],
+      ['sil-report-date','2024-01-01'],
+    ]){
+      await click(id(key),key);
+      await page.keyboard.insertText(value);
+    }
+    await click(checkbox('El informe ya fue autorizado fuera de Vitalia'),'Autorización externa');
+    await click(checkbox('Confirmé que el PDF corresponde al paciente de la orden'),'Paciente de la orden');
+    const response=page.waitForResponse(r=>r.url().endsWith(endpoint) && r.request().method()==='POST');
+    await click(button('Adjuntar para revisión'),'Adjuntar para revisión');
+    const uploaded=await response;
+    assert.equal(uploaded.status(),201,'Carga del PDF desde la estación');
+    console.log('Microsoft Edge: se adjuntó el PDF desde la estación del operador.');
+    return (await uploaded.json()).report.id;
+  });
+
+  await stage('reviewer',async ({page,button,checkbox,click,select})=>{
+    await select('sil-review-order');
+    const publication=button('Publicar informe');
+    assert.equal(await publication.isEnabled(),false,'Se exige revisar antes de publicar');
+    const download=page.waitForEvent('download');
+    const response=page.waitForResponse(r=>r.url().endsWith(endpoint+'/file') && r.request().method()==='GET');
+    await click(button('Descargar PDF para revisión'),'Descargar para revisión');
+    assert.equal((await response).status(),200);
+    assert.deepEqual(readFileSync(await (await download).path()),pdf);
+    await click(checkbox('Confirmo que revisé el PDF y su autorización externa'),'Confirmar revisión');
+    const posted=page.waitForResponse(r=>r.url().endsWith(endpoint+'/publish') && r.request().method()==='POST');
+    await click(publication,'Publicar informe');
+    assert.equal((await posted).status(),201);
+    console.log('Microsoft Edge: otro operador descargó, revisó y publicó el PDF.');
+  });
+  return reportId;
+}
+
+async function browserJourney(order, base) {
   const {chromium}=require(process.env.VITALIA_JOURNEY_PLAYWRIGHT);
   const browser=await chromium.launch({channel:'msedge'});
   try {
+    const publishedId=await operatorJourney(browser,order,base);
     const page=await browser.newPage({viewport:{width:390,height:844}});
-    await page.goto('http://localhost:5173',{waitUntil:'domcontentloaded'});
-    // En escritorio el control de accesibilidad está fuera del área visible.
-    await page.locator('flt-semantics-placeholder').evaluate(button=>button.click(),
-      undefined,{timeout:30000});
-    await page.getByRole('textbox').first().click();
-    await page.keyboard.insertText('patient@example.invalid');
-    await page.keyboard.press('Tab');
-    await page.keyboard.insertText(password);
-    await page.getByRole('button',{name:'Iniciar sesión'}).click();
-    await page.getByRole('button',{name:'Descargar PDF',exact:true}).waitFor({timeout:20000});
+    await signIn(page,'patient');
+    const downloadButton=page.getByRole('button',{name:'Descargar PDF',exact:true}).first();
+    await downloadButton.waitFor({timeout:20000});
     const downloaded=page.waitForEvent('download');
     const response=page.waitForResponse(r=>r.url().endsWith('/patient/reports/'+publishedId+'/file'));
-    await page.getByRole('button',{name:'Descargar PDF',exact:true}).click();
+    await downloadButton.click();
     assert.equal((await response).status(),200);
     const file=await downloaded;
     assert.deepEqual(readFileSync(await file.path()),pdf);
-    console.log('Microsoft Edge: sesión del paciente y descarga del informe publicado verificadas.');
+    console.log('Microsoft Edge: el paciente descargó el informe publicado desde la estación.');
   } finally {
     await browser.close();
   }
@@ -204,7 +287,10 @@ async function main() {
         const listener=site.listen(5173,'127.0.0.1',()=>accept(listener));
         listener.once('error',reject);
       });
-      await browserJourney(reportId);
+      const browserOrder=await call('uploader','POST',base+'/orders',201,{json:{
+        patientId:ids.patient,examCodes:['glicemia'],
+      }});
+      await browserJourney((await browserOrder.json()).order,base);
     }
   } finally {
     if(webServer)await new Promise(done=>webServer.close(done));
