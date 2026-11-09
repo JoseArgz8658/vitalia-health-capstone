@@ -1,4 +1,5 @@
 import '../features/incorporacion/activar_invitacion_page.dart';
+import '../features/acceso/activar_operador_sil_page.dart';
 import '../features/acceso/activar_portal_sil_page.dart';
 import '../features/asignaciones/asignaciones_page.dart';
 import '../features/laboratorio/operador_laboratorio_page.dart';
@@ -138,6 +139,12 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
     theme: temaVitalia(),
     initialRoute: widget.initialRoute,
     onGenerateRoute: (settings) {
+      if (settings.name == '/activar-operador' && _mainSil) {
+        return MaterialPageRoute<void>(
+          settings:settings,
+          builder:(_) => ActivarOperadorSilPage(api:_api),
+        );
+      }
       if (settings.name == '/activar-portal' &&
           const bool.fromEnvironment('VITALIA_SIL_DEMO_MODE'))
         return MaterialPageRoute<void>(
