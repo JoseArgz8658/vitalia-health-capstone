@@ -105,8 +105,10 @@ void main() {
       'operador habilitado confirma desde su bandeja y vuelve a pendientes', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(1440, 960));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 960);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final api = _OperatorApi()
       ..canReview = true
       ..status = 'results_recorded';
@@ -116,6 +118,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Por revisar · 1'), findsOneWidget);
     expect(find.byType(NavigationRail), findsNothing);
+    expect(find.byType(NavigationBar), findsNothing);
     expect(find.text('Revisión (1)'), findsOneWidget);
     await tester.tap(find.text('Revisión (1)'));
     await tester.pumpAndSettle();
@@ -164,8 +167,10 @@ void main() {
   testWidgets('recibe un tubo sin etiqueta y muestra el código asignado', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(1440, 960));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 960);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final api = _OperatorApi()..status = 'registered';
     await tester.pumpWidget(MaterialApp(
       home: OperadorLaboratorioPage(api: api, onExpired: () {}),
@@ -203,6 +208,8 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(find.byTooltip('Cerrar sesión'), findsOneWidget);
+    expect(tester.takeException(), isNull,
+        reason: 'La cabecera móvil no debe desbordarse.');
 
     final pending = find.text('Pendientes de resultados');
     await tester.ensureVisible(pending);
@@ -228,8 +235,10 @@ void main() {
   testWidgets('conserva el ingreso si falla y vuelve a órdenes al guardar', (
     tester,
   ) async {
-    await tester.binding.setSurfaceSize(const Size(1440, 960));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1440, 960);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final api = _OperatorApi();
     await tester.pumpWidget(
       MaterialApp(
