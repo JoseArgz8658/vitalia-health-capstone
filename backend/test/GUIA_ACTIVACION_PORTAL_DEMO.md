@@ -14,7 +14,9 @@ Dos confirmaciones independientes del operador son obligatorias. Es una
 **declaración manual**, no una comprobación automatizada de identidad.
 
 Un paciente DEMO nuevo se registra primero con una credencial aleatoria
-inaccesible al operador. **No puede iniciar sesión** antes de activar su acceso.
+inaccesible al operador y el **rol paciente inactivo** en la tabla de permisos.
+**No puede iniciar sesión** antes de activar su acceso. El rol se habilita
+únicamente al verificar ambos canales y guardar la contraseña definitiva.
 La contraseña final es creada solamente por el paciente. Una cuenta legada,
 como `paciente.sil@example.invalid`, conserva sus credenciales y NO puede
 reiniciarse mediante este flujo. El historial de órdenes queda vinculado al
