@@ -338,8 +338,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   Future<void> _downloadMedicalRequest() => _run(() async {
     final order=_selected?['order'] as Map?;
     final request=_selected?['medicalRequest'] as Map?;
-    if(order==null||request==null)
+    if (order == null || request == null) {
       throw const AuthFailure('La orden no tiene solicitud PDF vinculada.');
+    }
     final name=request['fileName'] as String;
     final bytes=await widget.api.silDownloadMedicalRequest(order['id'] as String);
     if(!mounted||!widget.api.hasSession)return;
@@ -351,8 +352,10 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       if(target==null)return;
       await pdf.saveTo(target.path);
     }
-    if(mounted)setState(()=>
-      _message='Descarga de solicitud registrada en auditoría.');
+    if (mounted) {
+      setState(() =>
+        _message='Descarga de solicitud registrada en auditoría.');
+    }
   });
 
   Future<void> _selectMedicalRequestPdf() async {
@@ -461,9 +464,11 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     _requestDate=null;
     await _openOrder(id);
     await _refreshAll();
-    if(mounted)setState(()=>_message=
-      'Solicitud ficticia asociada a ${order['orderNumber']}. '
-      'Continúa con las muestras requeridas.');
+    if (mounted) {
+      setState(() => _message =
+        'Solicitud ficticia asociada a ${order['orderNumber']}. '
+        'Continúa con las muestras requeridas.');
+    }
   });
 
   Future<void> _createOrder() => _run(() async {
@@ -513,9 +518,11 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     await _openOrder(id);
     await _refreshAll();
     final code = (response['sample'] as Map?)?['barcode'] as String? ?? barcode;
-    if (mounted) setState(() => _message = code.isEmpty
-        ? 'Recepción de muestra registrada.'
-        : 'Recepción de muestra registrada. Código $code.');
+    if (mounted) {
+      setState(() => _message = code.isEmpty
+          ? 'Recepción de muestra registrada.'
+          : 'Recepción de muestra registrada. Código $code.');
+    }
   });
 
   Future<void> _selectReportPdf() async {
@@ -616,9 +623,11 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         '/orders/${order['id']}/report/publish', body: {});
       await _openOrder(order['id'] as String);
       await _refreshAll();
-      if (mounted) setState(() => _message =
-          'Informe publicado en el portal de ese paciente. '
-          'Aún no se envían notificaciones externas.');
+      if (mounted) {
+        setState(() => _message =
+            'Informe publicado en el portal de ese paciente. '
+            'Aún no se envían notificaciones externas.');
+      }
     });
   }
 
@@ -1561,7 +1570,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             style:Theme.of(context).textTheme.titleMedium),
           const SizedBox(height:12),
           DropdownButtonFormField<String>(
-            value:_requestBranchCode,
+            initialValue:_requestBranchCode,
             isExpanded:true,
             decoration:const InputDecoration(
               labelText:'Sucursal que recibe la solicitud',
@@ -1623,9 +1632,12 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                 selected:_requestExamCodes.contains(exam['code']),
                 onSelected:_busy?null:(value)=>setState((){
                   final code=exam['code'] as String;
-                  if(value && _requestExamCodes.length<6)
+                  if (value && _requestExamCodes.length < 6) {
                     _requestExamCodes.add(code);
-                  if(!value)_requestExamCodes.remove(code);
+                  }
+                  if (!value) {
+                    _requestExamCodes.remove(code);
+                  }
                   _requestHumanConfirmed=false;
                 }),
               ),
@@ -1920,7 +1932,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           if (status == 'registered' && pending.isNotEmpty) ...[
             const SizedBox(height: 18),
             DropdownButtonFormField<String>(
-              value: _containerCode,
+              initialValue: _containerCode,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Tipo de tubo pendiente',
@@ -2309,7 +2321,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                 'la autorización emitida por el laboratorio y la identidad del paciente.'),
             const SizedBox(height: 15),
             DropdownButtonFormField<String>(
-              value: _selectedBranch,
+              initialValue: _selectedBranch,
               isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Sucursal de origen del informe',
@@ -2520,7 +2532,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         ),
         const SizedBox(height: 10),
         DropdownButtonFormField<String>(
-          value: _patientDemoSex,
+          initialValue: _patientDemoSex,
           decoration: const InputDecoration(
             labelText: 'Sexo para referencias de laboratorio (demo)',
             border: OutlineInputBorder(),
@@ -2747,17 +2759,22 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         titleSpacing: 16,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        title: Row(children: [
-          Image.asset('assets/branding/vitalia-simbolo.png',
-              width: 31, height: 31, excludeFromSemantics: true),
-          const SizedBox(width: 8),
-          const Text('Vitalia Health',
-              style: TextStyle(color: _navy, fontWeight: FontWeight.w700)),
-          if (!phoneNavigation) ...[
-            const SizedBox(width: 18),
-            Expanded(child: _topNavigation(compact: width < 1250)),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset('assets/branding/vitalia-simbolo.png',
+                width: 31, height: 31, excludeFromSemantics: true),
+            const SizedBox(width: 8),
+            const Flexible(
+              child: Text(
+                'Vitalia Health',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: _navy, fontWeight: FontWeight.w700),
+              ),
+            ),
           ],
-        ]),
+        ),
         actions: [
           IconButton(
             tooltip: 'Actualizar datos del laboratorio',
@@ -2783,6 +2800,21 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                 label: const Text('Cerrar sesión'),
               ),
         ],
+        bottom: phoneNavigation
+            ? null
+            : PreferredSize(
+                preferredSize: const Size.fromHeight(48),
+                child: Container(
+                  height: 48,
+                  width: double.infinity,
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: const BoxDecoration(
+                    border: Border(top: BorderSide(color: _line)),
+                  ),
+                  child: _topNavigation(compact: width < 1250),
+                ),
+              ),
       ),
       body: _content(),
       bottomNavigationBar: phoneNavigation
