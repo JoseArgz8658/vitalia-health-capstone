@@ -111,12 +111,17 @@ async function operatorJourney(browser, order, base) {
       const button=label=>page.getByRole('button',{name:label,exact:true});
       const checkbox=label=>page.getByRole('checkbox',{name:label,exact:true});
       const click=async (locator,label)=>(await reach(page,locator,label)).click();
+      const confirm=async label=>{
+        const control=checkbox(label);
+        await click(control,label);
+        await control.and(page.locator('[aria-checked="true"]')).waitFor({timeout:5000});
+      };
       const select=async (control)=>{
         await click(id(control),control);
         await page.getByRole('menuitem',{name:new RegExp(name)}).click({timeout:7000});
       };
       try {
-        return await task({page,id,button,checkbox,click,select});
+        return await task({page,id,button,click,select,confirm});
       } catch(error) {
         for(const message of [
           'Selecciona orden, PDF y confirma autorización y paciente.',
@@ -134,7 +139,7 @@ async function operatorJourney(browser, order, base) {
     }
   };
 
-  const reportId=await stage('uploader',async ({page,id,button,checkbox,click,select})=>{
+  const reportId=await stage('uploader',async ({page,id,button,click,select,confirm})=>{
     await select('sil-upload-order');
     const choose=page.waitForEvent('filechooser');
     await click(button('Elegir archivo PDF (máx. 2 MiB)'),'Elegir archivo PDF');
@@ -154,12 +159,8 @@ async function operatorJourney(browser, order, base) {
       await focused.fill(value,{timeout:7000});
       assert.equal(await focused.inputValue(),value,key);
     }
-    const authorized=checkbox('El informe ya fue autorizado fuera de Vitalia');
-    const matched=checkbox('Confirmé que el PDF corresponde al paciente de la orden');
-    await click(authorized,'Autorización externa');
-    await click(matched,'Paciente de la orden');
-    assert.equal(await authorized.getAttribute('aria-checked'),'true');
-    assert.equal(await matched.getAttribute('aria-checked'),'true');
+    await confirm('El informe ya fue autorizado fuera de Vitalia');
+    await confirm('Confirmé que el PDF corresponde al paciente de la orden');
     console.log('Microsoft Edge: datos de autorización y paciente comprobados.');
     const response=page.waitForResponse(r=>r.url().endsWith(endpoint) && r.request().method()==='POST');
     const [uploaded]=await Promise.all([response,click(button('Adjuntar para revisión'),'Adjuntar para revisión')]);
@@ -168,7 +169,7 @@ async function operatorJourney(browser, order, base) {
     return (await uploaded.json()).report.id;
   });
 
-  await stage('reviewer',async ({page,button,checkbox,click,select})=>{
+  await stage('reviewer',async ({page,button,click,select,confirm})=>{
     await select('sil-review-order');
     const publication=button('Publicar informe');
     await reach(page,publication,'Publicar informe');
@@ -178,7 +179,7 @@ async function operatorJourney(browser, order, base) {
     await click(button('Descargar PDF para revisión'),'Descargar para revisión');
     assert.equal((await response).status(),200);
     assert.deepEqual(readFileSync(await (await download).path()),pdf);
-    await click(checkbox('Confirmo que revisé el PDF y su autorización externa'),'Confirmar revisión');
+    await confirm('Confirmo que revisé el PDF y su autorización externa');
     const posted=page.waitForResponse(r=>r.url().endsWith(endpoint+'/publish') && r.request().method()==='POST');
     await click(publication,'Publicar informe');
     assert.equal((await posted).status(),201);
