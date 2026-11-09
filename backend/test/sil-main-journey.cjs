@@ -72,7 +72,9 @@ async function browserJourney(publishedId) {
   try {
     const page=await browser.newPage({viewport:{width:390,height:844}});
     await page.goto('http://localhost:5173',{waitUntil:'domcontentloaded'});
-    await page.locator('flt-semantics-placeholder').click({timeout:30000});
+    // En escritorio el control de accesibilidad está fuera del área visible.
+    await page.locator('flt-semantics-placeholder').evaluate(button=>button.click(),
+      undefined,{timeout:30000});
     await page.getByRole('textbox').first().click();
     await page.keyboard.insertText('patient@example.invalid');
     await page.keyboard.press('Tab');
