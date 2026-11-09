@@ -53,6 +53,9 @@ try {
   docker exec $container sh -c $dump sh $inside
   Assert-Docker 'pg_dump y la verificacion interna con pg_restore'
 
+  $remoteHash = docker exec $container sh -c 'sha256sum "$1" | cut -d " " -f1' sh $inside
+  Assert-Docker 'el calculo de la huella del respaldo en Docker'
+
   docker cp "${container}:${inside}" "$outside"
   Assert-Docker 'la copia del archivo binario fuera del contenedor'
 
@@ -65,6 +68,9 @@ try {
   }
 
   $hash = Get-FileHash -LiteralPath $outside -Algorithm SHA256
+  if ($hash.Hash.ToLowerInvariant() -ne ($remoteHash | Out-String).Trim().ToLowerInvariant()) {
+    throw 'La huella SHA256 local difiere del respaldo del contenedor. No utilizar este archivo.'
+  }
   Write-Host ''
   Write-Host 'RESPALDO CREADO' -ForegroundColor Green
   Write-Host "Destino: $($backup.FullName)"
