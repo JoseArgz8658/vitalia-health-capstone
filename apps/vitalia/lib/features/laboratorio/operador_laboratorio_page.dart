@@ -3053,8 +3053,14 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                         child: Icon(item.$2),
                       )
                     : Icon(item.$2);
+                final mobileLabel = switch (item.$1) {
+                  _OperatorSection.dashboard => 'Inicio',
+                  _OperatorSection.request => 'Recibir',
+                  _OperatorSection.reviewQueue => 'Revisión',
+                  _ => item.$3,
+                };
                 return NavigationDestination(
-                    icon: icon, label: item.$3);
+                    icon: icon, label: mobileLabel);
               }).toList(),
             )
           : null,
