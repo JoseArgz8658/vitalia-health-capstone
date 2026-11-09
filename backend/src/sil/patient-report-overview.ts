@@ -81,8 +81,8 @@ export function createSilPatientReportOverview(db:Pick<Pool,'query'>,read=readPd
         ? `SELECT r.id,'VH-' || lpad(o.order_number::text,6,'0') AS "orderNumber",
              r.issuing_laboratory AS laboratory,r.externally_authorized_at AS "authorizedAt",
              r.pdf_data AS pdf,r.pdf_sha256 AS sha,
-             NULL::bytea AS "requestPdf",NULL::text AS "requestSha",
-             NULL::text AS reference,
+             m.pdf_data AS "requestPdf",m.pdf_sha256 AS "requestSha",
+             m.document_reference AS reference,
              COALESCE((SELECT jsonb_agg(jsonb_build_object(
                'examCode',e.exam_code,'analyte',a.analyte,'unit',a.unit)
                ORDER BY e.exam_code,a.analyte)
@@ -95,6 +95,9 @@ export function createSilPatientReportOverview(db:Pick<Pool,'query'>,read=readPd
            JOIN public.vitalia_sil_main_patients p
              ON p.lab_id=r.lab_id AND p.patient_id=r.patient_id AND p.active
            JOIN public.vitalia_sil_main_laboratories l ON l.id=r.lab_id AND l.active
+           LEFT JOIN public.vitalia_sil_main_medical_requests m
+             ON m.order_id=o.id AND m.lab_id=r.lab_id
+             AND m.patient_id=r.patient_id AND m.human_review_confirmed
            WHERE r.patient_id=$1 AND r.id=ANY($2::uuid[])
              AND r.published_at IS NOT NULL AND o.status='report_published'
            ORDER BY r.externally_authorized_at,r.id`
