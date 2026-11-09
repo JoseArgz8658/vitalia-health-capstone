@@ -129,3 +129,15 @@ test('sin DEMO ni buzón explícito, no existe la activación pública',async()=
  expect(mailbox.status).toBe(404);
  expect(portal.demoMailbox).not.toHaveBeenCalled();
 });
+
+test('el portal DEMO no intercepta órdenes, informes ni rutas SIL existentes',async()=>{
+ const {app}=setup();
+ app.get('/api/sil/patient/reports',(_req,res)=>res.json({reports:[]}));
+ app.get('/api/sil/orders',(_req,res)=>res.json({orders:[]}));
+ const reports=await request(app).get('/api/sil/patient/reports');
+ const orders=await request(app).get('/api/sil/orders');
+ expect(reports.status).toBe(200);
+ expect(orders.status).toBe(200);
+ expect(reports.body).toEqual({reports:[]});
+ expect(orders.body).toEqual({orders:[]});
+});
