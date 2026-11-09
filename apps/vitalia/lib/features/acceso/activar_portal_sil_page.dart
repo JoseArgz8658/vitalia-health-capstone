@@ -328,7 +328,7 @@ class _ActivarPortalSilPageState extends State<ActivarPortalSilPage>{
       backgroundColor:ColoresVitalia.fondoAzul,
       appBar:AppBar(
         title:const Row(mainAxisSize:MainAxisSize.min,children:[
-          Icon(Icons.favorite_border_outlined,color:ColoresVitalia.azul),
+          Icon(Icons.favorite_border,color:ColoresVitalia.azul),
           SizedBox(width:9),Text('Vitalia Health'),
         ]),
       ),
