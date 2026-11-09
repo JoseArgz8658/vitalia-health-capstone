@@ -41,7 +41,10 @@ class _OperatorApi extends AuthApi {
         return {'branches': []};
       case '/summary':
         return {
-          'summary': {'total': 1},
+          'summary': {
+            'total': 1,
+            'pendingResults': status == 'sampled' ? 1 : 0
+          },
         };
       case '/orders':
         return {
@@ -70,6 +73,46 @@ class _OperatorApi extends AuthApi {
 }
 
 void main() {
+  testWidgets(
+      'bandeja de resultados abre el filtro y la orden en vista estrecha', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 840);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = _OperatorApi();
+    await tester.pumpWidget(MaterialApp(
+      home: OperadorLaboratorioPage(
+        api: api,
+        onExpired: () {},
+        onLogout: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Cerrar sesión'), findsOneWidget);
+
+    final pending = find.text('Pendientes de resultados');
+    await tester.ensureVisible(pending);
+    await tester.tap(pending);
+    await tester.pumpAndSettle();
+
+    expect(api.calls.last.queryParameters, containsPair('status', 'sampled'));
+    expect(api.calls.last.queryParameters, containsPair('offset', '0'));
+    expect(find.byType(DataTable), findsNothing);
+    expect(find.text('VH-000013'), findsOneWidget);
+    final action = find.text('Ingresar resultados');
+    await tester.ensureVisible(action);
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+    expect(find.text('Ingresa los resultados de las prestaciones solicitadas.'),
+        findsOneWidget);
+
+    await tester.tap(find.text('Volver a órdenes'));
+    await tester.pumpAndSettle();
+    expect(api.calls.last.queryParameters, containsPair('status', 'sampled'));
+  });
+
   testWidgets('conserva el ingreso si falla y vuelve a órdenes al guardar', (
     tester,
   ) async {
