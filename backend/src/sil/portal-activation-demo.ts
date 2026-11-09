@@ -52,6 +52,11 @@ export function createSilPortalActivationDemo(db:Pool) {
           `INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code)
            VALUES($1,$2,$3,'paciente')`,
           [id,email,randomCredential]);
+        // El rol paciente queda INACTIVO hasta completar la activación.
+        // Ningún secreto de inicio de sesión es entregado al operador.
+        await client.query(
+          `UPDATE public.vitalia_account_roles
+           SET active=false WHERE account_id=$1 AND role_code='paciente'`,[id]);
         await client.query(
           `INSERT INTO public.vitalia_sil_patient_profiles_demo(
             patient_id,synthetic_identifier,given_names,family_names,birth_date,
@@ -248,6 +253,10 @@ export function createSilPortalActivationDemo(db:Pool) {
           `UPDATE public.vitalia_sil_portal_access_demo
            SET status='active',activated_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
            WHERE patient_id=$1`,[row.patientId]);
+        await client.query(
+          `UPDATE public.vitalia_account_roles
+           SET active=true WHERE account_id=$1 AND role_code='paciente'`,
+          [row.patientId]);
         await client.query(
           'DELETE FROM public.vitalia_sessions WHERE account_id=$1',[row.patientId]);
         await audit(client,row.patientId,row.patientId,'portal_activated',{method:'two_channel'});
