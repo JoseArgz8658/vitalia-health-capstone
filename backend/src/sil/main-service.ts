@@ -3,6 +3,7 @@ import {hashPassword} from '../auth/password';
 import {type Pool,type PoolClient} from 'pg';
 import {createSilPatientRecoveryDemo} from './patient-recovery-demo';
 import {readPdfText} from '../pdf/reader';
+import {suggestMainResults} from './main-results-preview';
 import {suggestMedicalRequestFields} from './medical-request-intake';
 import {identifyDocument} from '../documents/file-validation';
 import {createSilPatientReportOverview} from './patient-report-overview';
@@ -75,7 +76,7 @@ export function createSilMainService(db:Pool) {
     }finally{tx.release(failed);}
   }
 
-  let readingRequest=false;
+  let readingPdf=false;
 
   async function insertOrder(tx:PoolClient,labId:string,patientId:string,examCodes:string[],operatorId:string){
     const patient=await tx.query(
@@ -381,6 +382,26 @@ export function createSilMainService(db:Pool) {
       });
     },
 
+    async previewAnalytes(labId:string,orderId:string,operatorId:string,bytes:Buffer){
+      const {status,containers,analytes,results}=await this.clinicalDetails(labId,orderId,operatorId);
+      const barcodes=containers.flatMap(row=>row.barcode?[row.barcode]:[]);
+      if(status!=='registered'||!analytes.length||!barcodes.length||barcodes.length!==containers.length||
+        (results&&results.status!=='returned'))throw new SilMainConflict();
+      if(bytes.length<8||bytes.length>2*1024*1024)throw new SilMainConflict();
+      identifyDocument(bytes,'application/pdf','resultados.pdf');
+      if(readingPdf)throw new SilMainConflict();
+      readingPdf=true;
+      try {
+        const reading=await readPdfText(bytes);
+        if(reading.status!=='text_ready'||!reading.text){
+          return {state:reading.status==='needs_ocr'?'needs_ocr':'unreadable',items:[]};
+        }
+        return suggestMainResults(reading.text,barcodes,analytes);
+      } finally {
+        readingPdf=false;
+      }
+    },
+
     async recordAnalytes(labId:string,orderId:string,operatorId:string,
       values:{examCode:string;analyte:string;numericValue:number}[]){
       return transaction(async tx=>{
@@ -477,8 +498,8 @@ export function createSilMainService(db:Pool) {
       await operator(labId,operatorId);
       identifyDocument(bytes,'application/pdf',fileName);
       if(bytes.length<8||bytes.length>2*1024*1024)throw new SilMainConflict();
-      if(readingRequest)throw new SilMainConflict();
-      readingRequest=true;
+      if(readingPdf)throw new SilMainConflict();
+      readingPdf=true;
       try {
         const reading=await readPdfText(bytes);
         const catalog=await db.query<{code:string;name:string}>(
@@ -488,7 +509,7 @@ export function createSilMainService(db:Pool) {
           ...suggestMedicalRequestFields(reading.text??'',catalog.rows),
         };
       } finally {
-        readingRequest=false;
+        readingPdf=false;
       }
     },
 

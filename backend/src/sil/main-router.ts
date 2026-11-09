@@ -248,6 +248,14 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     res.status(201).json(await main.receiveSample(req.params.labId as string,
       req.params.orderId as string,res.locals.account.id,data.data.containerCode));
   });
+  router.post(clinicalPath+'/results/preview',staff,labPath,clinicalOperator,
+    express.raw({type:'application/pdf',limit:'2mb'}),async(req,res)=>{
+      if(!Buffer.isBuffer(req.body)){
+        res.status(400).json({error:{code:'INVALID_RESULTS_PDF'}});return;
+      }
+      res.json(await main.previewAnalytes(req.params.labId as string,
+        req.params.orderId as string,res.locals.account.id,req.body));
+    });
   router.post(clinicalPath+'/results',staff,labPath,clinicalOperator,async(req,res)=>{
     const data=z.object({values:z.array(z.object({
       examCode,analyte:z.string().trim().min(1).max(100),numericValue:z.number().min(-1e9).max(1e9),

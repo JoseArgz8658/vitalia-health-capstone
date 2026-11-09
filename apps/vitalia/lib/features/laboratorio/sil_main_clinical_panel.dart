@@ -1,3 +1,4 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/auth_api.dart';
@@ -28,6 +29,8 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
   final _values = <String, String>{};
   final _reason = TextEditingController();
   String? _error;
+  String? _previewMessage;
+  final _suggestions = <String, num>{};
   bool _busy = false;
   int _revision = 0;
 
@@ -47,6 +50,8 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
     setState(() {
       _details = details;
       _values.clear();
+      _previewMessage = null;
+      _suggestions.clear();
       for (final row in (result?['values'] as List? ?? []).cast<Map>()) {
         _values[_key(row)] = row['numericValue'].toString();
       }
@@ -71,7 +76,8 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
         setState(() => _error = failure.message);
       }
     } catch (_) {
-      if (mounted) setState(() => _error = 'No se pudo completar la operación.');
+      if (mounted)
+        setState(() => _error = 'No se pudo completar la operación.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -82,14 +88,79 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
     await _load();
   }
 
+  Future<void> _previewPdf() async {
+    final orderId = _orderId!;
+    final file = await openFile(
+      acceptedTypeGroups: const [
+        XTypeGroup(
+          label: 'Resultados PDF',
+          extensions: ['pdf'],
+          mimeTypes: ['application/pdf'],
+        ),
+      ],
+    );
+    if (!mounted || file == null) return;
+    setState(() {
+      _previewMessage = null;
+      _suggestions.clear();
+    });
+    if (await file.length() > 2 * 1024 * 1024) {
+      throw const AuthFailure('El PDF supera los 2 MiB.');
+    }
+    final preview = await widget.api.silMainPreviewResults(
+      labId: widget.labId,
+      orderId: orderId,
+      fileName: file.name,
+      bytes: await file.readAsBytes(),
+    );
+    if (!mounted) return;
+    setState(() {
+      for (final row in (preview['items'] as List).cast<Map>()) {
+        final value = row['suggestedValue'];
+        if (value is num) _suggestions[_key(row)] = value;
+      }
+      _previewMessage = switch (preview['state']) {
+        'sample_mismatch' =>
+          'Los códigos de muestra del PDF no coinciden con los de la orden.',
+        'needs_ocr' =>
+          'El PDF no tiene texto utilizable. Puedes transcribir los valores.',
+        'unreadable' =>
+          'No se pudo leer el PDF. Puedes transcribir los valores.',
+        _ when _suggestions.isEmpty =>
+          'No se encontraron valores con una unidad inequívoca. Completa los campos manualmente.',
+        _ =>
+          'Coteja cada sugerencia con el PDF original. Completa los campos sin sugerencia manualmente.',
+      };
+    });
+  }
+
+  void _applySuggestions() {
+    setState(() {
+      for (final entry in _suggestions.entries) {
+        if ((_values[entry.key] ?? '').trim().isEmpty) {
+          _values[entry.key] = entry.value.toString();
+        }
+      }
+      _suggestions.clear();
+      _previewMessage = 'Revisa los campos antes de guardar los resultados.';
+      _revision++;
+    });
+  }
+
   Future<void> _save(List<Map> analytes) async {
     final results = <Map<String, dynamic>>[];
     for (final row in analytes) {
-      final number = double.tryParse((_values[_key(row)] ?? '').trim().replaceAll(',', '.'));
+      final number = double.tryParse(
+        (_values[_key(row)] ?? '').trim().replaceAll(',', '.'),
+      );
       if (number == null || !number.isFinite) {
         throw const AuthFailure('Ingresa un valor numérico para cada analito.');
       }
-      results.add({'examCode': row['examCode'], 'analyte': row['analyte'], 'numericValue': number});
+      results.add({
+        'examCode': row['examCode'],
+        'analyte': row['analyte'],
+        'numericValue': number,
+      });
     }
     await _write('results', {'values': results});
   }
@@ -101,30 +172,44 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
     final result = _details?['results'] as Map?;
     final status = result?['status'];
     final open = _details?['status'] == 'registered';
-    final sampled = containers.isNotEmpty && containers.every((row) => row['barcode'] != null);
-    final editable = open && sampled && (status == null || status == 'returned');
+    final sampled =
+        containers.isNotEmpty &&
+        containers.every((row) => row['barcode'] != null);
+    final editable =
+        open && sampled && (status == null || status == 'returned');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DropdownButtonFormField<String>(
-          key: ValueKey(widget.labId),
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Orden para muestras y resultados'),
-          items: [
-            for (final order in widget.orders)
-              DropdownMenuItem(
-                value: order['id'] as String,
-                child: Text('VH-${order['orderNumber'].toString().padLeft(6, '0')}'),
-              ),
-          ],
-          onChanged: _busy ? null : (orderId) {
-            if (orderId == null) return;
-            setState(() {
-              _orderId = orderId;
-              _details = null;
-            });
-            _run(_load);
-          },
+        Semantics(
+          identifier: 'sil-clinical-order',
+          child: DropdownButtonFormField<String>(
+            key: ValueKey(widget.labId),
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Orden para muestras y resultados',
+            ),
+            items: [
+              for (final order in widget.orders)
+                DropdownMenuItem(
+                  value: order['id'] as String,
+                  child: Text(
+                    'VH-${order['orderNumber'].toString().padLeft(6, '0')}',
+                  ),
+                ),
+            ],
+            onChanged: _busy
+                ? null
+                : (orderId) {
+                    if (orderId == null) return;
+                    setState(() {
+                      _orderId = orderId;
+                      _details = null;
+                      _previewMessage = null;
+                      _suggestions.clear();
+                    });
+                    _run(_load);
+                  },
+          ),
         ),
         if (_busy) const LinearProgressIndicator(),
         if (_error != null) Text(_error!),
@@ -134,14 +219,21 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
           for (final row in containers)
             ListTile(
               title: Text(row['label'] as String),
-              subtitle: Text(row['barcode'] as String? ?? 'Pendiente de recepción'),
+              subtitle: Text(
+                row['barcode'] as String? ?? 'Pendiente de recepción',
+              ),
               trailing: row['barcode'] == null && open
                   ? TextButton(
-                      onPressed: _busy ? null : () => _run(
-                        () => _write('samples', {'containerCode': row['code']}),
-                      ),
+                      onPressed: _busy
+                          ? null
+                          : () => _run(
+                              () => _write('samples', {
+                                'containerCode': row['code'],
+                              }),
+                            ),
                       child: const Text('Recibir'),
-                    ) : null,
+                    )
+                  : null,
             ),
           if (sampled || result != null) ...[
             Text(switch (status) {
@@ -150,18 +242,43 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
               'returned' => 'Resultados devueltos para corrección',
               _ => 'Ingresar resultados por analito',
             }),
+            if (editable && analytes.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : () => _run(_previewPdf),
+                icon: const Icon(Icons.picture_as_pdf_outlined),
+                label: const Text('Leer PDF de resultados'),
+              ),
+              if (_previewMessage != null)
+                Semantics(liveRegion: true, child: Text(_previewMessage!)),
+            ],
             for (final row in analytes)
               TextFormField(
                 key: ValueKey('$_revision-${_key(row)}'),
                 initialValue: _values[_key(row)],
                 enabled: editable && !_busy,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-                decoration: InputDecoration(labelText: '${row['analyte']} (${row['unit']})'),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                  signed: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: '${row['analyte']} (${row['unit']})',
+                  helperText: _suggestions.containsKey(_key(row))
+                      ? 'Sugerencia del PDF: ${_suggestions[_key(row)]}'
+                      : null,
+                ),
                 onChanged: (value) => _values[_key(row)] = value,
+              ),
+            if (_suggestions.isNotEmpty)
+              TextButton(
+                onPressed: _busy ? null : _applySuggestions,
+                child: const Text('Cotejé el PDF. Completar campos vacíos'),
               ),
             if (editable)
               FilledButton(
-                onPressed: _busy || analytes.isEmpty ? null : () => _run(() => _save(analytes)),
+                onPressed: _busy || analytes.isEmpty
+                    ? null
+                    : () => _run(() => _save(analytes)),
                 child: const Text('Guardar resultados para revisión'),
               ),
             if (open && status == 'pending' && widget.canReview) ...[
@@ -169,22 +286,34 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
                 controller: _reason,
                 enabled: !_busy,
                 maxLength: 300,
-                decoration: const InputDecoration(labelText: 'Motivo de devolución'),
+                decoration: const InputDecoration(
+                  labelText: 'Motivo de devolución',
+                ),
               ),
-              Wrap(spacing: 8, children: [
-                FilledButton(
-                  onPressed: _busy ? null : () => _run(
-                    () => _write('review', {'decision': 'approved'}),
+              Wrap(
+                spacing: 8,
+                children: [
+                  FilledButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _run(
+                            () => _write('review', {'decision': 'approved'}),
+                          ),
+                    child: const Text('Aprobar resultados'),
                   ),
-                  child: const Text('Aprobar resultados'),
-                ),
-                OutlinedButton(
-                  onPressed: _busy ? null : () => _run(
-                    () => _write('review', {'decision': 'returned', 'reason': _reason.text.trim()}),
+                  OutlinedButton(
+                    onPressed: _busy
+                        ? null
+                        : () => _run(
+                            () => _write('review', {
+                              'decision': 'returned',
+                              'reason': _reason.text.trim(),
+                            }),
+                          ),
+                    child: const Text('Devolver para corregir'),
                   ),
-                  child: const Text('Devolver para corregir'),
-                ),
-              ]),
+                ],
+              ),
             ],
           ],
         ],

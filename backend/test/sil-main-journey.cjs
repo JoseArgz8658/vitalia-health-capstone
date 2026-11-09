@@ -134,7 +134,7 @@ async function reach(page, locator, description) {
   throw new Error('Control de operador fuera de alcance: '+description);
 }
 
-async function operatorJourney(browser, order, base) {
+async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
   const name='VH-'+String(order.orderNumber).padStart(6,'0');
   const endpoint='/api/sil/main'+base+'/orders/'+order.id+'/report';
   const stage=async (account, task)=>{
@@ -162,9 +162,9 @@ async function operatorJourney(browser, order, base) {
         await control.and(page.locator('[aria-checked="true"]')).waitFor({timeout:5000});
         console.log('Microsoft Edge: confirmación marcada: '+label);
       };
-      const select=async (control)=>{
+      const select=async (control, orderName=name)=>{
         await click(id(control),control);
-        await page.getByRole('menuitem',{name:new RegExp(name)}).click({timeout:7000});
+        await page.getByRole('menuitem',{name:new RegExp(orderName)}).click({timeout:7000});
       };
       try {
         return await task({page,id,button,click,select,confirm});
@@ -186,7 +186,25 @@ async function operatorJourney(browser, order, base) {
   };
 
   return stage('uploader',async ({page,id,button,click,select,confirm})=>{
-    await button('Órdenes').click();
+    await click(button('Muestras y resultados'),'Muestras y resultados');
+    await select('sil-clinical-order','VH-'+String(sampleOrder.orderNumber).padStart(6,'0'));
+    const clinical='/api/sil/main'+base+'/orders/'+sampleOrder.id+'/clinical/results';
+    const chooseResults=page.waitForEvent('filechooser');
+    const preview=page.waitForResponse(r=>r.url().endsWith(clinical+'/preview') && r.request().method()==='POST');
+    await click(button('Leer PDF de resultados'),'Leer PDF de resultados');
+    await (await chooseResults).setFiles({
+      name:'resultados-ficticios.pdf',mimeType:'application/pdf',buffer:samplePdf,
+    });
+    assert.equal((await preview).status(),200);
+    await page.getByText('Sugerencia del PDF: 91.2',{exact:true}).waitFor();
+    await click(button('Cotejé el PDF. Completar campos vacíos'),'Completar sugerencias');
+    const saved=page.waitForResponse(r=>r.url().endsWith(clinical) && r.request().method()==='POST');
+    await click(button('Guardar resultados para revisión'),'Guardar resultados');
+    const recorded=await saved;
+    assert.equal(recorded.status(),201);
+    assert.equal(recorded.request().postDataJSON().values[0].numericValue,91.2);
+    console.log('Microsoft Edge: el operador cotejó y guardó la sugerencia del PDF.');
+    await click(button('Órdenes'),'Órdenes');
     await select('sil-upload-order');
     const choose=page.waitForEvent('filechooser');
     await click(button('Elegir archivo PDF (máx. 2 MiB)'),'Elegir archivo PDF');
@@ -245,11 +263,11 @@ async function operatorJourney(browser, order, base) {
   });
 }
 
-async function browserJourney(order, base) {
+async function browserJourney(order, base, sampleOrder, samplePdf) {
   const {chromium}=require(process.env.VITALIA_JOURNEY_PLAYWRIGHT);
   const browser=await chromium.launch({channel:'msedge'});
   try {
-    const publishedId=await operatorJourney(browser,order,base);
+    const publishedId=await operatorJourney(browser,order,base,sampleOrder,samplePdf);
     const page=await browser.newPage({viewport:{width:390,height:844}});
     await signIn(page,'patient');
     const downloadButton=page.getByRole('button',{name:'Descargar PDF',exact:true}).first();
@@ -414,9 +432,40 @@ async function main() {
     await call('reviewer','GET',otherLab+'/orders/'+orderId+'/clinical',404);
     await call('uploader','POST',clinical+'/results',409,values);
     await call('uploader','POST',clinical+'/samples',409,sample('edta'));
-    await call('uploader','POST',clinical+'/samples',201,sample('fluoride'));
+    const resultsPreview=clinical+'/results/preview';
+    const resultsPdf=(barcode,...lines)=>({bytes:syntheticPdf([
+      'Vitalia - resultados ficticios','Muestra: '+barcode,...lines,
+    ]),headers:{'Content-Type':'application/pdf'}});
+    const wrongBarcode='LAB-'+randomUUID().toUpperCase();
+    await call('uploader','POST',resultsPreview,409,resultsPdf(wrongBarcode,'Glucosa 91,2 mg/dL'));
+    const {barcode}=await (await call('uploader','POST',clinical+'/samples',201,sample('fluoride'))).json();
+    const matching=resultsPdf(barcode,'Glucosa 91,2 mg/dL');
+    await call('patient','POST',resultsPreview,403,matching);
+    await call('uploader','POST',otherLab+'/orders/'+orderId+'/clinical/results/preview',403,matching);
+    await call('reviewer','POST',otherLab+'/orders/'+orderId+'/clinical/results/preview',404,matching);
+    const resultPreview=async file=>(await call('uploader','POST',resultsPreview,200,file)).json();
+    assert.deepEqual(await resultPreview(matching),{
+      state:'text_ready',items:[{examCode:'glicemia',analyte:'Glucosa',unit:'mg/dL',suggestedValue:91.2}],
+    });
+    for(const file of [
+      resultsPdf(wrongBarcode,'Glucosa 91,2 mg/dL'),
+      resultsPdf(barcode,'Muestra: '+wrongBarcode,'Glucosa 91,2 mg/dL'),
+    ]){
+      assert.deepEqual(await resultPreview(file),{state:'sample_mismatch',items:[]});
+    }
+    for(const lines of [
+      ['Glucosa 5 mmol/L'],
+      ['Glucosa 90 mg/dL','Glucosa 91 mg/dL'],
+      ['Glucosa 1.234 mg/dL'],
+      ['Glucosa 90 mg/dL 70-110'],
+    ]){
+      assert.equal((await resultPreview(resultsPdf(barcode,...lines))).items[0].suggestedValue,null);
+    }
+    assert.equal((await (await call('uploader','GET',clinical,200)).json()).results,null);
+    console.log('API: vista previa de resultados sin persistencia, con muestras y unidades cotejadas.');
     await call('uploader','POST',clinical+'/samples',409,sample('fluoride'));
     await call('uploader','POST',clinical+'/results',201,values);
+    await call('uploader','POST',resultsPreview,409,matching);
     await call('uploader','POST',clinical+'/review',403,{json:{decision:'approved'}});
     await admin(base+'/staff/review-permission',200,{accountId:ids.uploader,enabled:true});
     await call('uploader','POST',clinical+'/review',200,{json:{decision:'returned',reason:'Revisar valor transcrito'}});
@@ -503,6 +552,12 @@ async function main() {
         patientId:ids.patient,examCodes:['glicemia'],
       }});
       const {order:ready}=await browserOrder.json();
+      const {order:sampleOrder}=await (await call('uploader','POST',base+'/orders',201,{json:{
+        patientId:ids.patient,examCodes:['glicemia'],
+      }})).json();
+      const {barcode:sampleCode}=await (await call('uploader','POST',
+        base+'/orders/'+sampleOrder.id+'/clinical/samples',201,sample('fluoride'))).json();
+      const samplePdf=resultsPdf(sampleCode,'Glucosa 91,2 mg/dL').bytes;
       if(manual){
         writeFileSync(fixture,pdf,{flag:'wx'});
         const newRequest=resolve(dirname(fixture),'solicitud-ficticia.pdf');
@@ -510,7 +565,11 @@ async function main() {
           'Referencia: SOL-1003','Profesional solicitante: Persona Ficticia',
           'Fecha de solicitud: 2024-01-01','Glicemia',
         ]),{flag:'wx'});
+        const resultsFixture=resolve(dirname(fixture),'resultados-ficticios.pdf');
+        writeFileSync(resultsFixture,samplePdf,{flag:'wx'});
         console.log('PDF para crear una orden desde Recibir solicitud: '+newRequest);
+        console.log('Orden para probar la lectura de resultados: VH-'+String(sampleOrder.orderNumber).padStart(6,'0'));
+        console.log('PDF para Muestras y resultados > Leer PDF de resultados: '+resultsFixture);
         console.log('\nSIL temporal listo en http://localhost:5173/#/laboratorio');
         console.log('Orden disponible: VH-'+String(ready.orderNumber).padStart(6,'0'));
         console.log('Adjunta el PDF con '+credentials.uploader.email+'.');
@@ -530,7 +589,7 @@ async function main() {
           input.close();
         }
       } else {
-        await browserJourney(ready,base);
+        await browserJourney(ready,base,sampleOrder,samplePdf);
       }
     }
   } finally {

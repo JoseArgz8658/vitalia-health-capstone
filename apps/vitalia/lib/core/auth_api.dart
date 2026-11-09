@@ -220,9 +220,27 @@ class AuthApi {
     required String labId,
     required String fileName,
     required Uint8List bytes,
-  }) => _silMainMedicalRequest(
+  }) => _silMainPdfRequest(
     labId: labId, path: 'medical-requests/preview', fileName: fileName, bytes: bytes,
   );
+
+  Future<Map<String, dynamic>> silMainPreviewResults({
+    required String labId,
+    required String orderId,
+    required String fileName,
+    required Uint8List bytes,
+  }) {
+    if (!RegExp(r'^[a-f0-9-]{36}$').hasMatch(orderId)) {
+      throw const AuthFailure('Orden inválida.');
+    }
+    return _silMainPdfRequest(
+      labId: labId,
+      path: 'orders/$orderId/clinical/results/preview',
+      fileName: fileName,
+      bytes: bytes,
+      resultsPreview: true,
+    );
+  }
 
   Future<Map<String,dynamic>> silMainAttachMedicalRequest({
     required String labId,
@@ -242,7 +260,7 @@ class AuthApi {
        !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(requestDate)){
       throw const AuthFailure('Revisa el PDF y los datos de la solicitud.');
     }
-    return _silMainMedicalRequest(
+    return _silMainPdfRequest(
       labId:labId,
       path:orderId == null ? 'medical-requests' : 'orders/$orderId/medical-request',
       fileName:fileName,
@@ -261,12 +279,13 @@ class AuthApi {
     );
   }
 
-  Future<Map<String,dynamic>> _silMainMedicalRequest({
+  Future<Map<String,dynamic>> _silMainPdfRequest({
     required String labId,
     required String path,
     required String fileName,
     required Uint8List bytes,
     Map<String,String> headers = const {},
+    bool resultsPreview = false,
   }) async {
     if(!_silMainMode){
       throw const AuthFailure('El SIL principal no está habilitado.');
@@ -277,7 +296,9 @@ class AuthApi {
        fileName.length<5||fileName.length>120||
        bytes.length<8||bytes.length>2*1024*1024||
        bytes[0]!=37||bytes[1]!=80||bytes[2]!=68||bytes[3]!=70){
-      throw const AuthFailure('Revisa el PDF y los datos de la solicitud.');
+      throw AuthFailure(resultsPreview
+        ? 'Elige un PDF de resultados de hasta 2 MiB.'
+        : 'Revisa el PDF y los datos de la solicitud.');
     }
     final token=_token;
     if(token==null||expiresAt==null||!expiresAt!.isAfter(DateTime.now())){
@@ -301,18 +322,18 @@ class AuthApi {
       }
       if(response.statusCode>=400){
         throw AuthFailure(switch(response.statusCode){
-          400=>'El PDF o los datos de la solicitud son inválidos.',
-          403=>'No tienes permiso para recibir esta solicitud.',
+          400=>resultsPreview ? 'El PDF de resultados es inválido.' : 'El PDF o los datos de la solicitud son inválidos.',
+          403=>resultsPreview ? 'No tienes permiso para analizar este PDF.' : 'No tienes permiso para recibir esta solicitud.',
           404=>'El paciente o la orden no pertenece al laboratorio seleccionado.',
-          409=>'La solicitud está en uso, ya fue recibida o la orden cambió.',
+          409=>resultsPreview ? 'Hay otra lectura en curso o la orden dejó de admitir cambios.' : 'La solicitud está en uso, ya fue recibida o la orden cambió.',
           413=>'El PDF supera los 2 MiB.',
-          _=>'No se pudo recibir la solicitud.',
+          _=>resultsPreview ? 'No se pudo leer el PDF de resultados.' : 'No se pudo recibir la solicitud.',
         },response.statusCode);
       }
       return jsonDecode(response.body) as Map<String,dynamic>;
     }on AuthFailure {rethrow;}
     on TimeoutException {
-      throw const AuthFailure('La recepción tardó demasiado.');
+      throw AuthFailure(resultsPreview ? 'La lectura del PDF tardó demasiado.' : 'La recepción tardó demasiado.');
     }catch(_){
       throw const AuthFailure('No fue posible conectar con Vitalia.');
     }

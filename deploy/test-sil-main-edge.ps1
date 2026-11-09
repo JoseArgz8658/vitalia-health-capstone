@@ -11,7 +11,7 @@ $temp = Join-Path ([System.IO.Path]::GetTempPath()) $container
 $created = $false
 
 function Read-DemoPassword([string]$Email) {
-  $secret = Read-Host ('Contraseña DEMO de ' + $Email) -AsSecureString
+  $secret = Read-Host ('Clave DEMO de ' + $Email) -AsSecureString
   $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
   try {
     return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
@@ -22,7 +22,7 @@ function Read-DemoPassword([string]$Email) {
 }
 
 function Assert-Native([string]$Step) {
-  if ($LASTEXITCODE -ne 0) { throw ('Falló: ' + $Step) }
+  if ($LASTEXITCODE -ne 0) { throw ('Fallo: ' + $Step) }
 }
 
 $testEnv = @{
@@ -46,7 +46,7 @@ foreach ($key in $testEnv.Keys) {
 }
 try {
   & docker image inspect --format '{{.Id}}' postgres:16.15-bookworm vitalia-backend:local
-  Assert-Native 'comprobar las imágenes locales del ensayo'
+  Assert-Native 'comprobar las imagenes locales del ensayo'
 
   $null = New-Item -ItemType Directory -Path $temp
   & npm --prefix $backend run build
@@ -69,7 +69,7 @@ try {
     [Environment]::SetEnvironmentVariable($key, $testEnv[$key], 'Process')
   }
 
-  # La API local usa un puerto de prueba. La migración se ejecuta por loopback dentro del contenedor.
+  # La API local usa un puerto de prueba. La migracion se ejecuta por loopback dentro del contenedor.
   $dockerArgs = @(
     'run', '--detach', '--rm', '--pull=never', '--name', $container,
     '--publish', '127.0.0.1:55439:5432', '--env', 'POSTGRES_USER=vitalia_restore',
@@ -86,7 +86,7 @@ try {
     if ($LASTEXITCODE -eq 0) { $ready = $true; break }
     Start-Sleep -Seconds 1
   }
-  if (-not $ready) { throw 'PostgreSQL temporal no inició.' }
+  if (-not $ready) { throw 'PostgreSQL temporal no inicio.' }
 
   if ($DemoAccounts) {
     $demoPasswords = @{

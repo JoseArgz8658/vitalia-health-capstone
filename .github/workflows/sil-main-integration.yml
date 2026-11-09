@@ -40,7 +40,7 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter analyze lib/app/vitalia_mvp_app.dart lib/core/auth_api.dart
+      - run: flutter analyze lib/app/vitalia_mvp_app.dart lib/core/auth_api.dart lib/features/laboratorio/sil_main_clinical_panel.dart
       - run: flutter test
       - run: >-
           flutter build web --no-web-resources-cdn
