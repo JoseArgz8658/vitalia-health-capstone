@@ -18,9 +18,40 @@ async function main() {
   let failed=false;
   try {
     const config=readDatabaseConfig(process.env);
-    // Fallar ANTES de abrir la conexión o ejecutar cualquier SQL.
+    // En Vitalia principal el servicio migrate de Compose sirve SOLO
+    // como verificador de esquema YA integrado (nunca modifica SQL).
+    // La aplicación real debe instalarse mediante migrate-main-sil --apply,
+    // después de restauración aislada y aprobación explícita.
+    if(config.database==='vitalia'){
+      pool=createDatabasePool(config);
+      client=await pool.connect();
+      await client.query('BEGIN READ ONLY');
+      const ready=await client.query<{ok:boolean}>(
+        `SELECT
+          to_regclass('public.vitalia_account_roles') IS NOT NULL
+          AND to_regclass('public.vitalia_sil_main_laboratories') IS NOT NULL
+          AND to_regclass('public.vitalia_sil_main_reports') IS NOT NULL
+          AND to_regclass('public.vitalia_sil_main_operator_invites') IS NOT NULL
+          AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
+            WHERE version='012_preliminary_assistant')
+          AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
+            WHERE version='012_profiles_locations')
+          AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
+            WHERE version='032_sil_audit_download')
+          AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
+            WHERE version='038_sil_main_postanalytical')
+          AND NOT EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
+            WHERE left(version,3) BETWEEN '033' AND '037') AS ok`);
+      if(ready.rows[0]?.ok!==true){
+        throw new Error('Base principal aún no integrada: no se aplicará ninguna migración automática.');
+      }
+      await client.query('COMMIT');
+      console.info('Vitalia principal: esquema SIL 038 verificado en solo lectura.');
+      return;
+    }
+    // La migración automática solo se conserva para vitalia_dev aislada.
     if(config.database!=='vitalia_dev') {
-      throw new Error('Migrador bloqueado para Vitalia principal.');
+      throw new Error('Migrador no autorizado para esta base.');
     }
     const directory=resolve(__dirname,'../../database/migrations');
     const files=(await readdir(directory))
