@@ -1,5 +1,6 @@
 name: SIL principal - pruebas de integracion
 on:
+  workflow_dispatch:
   push:
     branches:
       - feat/sil-integracion-vitalia-principal
@@ -70,7 +71,7 @@ jobs:
             sleep 1
           done
           exit 1
-      - name: Probar API, sesiones y descarga desde Edge
+      - name: Probar el flujo del operador y del paciente en Edge
         working-directory: backend
         env:
           VITALIA_ISOLATED_REHEARSAL: 'YES'

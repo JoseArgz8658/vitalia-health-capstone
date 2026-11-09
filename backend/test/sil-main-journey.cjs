@@ -113,8 +113,13 @@ async function operatorJourney(browser, order, base) {
       const click=async (locator,label)=>(await reach(page,locator,label)).click();
       const confirm=async label=>{
         const control=checkbox(label);
-        await click(control,label);
+        await reach(page,control,label);
+        if(await control.getAttribute('aria-checked')==='true')return;
+        const box=await control.boundingBox();
+        // CheckboxListTile ubica la casilla al inicio de la fila.
+        await page.mouse.click(box.x+Math.min(24,box.width/2),box.y+box.height/2);
         await control.and(page.locator('[aria-checked="true"]')).waitFor({timeout:5000});
+        console.log('Microsoft Edge: confirmación marcada: '+label);
       };
       const select=async (control)=>{
         await click(id(control),control);
