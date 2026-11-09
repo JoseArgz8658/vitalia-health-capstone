@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
@@ -29,6 +30,7 @@ class SilPrincipalPage extends StatefulWidget {
 
 class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _name = TextEditingController();
+  final _inviteEmail = TextEditingController();
   final _staffAccount = TextEditingController();
   final _patientAccount = TextEditingController();
   final _evidence = TextEditingController();
@@ -75,7 +77,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   @override
   void dispose(){
     for(final ctrl in [
-      _name,_staffAccount,_patientAccount,_evidence,_orderPatient,
+      _name,_inviteEmail,_staffAccount,_patientAccount,_evidence,_orderPatient,
       _reportProfessional,_reportReference,_reportDate,
     ]){ctrl.dispose();}
     super.dispose();
@@ -159,6 +161,71 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     await widget.api.silMainRequest('/labs',body:{'displayName':name});
     _name.clear();
     await _loadLabs();
+  }
+
+  Future<void> _inviteOperator() async {
+    final lab=_labId;
+    final email=_inviteEmail.text.trim().toLowerCase();
+    if(lab==null||!email.contains('@')||email.length>254){
+      throw const AuthFailure('Selecciona laboratorio e ingresa un correo válido.');
+    }
+    final response=await widget.api.silMainRequest(
+      '/labs/$lab/operator-invitations',
+      body:{'email':email},
+    );
+    final invitation=Map<String,dynamic>.from(response['invitation'] as Map);
+    final code=invitation['code'] as String;
+    if(!mounted)return;
+    await showDialog<void>(
+      context:context,
+      barrierDismissible:false,
+      builder:(dialogContext)=>AlertDialog(
+        title:const Text('Invitación creada'),
+        content:SingleChildScrollView(
+          child:ConstrainedBox(
+            constraints:const BoxConstraints(maxWidth:480),
+            child:Column(
+              mainAxisSize:MainAxisSize.min,
+              crossAxisAlignment:CrossAxisAlignment.start,
+              children:[
+                const Text(
+                  'El código se muestra solo esta vez. Entrégalo al operador '
+                  'por un canal oficial verificado, nunca por un chat público.',
+                ),
+                const SizedBox(height:15),
+                SelectableText(
+                  code,
+                  style:const TextStyle(
+                    fontWeight:FontWeight.w800,
+                    fontSize:14,
+                  ),
+                ),
+                const SizedBox(height:12),
+                Text('Destinatario: $email'),
+                const SizedBox(height:7),
+                const Text(
+                  'El operador debe acceder a /#/activar-operador '
+                  'y crear su contraseña. La invitación vence en 24 horas.',
+                  style:TextStyle(fontSize:12,height:1.45),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions:[
+          TextButton.icon(
+            onPressed:()=>Clipboard.setData(ClipboardData(text:code)),
+            icon:const Icon(Icons.copy_outlined),
+            label:const Text('Copiar código'),
+          ),
+          FilledButton(
+            onPressed:()=>Navigator.of(dialogContext).pop(),
+            child:const Text('He guardado el código'),
+          ),
+        ],
+      ),
+    );
+    _inviteEmail.clear();
   }
 
   Future<void> _grantStaff() async {
@@ -382,6 +449,21 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         _field(_name,'Nombre del laboratorio'),
         _action('Registrar laboratorio',Icons.add,_createLab),
       ]),
+      if(_labId!=null)
+        _section('Invitar operador de laboratorio',
+          'Crea una invitación con código de un solo uso. El destinatario '
+          'activa una cuenta nueva con rol de operador.',
+          Icons.mark_email_read_outlined,[
+          _field(_inviteEmail,'Correo del nuevo operador'),
+          const Text(
+            'El código de acceso debe entregarse por un canal '
+            'oficial. No se envían correos automáticamente.',
+            style:TextStyle(fontSize:12,
+              color:ColoresVitalia.textoSecundario),
+          ),
+          const SizedBox(height:12),
+          _action('Crear invitación',Icons.person_add_alt_1,_inviteOperator),
+        ]),
       if(_labId!=null)
         _section('Asignar personal autorizado',
           'La cuenta debe tener rol autorizado. Para validar resultados, '
