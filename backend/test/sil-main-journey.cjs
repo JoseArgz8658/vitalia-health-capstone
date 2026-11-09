@@ -68,7 +68,7 @@ async function api(method, path, status, {token, json, bytes, headers={}} = {}) 
 
 async function browserJourney(publishedId) {
   const {chromium}=require(process.env.VITALIA_JOURNEY_PLAYWRIGHT);
-  const browser=await chromium.launch();
+  const browser=await chromium.launch({channel:'msedge'});
   try {
     const page=await browser.newPage({viewport:{width:390,height:844}});
     await page.goto('http://localhost:5173',{waitUntil:'domcontentloaded'});
@@ -87,7 +87,7 @@ async function browserJourney(publishedId) {
     assert.equal((await response).status(),200);
     const file=await downloaded;
     assert.deepEqual(readFileSync(await file.path()),pdf);
-    console.log('Chromium: sesión del paciente y descarga del informe publicado verificadas.');
+    console.log('Microsoft Edge: sesión del paciente y descarga del informe publicado verificadas.');
   } finally {
     await browser.close();
   }

@@ -52,11 +52,11 @@ jobs:
           cache-dependency-path: backend/package-lock.json
       - run: npm ci && npm run build
         working-directory: backend
-      - name: Preparar Chromium
+      - name: Preparar Microsoft Edge
         working-directory: backend
         run: |
           npm install --prefix "$RUNNER_TEMP/vitalia-browser" --no-save playwright@1.58.2
-          "$RUNNER_TEMP/vitalia-browser/node_modules/.bin/playwright" install chromium
+          "$RUNNER_TEMP/vitalia-browser/node_modules/.bin/playwright" install msedge
       - name: Iniciar PostgreSQL temporal en loopback
         run: |
           docker run --detach --rm --name "vitalia-qa-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
@@ -70,7 +70,7 @@ jobs:
             sleep 1
           done
           exit 1
-      - name: Probar API, sesiones y descarga desde Chromium
+      - name: Probar API, sesiones y descarga desde Edge
         working-directory: backend
         env:
           VITALIA_ISOLATED_REHEARSAL: 'YES'
