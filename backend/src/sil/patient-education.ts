@@ -31,14 +31,17 @@ export function createSilPatientEducation(
     async ask(patientId:string,reportId:string,question:string,simple=false) {
       // Filtrar por cuenta propietaria y por publicación ANTES de invocar IA.
       const sql=source==='main'
-        ? `SELECT c.code,c.name,NULL::text AS "prescriberName",
-             NULL::text AS "requestDate",NULL::text AS "documentReference"
+        ? `SELECT c.code,c.name,m.prescriber_name AS "prescriberName",
+             m.request_date::text AS "requestDate",
+             m.document_reference AS "documentReference"
            FROM public.vitalia_sil_main_reports r
            JOIN public.vitalia_sil_main_orders o
              ON o.id=r.order_id AND o.lab_id=r.lab_id AND o.patient_id=r.patient_id
            JOIN public.vitalia_sil_main_patients p
              ON p.lab_id=r.lab_id AND p.patient_id=r.patient_id AND p.active
            JOIN public.vitalia_sil_main_laboratories l ON l.id=r.lab_id AND l.active
+           LEFT JOIN public.vitalia_sil_main_medical_requests m
+             ON m.order_id=o.id AND m.lab_id=r.lab_id AND m.patient_id=r.patient_id
            JOIN public.vitalia_sil_main_order_exams e ON e.order_id=o.id
            JOIN public.vitalia_sil_exam_catalog c ON c.code=e.exam_code
            WHERE r.id=$1 AND r.patient_id=$2
