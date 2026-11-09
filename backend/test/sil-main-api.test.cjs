@@ -14,6 +14,7 @@ function demo(role='operador_laboratorio',authenticated=true){
   const service={
     laboratoriesFor:jest.fn().mockResolvedValue({laboratories:[]}),
     createLaboratory:jest.fn().mockResolvedValue({laboratory:{id:lab}}),
+    listStaff:jest.fn().mockResolvedValue({staff:[]}),
     setReviewPermission:jest.fn().mockResolvedValue({membership:{canReviewReports:true}}),
     reportForReview:jest.fn().mockResolvedValue({fileName:'revision.pdf',bytes:Buffer.from('%PDF-1.4')}),
     grantStaff:jest.fn().mockResolvedValue({membership:{labId:lab}}),
@@ -78,6 +79,39 @@ test('solo administrador habilita un laboratorio o personal',async()=>{
   expect((await request(application).post('/api/sil/main/labs/'+lab+'/staff')
     .set(bearer).send({accountId:patient,kind:'validator'})).status).toBe(400);
 });
+test('solo el administrador puede consultar operadores de cada laboratorio',async()=>{
+  const path='/api/sil/main/labs/'+lab+'/staff';
+  const admin=demo('administrador');
+  const operatorSession=demo('operador_laboratorio');
+  const patientSession=demo('paciente');
+  const anonymous=demo('administrador',false);
+  const response=await request(admin.application).get(path).set(bearer);
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual({staff:[]});
+  expect(admin.service.listStaff).toHaveBeenCalledWith(lab);
+  for(const other of [operatorSession,patientSession]){
+    expect((await request(other.application).get(path).set(bearer)).status).toBe(403);
+    expect(other.service.listStaff).not.toHaveBeenCalled();
+  }
+  expect((await request(anonymous.application).get(path).set(bearer)).status).toBe(401);
+  expect(anonymous.service.listStaff).not.toHaveBeenCalled();
+  expect((await request(admin.application).get('/api/sil/main/labs/no-es-uuid/staff').set(bearer)).status).toBe(404);
+});
+
+test('listado de operadores consulta solo el laboratorio y no retorna hashes',async()=>{
+  const query=jest.fn().mockResolvedValue({rows:[{
+    accountId:operator,email:'test@example.invalid',active:true,canReviewReports:false,
+  }]});
+  const service=createSilMainService({query});
+  const result=await service.listStaff(lab);
+  expect(result.staff).toHaveLength(1);
+  const [sql,values]=query.mock.calls[0];
+  expect(sql).toContain('s.lab_id=$1');
+  expect(sql).toContain("s.kind='operator'");
+  expect(sql).not.toContain('password_hash');
+  expect(values).toEqual([lab]);
+});
+
 test('orden principal exige paciente y prestaciones válidas',async()=>{
   const {application,service}=demo();
   expect((await request(application).post('/api/sil/main/labs/'+lab+'/orders')
