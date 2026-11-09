@@ -265,6 +265,24 @@ class _AccesoPageState extends State<AccesoPage> {
                                   ],
                                 ),
                               ),
+                              if (widget.laboratoryMode &&
+                                  const bool.fromEnvironment(
+                                    'VITALIA_SIL_MAIN_MODE',
+                                    defaultValue:false,
+                                  ))
+                                Padding(
+                                  padding:const EdgeInsets.only(top:10),
+                                  child:TextButton.icon(
+                                    onPressed:_busy
+                                        ?null
+                                        :()=>Navigator.of(context)
+                                          .pushNamed('/activar-operador'),
+                                    icon:const Icon(Icons.verified_user_outlined),
+                                    label:const Text(
+                                      'Activar cuenta de operador invitado',
+                                    ),
+                                  ),
+                                ),
                               if (_patientMode) ...[
                                 const SizedBox(height: 8),
                                 Wrap(
