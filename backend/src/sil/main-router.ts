@@ -165,6 +165,63 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       data.data.examCodes,res.locals.account.id));
   });
 
+  router.post('/labs/:labId/orders/:orderId/medical-request',staff,labPath,
+    express.raw({type:'application/pdf',limit:'2mb'}),async(req,res)=>{
+      if(res.locals.account.role!=='operador_laboratorio'){
+        res.status(403).json({error:{code:'FORBIDDEN'}});return;
+      }
+      if(!uuid.safeParse(req.params.orderId).success||!Buffer.isBuffer(req.body)){
+        res.status(400).json({error:{code:'INVALID_MEDICAL_REQUEST'}});return;
+      }
+      let input:Record<string,unknown>;
+      try{
+        input={
+          fileName:decodeURIComponent(req.get('x-request-filename')??''),
+          prescriberName:decodeURIComponent(req.get('x-request-prescriber')??''),
+          documentReference:decodeURIComponent(req.get('x-request-reference')??''),
+          requestDate:req.get('x-request-date'),
+          patientIdentityConfirmed:req.get('x-request-identity-confirmed')==='true',
+          humanReviewConfirmed:req.get('x-request-reviewed')==='true',
+        };
+      }catch{
+        res.status(400).json({error:{code:'INVALID_MEDICAL_REQUEST'}});return;
+      }
+      const data=z.object({
+        fileName:z.string().trim().min(5).max(120).regex(/[.]pdf$/i)
+          .refine(v=>!/[\/\\\x00-\x1f]/.test(v)),
+        prescriberName:z.string().trim().min(3).max(150),
+        documentReference:z.string().trim().min(6).max(150),
+        requestDate:z.iso.date(),
+        patientIdentityConfirmed:z.literal(true),
+        humanReviewConfirmed:z.literal(true),
+      }).strict().safeParse(input);
+      if(!data.success){
+        res.status(400).json({error:{code:'INVALID_MEDICAL_REQUEST'}});return;
+      }
+      res.status(201).json(await main.attachMedicalRequest(
+        req.params.labId as string,req.params.orderId as string,
+        res.locals.account.id,data.data,req.body));
+    });
+  router.get('/labs/:labId/orders/:orderId/medical-request/file',
+    staff,labPath,async(req,res)=>{
+      if(!uuid.safeParse(req.params.orderId).success){
+        res.status(404).json({error:{code:'NOT_FOUND'}});return;
+      }
+      if(!['profesional','operador_laboratorio'].includes(res.locals.account.role)){
+        res.status(403).json({error:{code:'FORBIDDEN'}});return;
+      }
+      const file=await main.downloadMedicalRequest(
+        req.params.labId as string,req.params.orderId as string,
+        res.locals.account.id,res.locals.account.role);
+      res.set('Cache-Control','private, no-store');
+      res.set('X-Content-Type-Options','nosniff');
+      res.set('Content-Type','application/pdf');
+      res.set('Content-Disposition',
+        "attachment; filename*=UTF-8''"+encodeURIComponent(file.fileName));
+      res.set('Content-Length',String(file.bytes.length));
+      res.send(file.bytes);
+    });
+
   router.post('/labs/:labId/orders/:orderId/report',staff,labPath,
     express.raw({type:'application/pdf',limit:'2mb'}),async(req,res)=>{
       if(res.locals.account.role!=='operador_laboratorio'){
