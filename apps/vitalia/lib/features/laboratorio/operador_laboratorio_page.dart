@@ -1363,6 +1363,26 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           label: const Text('Crear orden manual'),
         ),
       ]),
+      const SizedBox(height: 13),
+      Wrap(
+        spacing: 8,
+        runSpacing: 7,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          for (final filter in <(String, String?)>[
+            ('Todas', null),
+            ('Por recibir muestra', 'registered'),
+            ('Por ingresar resultados', 'sampled'),
+            ('Devueltas', 'review_rejected'),
+            ('Informes publicados', 'report_published'),
+          ])
+            FilterChip(
+              label: Text(filter.$1),
+              selected: _filterStatus == filter.$2,
+              onSelected: _busy ? null : (_) => _openQueue(filter.$2),
+            ),
+        ],
+      ),
       ],
       const SizedBox(height: 16),
       Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
