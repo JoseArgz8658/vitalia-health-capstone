@@ -161,7 +161,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 ),
                 const SizedBox(height: 3),
                 SelectableText(
-                  '$label: $value',
+                  value,
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     color: ColoresVitalia.texto,
