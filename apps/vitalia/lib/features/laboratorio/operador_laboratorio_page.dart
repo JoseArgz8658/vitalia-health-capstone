@@ -129,6 +129,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     if (_busy || section == _section) return;
     setState(() {
       _section = section;
+      if (section == _OperatorSection.patient) _mobilePatientDetail = false;
       _error = null;
       _message = null;
     });
@@ -2745,6 +2746,10 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     builder: (context, constraints) {
       final wide = constraints.maxWidth >= 1100;
       if (wide) {
+        if (_patientDemoLoaded == null) {
+          // Sin selección se utiliza todo el escritorio para la tabla.
+          return _patientDirectory();
+        }
         return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(flex: 7, child: _patientDirectory()),
           const SizedBox(width: 16),
