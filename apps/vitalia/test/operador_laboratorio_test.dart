@@ -152,7 +152,10 @@ void main() {
     await tester.pumpAndSettle();
     final nav = tester.widget<NavigationBar>(find.byType(NavigationBar));
     expect(nav.destinations, hasLength(5));
-    await tester.tap(find.text('Revisión'));
+    await tester.tap(find.descendant(
+      of: find.byType(NavigationBar),
+      matching: find.byIcon(Icons.fact_check_outlined),
+    ));
     await tester.pumpAndSettle();
     expect(find.text('Bandeja de revisión de resultados'), findsOneWidget);
     expect(api.calls.last.queryParameters['status'], 'results_recorded');
