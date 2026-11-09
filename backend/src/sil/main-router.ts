@@ -2,6 +2,7 @@ import express,{Router,type ErrorRequestHandler} from 'express';
 import {z} from 'zod';
 import {type AuthServices} from '../auth/router';
 import {isSessionToken} from '../auth/sessions';
+import {createLoginAttemptLimiter} from '../auth/login-limit';
 import {DocumentInputError} from '../documents/file-validation';
 import {SilEducationNotFound,SilEducationBusy,SilEducationUnavailable}
   from './patient-education';
@@ -27,6 +28,26 @@ const labPath=async(req:express.Request,res:express.Response,next:express.NextFu
 export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
   main:SilMainServices) {
   const router=Router();
+  const allowOperatorActivation=createLoginAttemptLimiter();
+  // Activación pública solo con invitación de 256 bits ya emitida por admin.
+  // No requiere contraseña de otro usuario ni permite elegir un rol.
+  router.post('/operators/activate',async(req,res)=>{
+    res.set('Cache-Control','private, no-store');
+    if(!allowOperatorActivation(req.ip??req.socket.remoteAddress??'local')){
+      res.status(429).json({error:{code:'RATE_LIMITED'}});return;
+    }
+    const data=z.object({
+      email:z.string().trim().toLowerCase().pipe(z.email().max(254)),
+      code:z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+      password:z.string().refine(v=>[...v].length>=12
+        && Buffer.byteLength(v,'utf8')<=1024),
+    }).strict().safeParse(req.body);
+    if(!data.success){
+      res.status(400).json({error:{code:'INVALID_INVITATION'}});return;
+    }
+    res.status(201).json(await main.activateOperator(
+      data.data.email,data.data.code,data.data.password));
+  });
   router.use(async(req,res,next)=>{
     res.set('Cache-Control','private, no-store');
     const tokenParts=req.get('Authorization')?.split(' ');
@@ -75,6 +96,18 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     res.status(201).json(await main.createLaboratory(
       data.data.displayName,res.locals.account.id));
   });
+
+  router.post('/labs/:labId/operator-invitations',administrator,labPath,
+    async(req,res)=>{
+      const data=z.object({
+        email:z.string().trim().toLowerCase().pipe(z.email().max(254)),
+      }).strict().safeParse(req.body);
+      if(!data.success){
+        res.status(400).json({error:{code:'INVALID_INVITATION'}});return;
+      }
+      res.status(201).json(await main.inviteOperator(
+        req.params.labId as string,data.data.email,res.locals.account.id));
+    });
 
   router.post('/labs/:labId/staff',administrator,labPath,async(req,res)=>{
     const data=z.object({
