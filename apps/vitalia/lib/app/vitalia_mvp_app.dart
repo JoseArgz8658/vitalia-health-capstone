@@ -2,6 +2,7 @@ import '../features/incorporacion/activar_invitacion_page.dart';
 import '../features/acceso/activar_portal_sil_page.dart';
 import '../features/asignaciones/asignaciones_page.dart';
 import '../features/laboratorio/operador_laboratorio_page.dart';
+import '../features/laboratorio/sil_principal_page.dart';
 import '../features/laboratorio/paciente_informes_sil_page.dart';
 import '../features/laboratorio/administracion_laboratorio_page.dart';
 import '../features/perfil/perfil_page.dart';
@@ -28,6 +29,8 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
   String? _message;
   bool _busy = false;
   final _navigator = GlobalKey<NavigatorState>();
+  static const _mainSil =
+      bool.fromEnvironment('VITALIA_SIL_MAIN_MODE',defaultValue:false);
   String? _accessNotice;
   @override
   void initState() {
@@ -192,6 +195,41 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
             onAuthenticated: _signedIn,
             notice: _accessNotice,
           )
+        : _mainSil &&
+            <String>['administrador','operador_laboratorio','profesional']
+              .contains(_user!['role'])
+        ? SilPrincipalPage(
+            key: ValueKey(_user!['id']),
+            api: _api,
+            role: _user!['role'] as String,
+            onExpired: _expired,
+            onLogout: _logout,
+            onOpenOriginal: _user!['role'] == 'administrador'
+              ? () => _navigator.currentState?.push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => AdministracionLaboratorioPage(
+                        email: _user!['email'] as String,
+                        onLogout: _logout,
+                      ),
+                    ),
+                  )
+              : _user!['role'] == 'profesional'
+              ? () => _navigator.currentState?.push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => AsignacionesPage(
+                        auth: _api,
+                        email: _user!['email'] as String,
+                        role: 'profesional',
+                        onExpired: _expired,
+                        onLogout: _logout,
+                        sessionBusy: _busy,
+                        notice: _message,
+                        onProfile: _openProfile,
+                      ),
+                    ),
+                  )
+              : null,
+          )
         : _user!['role'] == 'operador_laboratorio'
         ? OperadorLaboratorioPage(
             key: ValueKey(_user!['id']),
@@ -206,7 +244,9 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
             onLogout: _logout,
           )
         : _user!['role'] == 'paciente' &&
-            const bool.fromEnvironment('VITALIA_SIL_DEMO_MODE', defaultValue: false)
+            (_mainSil ||
+             const bool.fromEnvironment(
+               'VITALIA_SIL_DEMO_MODE',defaultValue:false))
         ? PacienteInformesSilPage(
             key: ValueKey(_user!['id']),
             api: _api,
