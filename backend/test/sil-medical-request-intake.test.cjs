@@ -5,7 +5,7 @@ const patientId='11111111-1111-4111-8111-111111111111';
 const actorId='22222222-2222-4222-8222-222222222222';
 const source='Solicitud de exámenes ficticia\nIdentificador: DEMO-0001\n'
   +'Paciente Prueba Vitalia Demo\nNacimiento: 1990-01-01\n'
-  +'Prestaciones: Glicemia, Hemoglobina glicosilada (HbA1c).\n';
+  +'Prestaciones: Glicemia, Hemoglobina glicosilada (HbA1c).\n'\n  +'Referencia: SOL-DEMO-001.\n';
 const pdf=Buffer.from('%PDF-1.4\nsolicitud ficticia\n%%EOF');
 function createDb({duplicate=false}={}){
  const txQueries=[];
@@ -77,6 +77,18 @@ test('no asocia documento con otro identificador ni emite comprobante',async()=>
  const preview=await intake.preview(actorId,'paciente.sil@example.invalid',
    'solicitud-demo.pdf',pdf);
  expect(preview.state).toBe('identity_mismatch');
+ expect(preview.previewToken).toBeNull();
+ expect(db.connect).not.toHaveBeenCalled();
+});
+test('detecta dos identificadores completos incompatibles, sin confundir referencias',async()=>{
+ const {db}=createDb();
+ const intake=createSilMedicalRequestIntake(db,{
+   read:read(source+'\\nSegundo paciente: DEMO-0002\\n'),
+ });
+ const preview=await intake.preview(actorId,'paciente.sil@example.invalid',
+   'solicitud-demo.pdf',pdf);
+ expect(preview.state).toBe('identity_mismatch');
+ expect(preview.identity.identifierMatches).toBe(false);
  expect(preview.previewToken).toBeNull();
  expect(db.connect).not.toHaveBeenCalled();
 });
