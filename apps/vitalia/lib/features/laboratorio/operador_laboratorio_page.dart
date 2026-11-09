@@ -2766,14 +2766,13 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     builder: (context, constraints) {
       final wide = constraints.maxWidth >= 1100;
       if (wide) {
-        if (_patientDemoLoaded == null) {
-          // Sin selección se utiliza todo el escritorio para la tabla.
-          return _patientDirectory();
-        }
         return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(flex: 7, child: _patientDirectory()),
-          const SizedBox(width: 16),
-          SizedBox(width: 430, child: _demoPatientForm()),
+          // El mismo directorio conserva filtros y página al abrir una ficha.
+          Expanded(child: _patientDirectory()),
+          if (_patientDemoLoaded != null) ...[
+            const SizedBox(width: 16),
+            SizedBox(width: 430, child: _demoPatientForm()),
+          ],
         ]);
       }
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
