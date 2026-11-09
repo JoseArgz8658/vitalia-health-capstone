@@ -56,15 +56,14 @@ Desde `C:\Users\dpalm\Documents\vitalia-health-git`:
 ```powershell
 git status --short
 git fetch origin
-git switch feat/sil-portal-activacion-demo
-git merge --ff-only origin/feat/sil-portal-activacion-demo
+git switch --track origin/feat/sil-paciente-portal
 npm --prefix backend run check
 npm --prefix backend test
 cd apps\vitalia
 flutter analyze
-flutter test test/activar_portal_sil_test.dart
+flutter test --dart-define=VITALIA_SIL_DEMO_MODE=true test/paciente_portal_sil_test.dart test/activar_portal_sil_test.dart
 flutter test
-flutter build web
+flutter build web --dart-define=VITALIA_API_URL=http://127.0.0.1:3101 --dart-define=VITALIA_SIL_DEMO_MODE=true
 cd ..\..
 ```
 
@@ -98,12 +97,13 @@ try {
 }
 ```
 
-La migración `036` es optativa. El migrador general la omite si no se especifica
+Las migraciones `036` y `037` son optativas. El migrador general las omite si no se especifica
 `VITALIA_SIL_PORTAL_MIGRATION_DEMO=YES` y rechaza ese permiso para una base
-distinta de `vitalia_dev`. La migración crea tablas nuevas.
+distinta de `vitalia_dev`. Ambas migraciones crean tablas nuevas.
 
-El arranque de la demo comprueba las claves configuradas de las cuentas
-preexistentes. Si alguna difiere, detiene el arranque conservando las credenciales.
+El arranque comprueba las claves configuradas del operador y del administrador.
+La clave configurada del paciente de ejemplo se usa para su alta inicial. Su
+contraseña vigente se conserva aunque la recupere y se reinicie la demo.
 
 ```powershell
 docker restart vitalia-sil-demo
@@ -148,6 +148,36 @@ flutter run -d edge --web-hostname localhost --web-port 5173 `
    `http://localhost:5173/#/informes` e iniciar sesión con ese correo y
    su nueva contraseña. Sin reportes publicados, verá el portal vacío; eso
    es correcto y evita simular informes clínicos.
+
+### Registro web independiente y recuperación
+
+1. Desde el acceso de paciente, usa **Crear cuenta de paciente** con un correo
+   ficticio nuevo. El registro web crea una cuenta sin ficha vinculada. Si el
+   correo ya existe, la respuesta es genérica y se conserva la cuenta existente.
+2. Entra a **Mis informes** con el nuevo correo. El portal consulta informes
+   autorizados de esa cuenta y permite buscar en los 50 más recientes.
+3. Abre **Configurar recuperación**, confirma tu contraseña actual y guarda
+   la clave en un lugar privado. La clave se muestra una vez, vence a los 90
+   días y una clave nueva reemplaza a la anterior.
+4. Cierra sesión y elige **Olvidé mi contraseña**. Completa el correo, la clave
+   de respaldo y la nueva contraseña. Después, ingresa con la nueva clave.
+   La recuperación invalida las sesiones de paciente anteriores y registra
+   el evento sin almacenar el código ni la contraseña en la auditoría.
+5. Prueba repetir el restablecimiento con la clave consumida y con la
+   contraseña anterior. Ambos intentos deben rechazarse. Para cuentas sin
+   una clave de respaldo vigente, corresponde contactar al laboratorio.
+
+### Preguntas abiertas del asistente
+
+Abre **Preguntar sobre el informe** y escribe o modifica una pregunta, por
+ejemplo «q es la glicemia», «¿Qué significa rango de referencia?» o
+«Explícame qué miden estas pruebas». Contrasta con «¿Está alta mi glicemia?»
+o «Muéstrame el informe de otro paciente». Cada consulta se resuelve por
+separado. El modelo local solo recibe los nombres de las prestaciones
+autorizadas y la pregunta. Para cifras y observaciones consulta el PDF.
+La batería `test/sil-patient-education.test.cjs` comprueba el catálogo,
+el contrato del modelo y casos sintéticos de seguridad. Estos ajustes son
+instrucciones y evaluación de prompts para el modelo local.
 
 ### Pruebas negativas
 - Código distinto, expirado, consumido o quinto intento fallido: denegado.

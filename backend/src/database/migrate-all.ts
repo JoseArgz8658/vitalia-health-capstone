@@ -19,7 +19,7 @@ async function main(){
   pool=createDatabasePool(config);client=await pool.connect();let previous='';
   for(const file of files){
    const version=file.slice(0,-4);
-   if(version==='036_sil_portal_invites_demo'&&!portalDemo)continue;
+   if(['036_sil_portal_invites_demo','037_sil_patient_recovery_demo'].includes(version)&&!portalDemo)continue;
    const sql=await readFile(resolve(directory,file),'utf8');
    const result=previous?await applyAdditionalMigration(client,version,sql,previous):await applyAccountsMigration(client,sql);
    console.info(`${version}: ${result==='applied'?'aplicada':'ya aplicada'}.`);previous=version;

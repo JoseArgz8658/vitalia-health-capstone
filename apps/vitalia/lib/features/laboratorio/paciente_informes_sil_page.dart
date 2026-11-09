@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/auth_api.dart';
+import '../../core/tema_vitalia.dart';
+import 'clave_recuperacion_sil_dialog.dart';
 
 /// Solo demostración local: consulta privada de PDFs autorizados externamente.
 class PacienteInformesSilPage extends StatefulWidget {
@@ -19,7 +21,8 @@ class PacienteInformesSilPage extends StatefulWidget {
   final VoidCallback onLogout;
 
   @override
-  State<PacienteInformesSilPage> createState() => _PacienteInformesSilPageState();
+  State<PacienteInformesSilPage> createState() =>
+      _PacienteInformesSilPageState();
 }
 
 class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
@@ -28,6 +31,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
   String? _downloading;
   String? _error;
   final _question = TextEditingController();
+  final _filter = TextEditingController();
   final Map<String, List<Map<String, String>>> _conversations = {};
   String? _activeChatReport;
   String? _chatBusyReport;
@@ -36,6 +40,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
   @override
   void dispose() {
     _question.dispose();
+    _filter.dispose();
     super.dispose();
   }
 
@@ -54,9 +59,19 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     try {
       final data = await widget.api.silRequest('/patient/reports');
       if (!mounted) return;
-      setState(() => _reports = (data['reports'] as List? ?? [])
+      final reports = (data['reports'] as List? ?? [])
           .map((value) => Map<String, dynamic>.from(value as Map))
-          .toList());
+          .toList();
+      final ids = reports.map((report) => report['id']).toSet();
+      setState(() {
+        _reports = reports;
+        _conversations.removeWhere((id, _) => !ids.contains(id));
+        if (!ids.contains(_activeChatReport)) {
+          _activeChatReport = null;
+          _question.clear();
+          _chatError = null;
+        }
+      });
     } on AuthFailure catch (error) {
       if (!mounted) return;
       if (error.status == 401) {
@@ -65,7 +80,8 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         setState(() => _error = error.message);
       }
     } catch (_) {
-      if (mounted) setState(() => _error = 'No se pudo consultar tus informes.');
+      if (mounted)
+        setState(() => _error = 'No se pudo consultar tus informes.');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -81,7 +97,8 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       final bytes = await widget.api.silDownloadReport(report['id'] as String);
       if (!mounted || !widget.api.hasSession) return;
       final name = report['fileName'] as String;
-      final pdf = XFile.fromData(bytes, name: name, mimeType: 'application/pdf');
+      final pdf =
+          XFile.fromData(bytes, name: name, mimeType: 'application/pdf');
       if (kIsWeb) {
         await pdf.saveTo(name);
       } else {
@@ -91,7 +108,8 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Descarga solicitada. Revisa tus archivos.')),
+          const SnackBar(
+              content: Text('Descarga solicitada. Revisa tus archivos.')),
         );
       }
     } on AuthFailure catch (error) {
@@ -130,11 +148,13 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         '/patient/reports/$reportId/chat',
         body: {'question': question},
       );
-      if (!mounted || !widget.api.hasSession) return;
+      if (!mounted || !widget.api.hasSession || _activeChatReport != reportId)
+        return;
       final response = Map<String, dynamic>.from(result['response'] as Map);
       final answer = response['answer'] as String?;
       if (answer == null || answer.isEmpty) {
-        throw const AuthFailure('El asistente no entregó una respuesta válida.');
+        throw const AuthFailure(
+            'El asistente no entregó una respuesta válida.');
       }
       setState(() {
         final turns = _conversations.putIfAbsent(reportId, () => []);
@@ -157,7 +177,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     } catch (_) {
       if (mounted) {
         setState(() => _chatError =
-          'No se pudo completar la consulta educativa. Prueba nuevamente.');
+            'No se pudo completar la consulta educativa. Prueba nuevamente.');
       }
     } finally {
       if (mounted) setState(() => _chatBusyReport = null);
@@ -168,24 +188,52 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     final id = report['id'] as String;
     final turns = _conversations[id] ?? const <Map<String, String>>[];
     final working = _chatBusyReport == id;
+    final canAsk = !working && _question.text.trim().length >= 3;
+    final exams = _examNames(report);
+    final prompts = [
+      if (exams.isNotEmpty) ('Qué mide', '¿Qué mide la prueba ${exams.first}?'),
+      ('Pruebas de la orden', '¿Qué exámenes incluye esta orden?'),
+      ('Rango de referencia', '¿Qué significa rango de referencia?'),
+      (
+        'Explicación sencilla',
+        'Explícame en palabras sencillas qué miden estas pruebas.'
+      ),
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Divider(height: 30),
-        Text('Asistente educativo — IA local',
+        Text('Preguntas sobre este informe',
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 6),
         const Text(
-          'Pregunta qué significa un examen o para qué se mide. '
-          'El asistente conoce las prestaciones de esta orden, pero '
-          'todavía NO lee los valores del PDF. No realiza diagnósticos '
-          'ni prescribe tratamientos.',
+          'Escribe una pregunta abierta sobre las prestaciones de la orden. '
+          'Puedes partir de un ejemplo y editarlo. Deja fuera datos personales.',
         ),
         const SizedBox(height: 12),
+        if (turns.isEmpty)
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final (label, prompt) in prompts)
+                ActionChip(
+                  label: Text(label),
+                  onPressed: working
+                      ? null
+                      : () => setState(() {
+                            _question.text = prompt;
+                            _question.selection =
+                                TextSelection.collapsed(offset: prompt.length);
+                          }),
+                ),
+            ],
+          ),
         for (final turn in turns) ...[
           Align(
             alignment: turn['role'] == 'user'
-                ? Alignment.centerRight : Alignment.centerLeft,
+                ? Alignment.centerRight
+                : Alignment.centerLeft,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 700),
               child: Card(
@@ -199,9 +247,11 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                     children: [
                       if (turn['role'] == 'assistant') ...[
                         Text(
-                          turn['source'] == 'modelo_local'
-                              ? 'Modelo de IA local'
-                              : 'Biblioteca educativa de Vitalia',
+                          switch (turn['source']) {
+                            'modelo_local' => 'Modelo de IA local',
+                            'politica' => 'Alcance de la consulta',
+                            _ => 'Biblioteca educativa de Vitalia',
+                          },
                           style: Theme.of(context).textTheme.labelSmall,
                         ),
                         const SizedBox(height: 5),
@@ -221,8 +271,10 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             child: Text(_chatError!,
                 style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ),
+        if (working) const LinearProgressIndicator(),
         TextField(
           controller: _question,
+          onChanged: (_) => setState(() {}),
           maxLength: 400,
           maxLines: 2,
           enabled: _chatBusyReport == null,
@@ -236,16 +288,15 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         Align(
           alignment: Alignment.centerLeft,
           child: FilledButton.icon(
-            onPressed: _chatBusyReport == null ? () => _askChat(id) : null,
+            onPressed: canAsk ? () => _askChat(id) : null,
             icon: const Icon(Icons.chat_bubble_outline),
             label: Text(working ? 'Consultando…' : 'Preguntar al asistente'),
           ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Orientación educativa, no validada clínicamente. '
-          'Para conocer tus cifras consulta el PDF original. '
-          'El historial de esta conversación no se guarda en la base de datos.',
+          'Para conocer tus cifras abre el PDF. El asistente explica conceptos generales. '
+          'Cada pregunta se responde por separado y el historial solo se muestra durante tu sesión.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
@@ -259,109 +310,212 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     return '${two(date.day)}/${two(date.month)}/${date.year}';
   }
 
+  List<String> _examNames(Map<String, dynamic> report) =>
+      (report['examNames'] as List?)?.whereType<String>().toList() ?? [];
+
+  void _openRecovery() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ClaveRecuperacionSilDialog(
+          api: widget.api, onExpired: widget.onExpired),
+    );
+  }
+
+  Widget _reportCard(Map<String, dynamic> report) {
+    final theme = Theme.of(context);
+    final exams = _examNames(report);
+    final id = report['id'] as String;
+    final chatOpen = _activeChatReport == id;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.picture_as_pdf_outlined,
+                  color: ColoresVitalia.azul),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Text(
+                exams.isEmpty
+                    ? report['fileName'] as String
+                    : exams.join(' · '),
+                style: theme.textTheme.titleMedium,
+              )),
+            ]),
+            const SizedBox(height: 8),
+            Text(
+                '${report['issuingLaboratory']} · Orden ${report['orderNumber']}'),
+            const SizedBox(height: 4),
+            Text(
+                'Publicado el ${_date(report['publishedAt'])} · Autorizado el ${_date(report['externallyAuthorizedAt'])}',
+                style: theme.textTheme.bodySmall),
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              FilledButton.icon(
+                onPressed:
+                    _downloading == null ? () => _download(report) : null,
+                icon: const Icon(Icons.download_outlined),
+                label: Text(_downloading == id
+                    ? 'Preparando descarga…'
+                    : 'Descargar PDF'),
+              ),
+              OutlinedButton.icon(
+                onPressed:
+                    _chatBusyReport == null ? () => _toggleChat(id) : null,
+                icon: const Icon(Icons.chat_bubble_outline),
+                label: Text(chatOpen
+                    ? 'Cerrar asistente'
+                    : 'Preguntar sobre el informe'),
+              ),
+            ]),
+            if (chatOpen) _chatPanel(report),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final narrow = MediaQuery.sizeOf(context).width < 600;
+    final query = _filter.text.trim().toLowerCase();
+    final visibleReports = _reports
+        .where((report) =>
+            query.isEmpty ||
+            [
+              report['orderNumber'],
+              report['fileName'],
+              report['issuingLaboratory'],
+              ..._examNames(report),
+            ].join(' ').toLowerCase().contains(query))
+        .toList();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Vitalia Health'),
+        title: const Text('Portal del paciente',
+            maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
-          TextButton.icon(
-            onPressed: widget.onLogout,
-            icon: const Icon(Icons.logout_outlined),
-            label: const Text('Cerrar sesión'),
-          ),
+          if (narrow)
+            IconButton(
+              tooltip: 'Cerrar sesión',
+              onPressed: widget.onLogout,
+              icon: const Icon(Icons.logout_outlined),
+            )
+          else
+            TextButton.icon(
+              onPressed: widget.onLogout,
+              icon: const Icon(Icons.logout_outlined),
+              label: const Text('Cerrar sesión'),
+            ),
+          const SizedBox(width: 8),
         ],
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.all(narrow ? 14 : 24),
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 920),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('Mis informes', style: theme.textTheme.headlineMedium),
-                  const SizedBox(height: 6),
-                  Text('Paciente: ${widget.email}'),
-                  const SizedBox(height: 10),
-                  const Text('Consulta los PDF publicados por el laboratorio '
-                      'y autorizados previamente fuera de Vitalia.'),
-                  const SizedBox(height: 18),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: OutlinedButton.icon(
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [
+                        ColoresVitalia.azulActivo,
+                        ColoresVitalia.verde
+                      ]),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.all(narrow ? 16 : 22),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('PORTAL PRIVADO · DEMO',
+                              style: theme.textTheme.labelMedium
+                                  ?.copyWith(color: Colors.white)),
+                          const SizedBox(height: 5),
+                          Text('Mis informes',
+                              style: theme.textTheme.headlineMedium?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 6),
+                          Text(widget.email,
+                              style: const TextStyle(color: Colors.white)),
+                          const SizedBox(height: 9),
+                          const Text(
+                              'Consulta y descarga los informes que el laboratorio publicó para ti.',
+                              style: TextStyle(color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(spacing: 8, runSpacing: 6, children: [
+                    OutlinedButton.icon(
                       onPressed: _loading ? null : _refresh,
                       icon: const Icon(Icons.refresh),
                       label: const Text('Actualizar informes'),
                     ),
-                  ),
+                    OutlinedButton.icon(
+                      onPressed: _openRecovery,
+                      icon: const Icon(Icons.key_outlined),
+                      label: const Text('Configurar recuperación'),
+                    ),
+                  ]),
                   const SizedBox(height: 16),
+                  if (_reports.isNotEmpty) ...[
+                    TextField(
+                      controller: _filter,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        labelText: 'Buscar por orden, examen o laboratorio',
+                        helperText: 'Busca en los informes recientes.',
+                        helperMaxLines: 2,
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: query.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: 'Limpiar búsqueda',
+                                onPressed: () => setState(_filter.clear),
+                                icon: const Icon(Icons.close),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                        query.isEmpty
+                            ? 'Informes recientes · ${_reports.length}'
+                            : 'Coincidencias · ${visibleReports.length}',
+                        style: theme.textTheme.labelLarge),
+                    const SizedBox(height: 8),
+                  ],
                   if (_loading) const LinearProgressIndicator(),
                   if (_error != null) ...[
-                    Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+                    Semantics(
+                        liveRegion: true,
+                        child: Text(_error!,
+                            style: TextStyle(color: theme.colorScheme.error))),
                     const SizedBox(height: 12),
                   ],
-                  if (!_loading && _reports.isEmpty && _error == null)
-                    const Card(
-                      child: Padding(
-                        padding: EdgeInsets.all(26),
-                        child: Text('Aún no tienes informes publicados por el laboratorio.'),
-                      ),
-                    ),
-                  for (final report in _reports)
+                  if (!_loading && visibleReports.isEmpty && _error == null)
                     Card(
-                      margin: const EdgeInsets.only(bottom: 14),
                       child: Padding(
-                        padding: const EdgeInsets.all(18),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(children: [
-                              const Icon(Icons.picture_as_pdf_outlined),
-                              const SizedBox(width: 12),
-                              Expanded(child: Text(report['fileName'] as String,
-                                  style: theme.textTheme.titleMedium)),
-                            ]),
-                            const SizedBox(height: 10),
-                            Text('Orden: ${report['orderNumber']}'),
-                            Text('Laboratorio: ${report['issuingLaboratory']}'),
-                            Text('Autorizado externamente: ${_date(report['externallyAuthorizedAt'])}'),
-                            Text('Disponible desde: ${_date(report['publishedAt'])}'),
-                            const SizedBox(height: 12),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: FilledButton.icon(
-                                onPressed: _downloading != null ? null
-                                    : () => _download(report),
-                                icon: const Icon(Icons.download_outlined),
-                                label: Text(_downloading == report['id']
-                                    ? 'Preparando descarga…' : 'Descargar PDF'),
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: OutlinedButton.icon(
-                                onPressed: _chatBusyReport != null
-                                    ? null : () => _toggleChat(report['id'] as String),
-                                icon: const Icon(Icons.smart_toy_outlined),
-                                label: Text(_activeChatReport == report['id']
-                                    ? 'Cerrar asistente educativo'
-                                    : 'Consultar con IA educativa'),
-                              ),
-                            ),
-                            if (_activeChatReport == report['id'])
-                              _chatPanel(report),
-                          ],
-                        ),
+                        padding: const EdgeInsets.all(20),
+                        child: Text(query.isEmpty
+                            ? 'Aún no tienes informes publicados. Aparecerán aquí cuando el laboratorio los publique.'
+                            : 'No encontramos informes que coincidan con tu búsqueda.'),
                       ),
                     ),
-                  const SizedBox(height: 20),
+                  for (final report in visibleReports) _reportCard(report),
+                  const SizedBox(height: 18),
                   Text(
-                    'Esta sección muestra documentos de prueba. '
-                    'No constituye una plataforma clínica habilitada para uso real.',
+                    'Entorno de demostración con informes y cuentas ficticias.',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall,
                   ),

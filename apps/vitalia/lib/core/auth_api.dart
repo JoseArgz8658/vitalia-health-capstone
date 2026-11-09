@@ -1440,6 +1440,67 @@ class AuthApi {
     }
   }
 
+  Future<Map<String, dynamic>> generateSilRecoveryKey(String currentPassword) =>
+      _silRecoveryRequest('key', {'currentPassword': currentPassword}, authenticated: true);
+
+  Future<void> recoverSilPassword(String email, String key, String password) async {
+    await _silRecoveryRequest('complete', {
+      'email': email.trim().toLowerCase(),
+      'recoveryKey': key.trim(),
+      'password': password,
+    });
+  }
+
+  Future<Map<String, dynamic>> _silRecoveryRequest(
+    String action,
+    Map<String, String> body, {
+    bool authenticated = false,
+  }) async {
+    final token = authenticated ? _token : null;
+    if (authenticated &&
+        (token == null || !(expiresAt?.isAfter(DateTime.now()) ?? false))) {
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+    }
+    try {
+      final response = await _client.post(
+        _base.resolve('/api/sil/portal/recovery/$action'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 20));
+      if (authenticated && token != _token) {
+        throw const AuthFailure('La sesión cambió. Ingresa nuevamente.', 401);
+      }
+      if (authenticated && response.statusCode == 401) clear();
+      if (response.statusCode >= 400) {
+        throw AuthFailure(switch (response.statusCode) {
+          400 => 'Comprueba los datos ingresados.',
+          401 => 'La sesión terminó. Ingresa nuevamente.',
+          422 => authenticated
+              ? 'Comprueba tu contraseña actual.'
+              : 'La clave de recuperación es incorrecta, venció o ya se usó.',
+          429 => 'Demasiados intentos. Espera antes de continuar.',
+          503 => 'Hay otra solicitud en curso. Intenta en unos segundos.',
+          _ => 'No se pudo completar la recuperación.',
+        }, response.statusCode);
+      }
+      return response.statusCode == 204
+          ? {}
+          : jsonDecode(response.body) as Map<String, dynamic>;
+    } on AuthFailure {
+      rethrow;
+    } on TimeoutException {
+      throw AuthFailure(authenticated
+          ? 'La operación tardó demasiado. Puedes generar otra clave.'
+          : 'La operación tardó demasiado. Comprueba el acceso con tu nueva contraseña.');
+    } catch (_) {
+      throw const AuthFailure('No se pudo conectar con el portal.');
+    }
+  }
+
   Future<void> register(String email, String password) async {
     await _request(
       'register',

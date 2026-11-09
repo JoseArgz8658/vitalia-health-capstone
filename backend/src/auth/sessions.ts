@@ -12,16 +12,34 @@ function tokenHash(token: string): string {
 }
 
 // Sesiones opacas de 30 minutos. Nunca se persiste el token original.
-export async function issueSession(db: Queryable, accountId: string, mode: AccountRole = 'paciente'): Promise<SessionGrant> {
+export class SessionCredentialChangedError extends Error {}
+
+export async function issueSession(
+  db: Queryable, accountId: string, mode: AccountRole = 'paciente', patientCredentialHash?:string,
+): Promise<SessionGrant> {
   if (!accountRoleSchema.safeParse(mode).success) throw new Error('Modo de acceso no autorizado.');
   const token = randomBytes(32).toString('hex');
-  const result = await db.query<{ expires_at: Date }>(
+  // En la demo, la recuperación bloquea la misma cuenta antes de cambiar su clave.
+  // Una autenticación que comprobó la clave anterior no puede emitir una sesión tardía.
+  const result = await db.query<{ expires_at: Date }>(patientCredentialHash!==undefined
+    ? `WITH verified AS MATERIALIZED (
+         SELECT id FROM public.vitalia_accounts
+         WHERE id=$2 AND role_code='paciente' AND password_hash=$4 FOR SHARE
+       )
+       INSERT INTO public.vitalia_sessions (token_hash,account_id,active_role,expires_at)
+       SELECT $1,$2,$3,CURRENT_TIMESTAMP + INTERVAL '30 minutes'
+       FROM public.vitalia_account_roles
+       WHERE account_id=$2 AND role_code=$3 AND active AND EXISTS(SELECT 1 FROM verified)
+       RETURNING expires_at` :
     `INSERT INTO public.vitalia_sessions (token_hash, account_id, active_role, expires_at)
      SELECT $1, $2, $3, CURRENT_TIMESTAMP + INTERVAL '30 minutes'
      FROM public.vitalia_account_roles WHERE account_id=$2 AND role_code=$3 AND active RETURNING expires_at`,
-    [tokenHash(token), accountId, mode],
+    [tokenHash(token), accountId, mode, ...(patientCredentialHash===undefined?[]:[patientCredentialHash])],
   );
-  if (result.rows.length !== 1) throw new Error('No se pudo crear la sesión.');
+  if(result.rows.length!==1){
+    if(patientCredentialHash!==undefined)throw new SessionCredentialChangedError();
+    throw new Error('No se pudo crear la sesión.');
+  }
   return { token, expiresAt: result.rows[0].expires_at };
 }
 export async function findSessionAccount(db: Queryable, token: string): Promise<AccountSummary | null> {

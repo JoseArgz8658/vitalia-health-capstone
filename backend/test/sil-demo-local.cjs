@@ -6,6 +6,10 @@ const express=require('express');
 const {Pool}=require('pg');
 const {randomUUID}=require('node:crypto');
 const {createAuthRouter}=require('../dist/auth/router');
+const {createPatientRegistrar}=require('../dist/auth/registration');
+const {createRegistrationRouter}=require('../dist/auth/registration-router');
+const {createSilPatientRecoveryDemo}=require('../dist/sil/patient-recovery-demo');
+const {createSilPatientRecoveryRouterDemo}=require('../dist/sil/patient-recovery-router-demo');
 const {createSilRouter}=require('../dist/sil/router');
 const {createSilService}=require('../dist/sil/service');
 const {createSilPortalRouterDemo}=require('../dist/sil/portal-router-demo');
@@ -55,7 +59,7 @@ async function main(){
     if(existing.rows.length){
       if(existing.rows[0].role_code!==role)
         throw new Error('Existe un correo con un rol distinto; no se modificará.');
-      if(!await verifyPassword(password,existing.rows[0].password_hash))
+      if(role!=='paciente'&&!await verifyPassword(password,existing.rows[0].password_hash))
         throw new Error('La clave local no coincide con la cuenta DEMO existente. Revisa tu configuración.');
       return existing.rows[0].id;
     }
@@ -92,6 +96,10 @@ async function main(){
       "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='036_sil_portal_invites_demo'");
     if(portalVersion.rows.length!==1)
       throw new Error('Falta migración DEMO 036. Aplicar solo en vitalia_dev con la guía.');
+    const recoveryVersion=await db.query(
+      "SELECT 1 FROM public.vitalia_schema_migrations WHERE version='037_sil_patient_recovery_demo'");
+    if(recoveryVersion.rows.length!==1)
+      throw new Error('Falta migración DEMO 037. Aplicar solo en vitalia_dev con la guía.');
     const operatorEmail='operador.sil@example.invalid';
     const adminEmail='admin.sil@example.invalid';
     const patientEmail='paciente.sil@example.invalid';
@@ -100,10 +108,10 @@ async function main(){
     const patientId=await ensureAccount(
       patientEmail,'paciente',patientPassword);
 
-    const authenticate=await createCredentialAuthenticator(db);
+    const authenticate=await createCredentialAuthenticator(db,{guardPatientSession:true});
     const auth={
       authenticate,
-      issue:(id,mode)=>issueSession(db,id,mode),
+      issue:(id,mode,patientCredentialHash)=>issueSession(db,id,mode,patientCredentialHash),
       find:(token)=>findSessionAccount(db,token),
       revoke:(token)=>revokeSession(db,token),
     };
@@ -113,6 +121,9 @@ async function main(){
     app.use(express.json({limit:'32kb'}));
     app.get('/api/health',(_req,res)=>res.json({status:'ok',service:'sil-demo-only'}));
     app.use('/api/auth',createAuthRouter(auth));
+    app.use('/api/auth',createRegistrationRouter(createPatientRegistrar(db,{demoOnly:true})));
+    app.use('/api/sil/portal/recovery',
+      createSilPatientRecoveryRouterDemo(auth,createSilPatientRecoveryDemo(db)));
     const portalDemo=createSilPortalActivationDemo(db);
     app.use('/api/sil',createSilPortalRouterDemo(auth,portalDemo));
     app.use('/api/sil',createSilRouter(auth,createSilService(db),{

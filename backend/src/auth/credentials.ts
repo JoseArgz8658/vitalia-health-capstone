@@ -10,14 +10,14 @@ const inputSchema = z.object({
   password: z.string().min(1).refine(value => Buffer.byteLength(value, 'utf8') <= 1024),
 }).strict();
 
-export type CredentialResult=AccountSummary & {professionalPasswordRequired?:true};
+export type CredentialResult=AccountSummary & {professionalPasswordRequired?:true; patientCredentialHash?:string};
 
 export class CredentialCheckBusyError extends Error {
   constructor() { super('Comprobación de credenciales ocupada.'); this.name = 'CredentialCheckBusyError'; }
 }
 
 // Crear una sola instancia al iniciar el servidor; todavía no genera sesiones.
-export async function createCredentialAuthenticator(db: Pick<Pool, 'query'>) {
+export async function createCredentialAuthenticator(db: Pick<Pool, 'query'>, options:{guardPatientSession?:boolean}={}) {
   const dummyHash = await hashPassword(randomBytes(32).toString('hex'));
   let checking = false;
 
@@ -44,6 +44,8 @@ export async function createCredentialAuthenticator(db: Pick<Pool, 'query'>) {
       if (!account || !role || !selectedHash || !matches) return null;
       return {
         id: account.id, email: account.email, role: parsed.data.mode, createdAt: account.createdAt,
+        ...(options.guardPatientSession&&parsed.data.mode==='paciente'
+          ?{patientCredentialHash:selectedHash}:{}),
         ...(setupOnly?{professionalPasswordRequired:true as const}:{}),
       };
     } finally {

@@ -637,6 +637,9 @@ export function createSilService(db: Pool) {
            r.externally_authorized_at AS "externallyAuthorizedAt",
            r.published_at AS "publishedAt",
            'VH-' || lpad(o.order_number::text,6,'0') AS "orderNumber",
+           ARRAY(SELECT c.name FROM public.vitalia_sil_order_exams e
+             JOIN public.vitalia_sil_exam_catalog c ON c.code=e.exam_code
+             WHERE e.order_id=o.id ORDER BY c.name) AS "examNames",
            r.pdf_sha256 AS sha256
          FROM public.vitalia_sil_external_reports r
          JOIN public.vitalia_sil_orders o ON o.id=r.order_id

@@ -17,11 +17,12 @@ export class RegistrationBusyError extends Error {
 }
 
 // Instanciar una vez al arrancar; nunca permite seleccionar un rol privilegiado.
-export function createPatientRegistrar(db: Pick<Pool, 'query'>) {
+export function createPatientRegistrar(db: Pick<Pool, 'query'>, options:{demoOnly?:boolean}={}) {
   let registering = false;
   return async function registerPatient(input: unknown): Promise<void> {
     const result = schema.safeParse(input);
-    if (!result.success) throw new RegistrationInputError();
+    if (!result.success || (options.demoOnly && !result.data.email.endsWith('@example.invalid')))
+      throw new RegistrationInputError();
     if (registering) throw new RegistrationBusyError();
     registering = true;
     try {

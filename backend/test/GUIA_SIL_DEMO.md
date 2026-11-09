@@ -82,7 +82,7 @@ El portal **Mis informes** muestra un botón `Consultar con IA educativa` por ca
 
 **Alcance actual:** el asistente utiliza **los nombres de las prestaciones registradas en la orden**, no analiza todavía los bytes ni los valores del PDF. Responde preguntas generales sobre conceptos como *glicemia* o *hemoglobina glicosilada (HbA1c)* aprovechando el motor educativo y su biblioteca de definiciones. Ante preguntas por cifras, diagnóstico o tratamiento, advierte que no cuenta con resultados numéricos verificados y remite al documento original. **No afirmar que la IA leyó los valores del informe.**
 
-La ruta `POST /api/sil/patient/reports/:id/chat` solo funciona para cuentas paciente en el modo aislado `VITALIA_SIL_DEMO=YES`. No acepta IDs de paciente suministrados por el cliente. Hasta 12 consultas al modelo por informe cada 15 minutos y una consulta concurrente por paciente/informe. No se almacena el historial de preguntas en PostgreSQL; la interfaz mantiene solo la conversación abierta.
+La ruta `POST /api/sil/patient/reports/:id/chat` solo funciona para cuentas paciente en el modo aislado `VITALIA_SIL_DEMO=YES`. No acepta IDs de paciente suministrados por el cliente. Hasta 12 consultas al modelo por paciente cada 15 minutos, con una consulta concurrente por paciente y un máximo de dos en el servicio local. No se almacena el historial de preguntas en PostgreSQL; la interfaz mantiene solo la conversación abierta.
 
 - Las preguntas conceptuales sencillas admitidas por la biblioteca funcionan mediante la ruta de evidencia del asistente **incluso sin Ollama**. Para consultas abiertas que requieren generación, debe existir un servicio Ollama local accesible **desde el contenedor demo**; si no, el backend responde `503 ASSISTANT_UNAVAILABLE` sin inventar contenido.
 - La IA existente conserva sus reglas de seguridad: no diagnósticos, no tratamientos, no conclusiones clínicas ni cifras generadas.
@@ -138,7 +138,7 @@ if (-not (Select-String -Path $secretPath -Pattern '^VITALIA_SIL_PATIENT_PASSWOR
 }
 ```
 
-El script de inicio reutiliza `paciente.sil@example.invalid` y comprueba que la clave configurada coincida con la existente. La nueva variable requiere **recrear exclusivamente** `vitalia-sil-demo` (no basta `docker start`). No revelar contraseñas por chat ni guardarlas en Git.
+El script de inicio reutiliza `paciente.sil@example.invalid` y conserva su contraseña vigente. La clave configurada se usa para su alta inicial. La nueva variable requiere **recrear exclusivamente** `vitalia-sil-demo` (no basta `docker start`). No revelar contraseñas por chat ni guardarlas en Git.
 
 Para abrir el portal aislado del paciente, lanzar Flutter con ambos parámetros:
 ```powershell
@@ -174,7 +174,7 @@ npm --prefix .\backend run build
 npm --prefix .\backend test
 ```
 
-**Detenerse si falla el compilador o las pruebas.** Para actualizar una demo existente, detén solo `vitalia-sil-demo`, deja PostgreSQL encendido y ejecuta el migrador hasta la versión 035 en `vitalia_dev`. Si el contenedor demo ya monta `backend\dist` y `backend\test`, vuelve a iniciarlo con `docker start vitalia-sil-demo` cuando la migración termine correctamente. En la rama del portal, completa también la [migración optativa 036](GUIA_ACTIVACION_PORTAL_DEMO.md#4-aplicar-solamente-la-migración-aislada-tras-pruebas) antes de iniciar la demo.
+**Detenerse si falla el compilador o las pruebas.** Para actualizar una demo existente, detén solo `vitalia-sil-demo`, deja PostgreSQL encendido y ejecuta el migrador hasta la versión 035 en `vitalia_dev`. Si el contenedor demo ya monta `backend\dist` y `backend\test`, vuelve a iniciarlo con `docker start vitalia-sil-demo` cuando la migración termine correctamente. En la rama del portal, completa también las [migraciones optativas del portal](GUIA_ACTIVACION_PORTAL_DEMO.md#4-aplicar-solamente-la-migración-aislada-tras-pruebas) antes de iniciar la demo.
 
 ```powershell
 $distPath = (Resolve-Path ".\backend\dist").Path
