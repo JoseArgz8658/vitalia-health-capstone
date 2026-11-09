@@ -13,7 +13,7 @@ afterAll(() => {
 const patientId = '11111111-1111-4111-8111-111111111111';
 const actorId = '22222222-2222-4222-8222-222222222222';
 
-function setup(role) {
+function setup(role, options) {
   const auth = {
     find: jest.fn(async () => ({
       id: actorId, email: 'usuario@example.invalid',
@@ -65,7 +65,7 @@ function setup(role) {
   };
   const app = express();
   app.use(express.json());
-  app.use('/api/sil', createSilRouter(auth,service));
+  app.use('/api/sil', createSilRouter(auth,service,options));
   return {app,service};
 }
 function authorized(req) {
@@ -239,7 +239,7 @@ describe('SIL: permisos y catálogo multiprestación', () => {
       .send({}).expect(403);
     expect(service.simulateAnalyzer).not.toHaveBeenCalled();
   });
-  test('solo validador puede aprobar o devolver una orden',async () => {
+  test('fuera del permiso de demo, solo validador puede aprobar o devolver',async () => {
     const review={decision:'approve',note:'Valores comprobados en revisión interna.'};
     const validator=setup('validador_laboratorio');
     await authorized(request(validator.app).post('/api/sil/orders/'+actorId+'/review'))
@@ -257,6 +257,28 @@ describe('SIL: permisos y catálogo multiprestación', () => {
     expect(admin.service.reviewOrder).not.toHaveBeenCalled();
     await authorized(request(validator.app).post('/api/sil/orders/'+actorId+'/sample'))
       .send({barcode:'TUBO-0001',containerCode:'edta'}).expect(403);
+  });
+  test('solo el operador autorizado puede revisar en el entorno demo',async () => {
+    const reviewPath='/api/sil/orders/'+actorId+'/review';
+    const approved=setup('operador_laboratorio',{demoReviewOperatorId:actorId});
+    const other=setup('operador_laboratorio',{demoReviewOperatorId:patientId});
+    const granted=await authorized(request(approved.app).get('/api/sil/summary')).expect(200);
+    expect(granted.body.permissions.reviewResults).toBe(true);
+    await authorized(request(approved.app).post(reviewPath))
+      .send({decision:'return',note:'Cotejar los valores del documento.'}).expect(201);
+    expect(approved.service.reviewOrder).toHaveBeenCalledWith(
+      actorId,actorId,'return','Cotejar los valores del documento.');
+    await authorized(request(other.app).post(reviewPath)).send({decision:'approve'}).expect(403);
+    expect(other.service.reviewOrder).not.toHaveBeenCalled();
+    const previous=process.env.VITALIA_SIL_DEMO;
+    try {
+      delete process.env.VITALIA_SIL_DEMO;
+      const denied=await authorized(request(approved.app).get('/api/sil/summary')).expect(200);
+      expect(denied.body.permissions.reviewResults).toBe(false);
+      await authorized(request(approved.app).post(reviewPath)).send({decision:'approve'}).expect(403);
+    } finally {
+      process.env.VITALIA_SIL_DEMO=previous;
+    }
   });
   test('devolución requiere motivo suficiente y rechaza parámetros extra',async () => {
     const {app,service}=setup('validador_laboratorio');

@@ -13,8 +13,14 @@ const resultSchema = z.object({
   analyte:z.string().trim().min(1).max(100),
   numericValue:z.number().finite().min(-1000000000).max(1000000000),
 }).strict();
-export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServices) {
+export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServices,
+  options:{demoReviewOperatorId?:string}={}) {
   const router=Router();
+  function canReview(account:{id:string;role:string}) {
+    return account.role==='validador_laboratorio' ||
+      (account.role==='operador_laboratorio' && process.env.VITALIA_SIL_DEMO==='YES' &&
+        account.id===options.demoReviewOperatorId);
+  }
   router.use(async(req,res,next)=>{
     res.set('Cache-Control','no-store');
     const parts=req.get('Authorization')?.split(' ');
@@ -54,7 +60,7 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     }
     const reviewAction=req.method==='POST' &&
       /^\/orders\/[a-f0-9-]{36}\/review$/.test(req.path);
-    if((reviewAction && account.role!=='validador_laboratorio') ||
+    if((reviewAction && !canReview(account)) ||
        (!reviewAction && req.method!=='GET' && account.role!=='operador_laboratorio')) {
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
     }
@@ -185,7 +191,8 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     res.json(await service.catalog());
   });
   router.get('/summary',async(_req,res)=>{
-    res.json(await service.summary());
+    const summary=await service.summary();
+    res.json({...summary,permissions:{reviewResults:canReview(res.locals.account)}});
   });
   router.get('/orders',async(req,res)=>{
     const data=z.object({

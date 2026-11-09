@@ -14,6 +14,7 @@ class _OperatorApi extends AuthApi {
   };
 
   bool failNextSave = true;
+  bool canReview = false;
   var status = 'sampled';
   final calls = <Uri>[];
 
@@ -43,18 +44,31 @@ class _OperatorApi extends AuthApi {
         return {
           'summary': {
             'total': 1,
-            'pendingResults': status == 'sampled' ? 1 : 0
+            'pendingResults': status == 'sampled' ? 1 : 0,
+            'pendingReview': status == 'results_recorded' ? 1 : 0,
           },
+          'permissions': {'reviewResults': canReview},
         };
       case '/orders':
+        final matching = uri.queryParameters['status'] == null ||
+            uri.queryParameters['status'] == status;
         return {
-          'orders': [_order],
-          'total': 1,
+          'orders': [if (matching) _order],
+          'total': matching ? 1 : 0,
         };
       case '/orders/$_id':
         return {
           'order': _order,
           'exams': [_exam],
+          if (status == 'results_recorded')
+            'results': [
+              {
+                'examCode': 'glicemia',
+                'analyte': 'Glucosa',
+                'numericValue': 91,
+                'unit': 'mg/dL'
+              },
+            ],
           if (status == 'registered')
             'requiredContainers': [
               {'code': 'fluoride', 'label': 'Fluoruro'},
@@ -76,6 +90,10 @@ class _OperatorApi extends AuthApi {
         }
         status = 'results_recorded';
         return {};
+      case '/orders/$_id/review':
+        expect(body, {'decision': 'approve', 'note': ''});
+        status = 'review_approved';
+        return {};
       default:
         throw StateError('Ruta inesperada: $path');
     }
@@ -83,6 +101,37 @@ class _OperatorApi extends AuthApi {
 }
 
 void main() {
+  testWidgets(
+      'operador habilitado confirma desde su bandeja y vuelve a pendientes', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 960));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api = _OperatorApi()
+      ..canReview = true
+      ..status = 'results_recorded';
+    await tester.pumpWidget(MaterialApp(
+      home: OperadorLaboratorioPage(api: api, onExpired: () {}),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Por revisar · 1'));
+    await tester.pumpAndSettle();
+    expect(api.calls.last.queryParameters['status'], 'results_recorded');
+    await tester.tap(find.text('Revisar resultados'));
+    await tester.pumpAndSettle();
+    final approve = find.text('Aprobar revisión');
+    await tester.ensureVisible(approve);
+    await tester.tap(approve);
+    await tester.pumpAndSettle();
+    expect(api.status, 'results_recorded');
+    await tester.tap(find.text('Confirmar'));
+    await tester.pumpAndSettle();
+    expect(api.status, 'review_approved');
+    expect(
+        find.text('Revisión interna aprobada para VH-000013.'), findsOneWidget);
+    expect(find.text('No hay órdenes en esta vista.'), findsOneWidget);
+  });
+
   testWidgets('recibe un tubo sin etiqueta y muestra el código asignado', (
     tester,
   ) async {

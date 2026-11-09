@@ -85,7 +85,7 @@ async function main(){
     const adminEmail='admin.sil@example.invalid';
     const validatorEmail='validador.sil@example.invalid';
     const patientEmail='paciente.sil@example.invalid';
-    await ensureAccount(operatorEmail,'operador_laboratorio',operatorPassword);
+    const operatorId=await ensureAccount(operatorEmail,'operador_laboratorio',operatorPassword);
     await ensureAccount(adminEmail,'administrador',adminPassword);
     await ensureAccount(validatorEmail,'validador_laboratorio',validatorPassword);
     const patientId=await ensureAccount(
@@ -104,7 +104,9 @@ async function main(){
     app.use(express.json({limit:'32kb'}));
     app.get('/api/health',(_req,res)=>res.json({status:'ok',service:'sil-demo-only'}));
     app.use('/api/auth',createAuthRouter(auth));
-    app.use('/api/sil',createSilRouter(auth,createSilService(db)));
+    app.use('/api/sil',createSilRouter(auth,createSilService(db),{
+      demoReviewOperatorId:operatorId,
+    }));
     app.use((_req,res)=>res.status(404).json({error:{code:'NOT_FOUND'}}));
     app.use((error,_req,res,_next)=>{
       console.error('Error controlado SIL:',error.message);

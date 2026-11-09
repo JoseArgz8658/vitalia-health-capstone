@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_selector/file_selector.dart';
 
 import '../../core/auth_api.dart';
+import 'sil_review_confirmation.dart';
 
 enum _OperatorSection {
   dashboard,
@@ -55,6 +56,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   final _searchController = TextEditingController();
   final _barcodeController = TextEditingController();
   final _receiptNoteController = TextEditingController();
+  final _reviewNoteController = TextEditingController();
   final _reportProfessional = TextEditingController();
   final _reportPatientIdentifier = TextEditingController();
   final _patientDemoGiven = TextEditingController();
@@ -94,6 +96,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   bool _busy = false;
   bool _loading = true;
   bool _ordersLoading = false;
+  bool _canReview = false;
   int _page = 0;
   int _total = 0;
   _OperatorSection _section = _OperatorSection.dashboard;
@@ -141,6 +144,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     _searchController.dispose();
     _barcodeController.dispose();
     _receiptNoteController.dispose();
+    _reviewNoteController.dispose();
     _reportProfessional.dispose();
     _reportPatientIdentifier.dispose();
     for (final controller in [
@@ -172,6 +176,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             .map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
         _summary = Map<String, dynamic>.from(summary['summary'] as Map);
+        _canReview = (summary['permissions'] as Map?)?['reviewResults'] == true;
         _recentOrders = (recent['orders'] as List? ?? [])
             .map((item) => Map<String, dynamic>.from(item as Map))
             .toList();
@@ -296,6 +301,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       _selected = selected;
       _barcodeController.clear();
       _receiptNoteController.clear();
+      _reviewNoteController.clear();
       // Nunca conservar un PDF o una confirmación al cambiar de paciente/orden.
       _reportFile = null;
       _reportProfessional.clear();
@@ -780,13 +786,43 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     setState(() {
       _selected = null;
       _page = 0;
-      _filterStatus = null;
+      _filterStatus = _canReview ? 'results_recorded' : null;
       _section = _OperatorSection.orders;
       _message = 'Resultados registrados para ${_orderCode(order)}. '
           'Orden pendiente de revisión profesional.';
     });
     await _refreshAll();
   });
+
+  Future<void> _reviewSelected({required bool approve}) async {
+    final order = _selected?['order'] as Map?;
+    if (order == null || !_canReview || _busy || order['status'] != 'results_recorded') return;
+    final note = _reviewNoteController.text.trim();
+    if (!approve && note.length < 10) {
+      setState(() => _error = 'Indica un motivo de devolución de al menos 10 caracteres.');
+      return;
+    }
+    final confirmed = await confirmSilReview(context, approve: approve);
+    if (!mounted || confirmed != true) return;
+    await _run(() async {
+      await widget.api.silRequest('/orders/${order['id']}/review', body: {
+        'decision': approve ? 'approve' : 'return',
+        'note': note,
+      });
+      if (!mounted) return;
+      setState(() {
+        _selected = null;
+        _page = 0;
+        _section = _OperatorSection.orders;
+        _filterStatus = 'results_recorded';
+        _searchController.clear();
+        _message = approve
+            ? 'Revisión interna aprobada para ${_orderCode(order)}.'
+            : 'Orden ${_orderCode(order)} devuelta para corrección.';
+      });
+      await _refreshAll();
+    });
+  }
 
   void _search() {
     if (_busy) return;
@@ -814,6 +850,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     'registered' => 'Recibir muestra',
     'sampled' => 'Ingresar resultados',
     'review_rejected' => 'Corregir resultados',
+    'results_recorded' when _canReview => 'Revisar resultados',
     'results_recorded' || 'review_approved' => 'Ver resultados',
     'report_attached' || 'report_published' => 'Ver informe',
     _ => 'Abrir orden',
@@ -1114,7 +1151,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         const SizedBox(height: 12),
         Wrap(spacing: 8, runSpacing: 4, children: [
           ActionChip(
-            label: Text('${count('pendingReview')} pendientes de revisión'),
+            label: Text(_canReview ? 'Por revisar · ${count('pendingReview')}'
+                : '${count('pendingReview')} pendientes de revisión'),
             avatar: const Icon(Icons.schedule, size: 17),
             onPressed: _busy ? null : () => _openQueue('results_recorded'),
           ),
@@ -1573,7 +1611,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       'sampled' => 'Ingresa los resultados de las prestaciones solicitadas.',
       'review_rejected' =>
         'Revisa la observación, corrige y reenvía los resultados.',
-      'results_recorded' => 'La orden está en la bandeja del validador.',
+      'results_recorded' when _canReview => 'Coteja los resultados y registra tu decisión.',
+      'results_recorded' => 'La orden está en la bandeja de revisión.',
       'review_approved' => 'El validador completó la revisión interna.',
       'report_attached' => 'Comprueba el PDF incorporado antes de publicarlo.',
       'report_published' =>
@@ -1670,6 +1709,16 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     );
   }
 
+  String _tubeDescription(Map tube) {
+    final cap = switch (tube['code']) {
+      'edta' => 'lila',
+      'serum' => 'rojo o dorado',
+      'fluoride' => 'gris',
+      _ => null,
+    };
+    return cap == null ? '${tube['label']}' : '${tube['label']} ($cap)';
+  }
+
   Widget _samplesView() {
     final data = _selected;
     if (data == null) return _withoutOrder('Recepción de muestras');
@@ -1692,6 +1741,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           _orderHeader(order),
           const Divider(height: 30),
           Text('Tubos requeridos', style: Theme.of(context).textTheme.titleMedium),
+          const Text('Colores orientativos para la demo. Coteja el tipo y la etiqueta del tubo recibido.'),
           const SizedBox(height: 8),
           Wrap(spacing: 8, runSpacing: 8, children: [
             for (final container in required)
@@ -1702,7 +1752,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                       : Icons.hourglass_empty,
                   size: 17,
                 ),
-                label: Text('${container['label']} · '
+                label: Text('${_tubeDescription(container)} · '
                     '${received.contains(container['code']) ? 'Recibido' : 'Pendiente'}'),
               ),
           ]),
@@ -1725,6 +1775,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             const SizedBox(height: 18),
             DropdownButtonFormField<String>(
               value: _containerCode,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Tipo de tubo pendiente',
                 border: OutlineInputBorder(),
@@ -1733,7 +1784,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                 for (final container in pending)
                   DropdownMenuItem(
                     value: (container as Map)['code'] as String,
-                    child: Text(container['label'] as String),
+                    child: Text(_tubeDescription(container), overflow: TextOverflow.ellipsis),
                   ),
               ],
               onChanged: _busy ? null : (value) => setState(() => _containerCode = value),
@@ -1908,7 +1959,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       _panel(
         'Resultados de la orden',
-        'Consulta interna. La revisión y publicación clínica no están habilitadas.',
+        'Registro y revisión interna de resultados ficticios.',
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _orderHeader(order),
           const SizedBox(height: 18),
@@ -1968,6 +2019,41 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         ]),
         icon: Icons.fact_check_outlined,
       ),
+      if (_canReview && status == 'results_recorded' && results.isNotEmpty) ...[
+        const SizedBox(height: 14),
+        _panel(
+          'Revisión interna',
+          'Coteja los valores registrados con el documento de origen antes de decidir.',
+          Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            TextField(
+              controller: _reviewNoteController,
+              enabled: !_busy,
+              maxLength: 500,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Observación de revisión',
+                helperText: 'Para devolver la orden, escribe al menos 10 caracteres.',
+                helperMaxLines: 2,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Wrap(spacing: 10, runSpacing: 8, children: [
+              FilledButton.icon(
+                onPressed: _busy ? null : () => _reviewSelected(approve: true),
+                icon: const Icon(Icons.check_circle_outline),
+                label: const Text('Aprobar revisión'),
+              ),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : () => _reviewSelected(approve: false),
+                icon: const Icon(Icons.undo),
+                label: const Text('Devolver orden'),
+              ),
+            ]),
+          ]),
+          icon: Icons.fact_check_outlined,
+        ),
+      ],
       const SizedBox(height: 14),
       _auditTrail(data),
     ]);

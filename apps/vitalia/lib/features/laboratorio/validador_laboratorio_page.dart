@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/auth_api.dart';
+import 'sil_review_confirmation.dart';
 
 /// Revisión interna de resultados sintéticos, sin publicación a pacientes.
 class ValidadorLaboratorioPage extends StatefulWidget {
@@ -114,30 +115,7 @@ class _ValidadorLaboratorioPageState extends State<ValidadorLaboratorioPage> {
       setState(() => _error = 'Indica un motivo de devolución de al menos 10 caracteres.');
       return;
     }
-    final label = decision == 'approve' ? 'Aprobar revisión' : 'Devolver orden';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(label),
-        content: Text(
-          decision == 'approve'
-              ? 'Se marcará la revisión interna como aprobada. '
-                  'Esto no publica resultados ni genera un informe clínico.'
-              : 'La orden volverá al operador para corregir resultados. '
-                  'Se conservarán los valores y el motivo en la auditoría.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text('Confirmar'),
-          ),
-        ],
-      ),
-    );
+    final confirmed = await confirmSilReview(context, approve: decision == 'approve');
     if (confirmed != true || !mounted) return;
     await _run(() async {
       await widget.api.silRequest('/orders/${order['id']}/review', body: {
