@@ -17,6 +17,22 @@ $db = 'vitalia_restored'
 $user = 'vitalia_restore'
 $created = $false
 $approved = $false
+$staging = Join-Path ([System.IO.Path]::GetTempPath()) $container
+$staged = $false
+$strictUtf8 = [System.Text.UTF8Encoding]::new($false, $true)
+
+function Copy-LinuxText([string]$Source, [string]$Destination, [bool]$AllowBom = $false) {
+  $text = $strictUtf8.GetString([System.IO.File]::ReadAllBytes($Source))
+  if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) {
+    if (-not $AllowBom) { throw ('SQL con BOM UTF-8: ' + [System.IO.Path]::GetFileName($Source)) }
+    $text = $text.Substring(1)
+  }
+  $text = $text.Replace("`r`n", "`n")
+  if ($text.Contains("`r") -or $text.Contains([string][char]0)) {
+    throw ('Texto incompatible: ' + [System.IO.Path]::GetFileName($Source))
+  }
+  [System.IO.File]::WriteAllText($Destination, $text, $strictUtf8)
+}
 
 function Assert-Docker([string]$Step) {
   if ($LASTEXITCODE -ne 0) {
@@ -45,8 +61,23 @@ if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
   throw 'Falta el runner aislado en la rama actual.'
 }
 
-Write-Host 'SHA256 comprobado. Iniciando PostgreSQL temporal sin red...'
 try {
+  $null = New-Item -ItemType Directory -Path $staging
+  $staged = $true
+  $stagedMigrations = Join-Path $staging 'migrations'
+  $null = New-Item -ItemType Directory -Path $stagedMigrations
+  $stagedRunner = Join-Path $staging 'run.sh'
+  Copy-LinuxText $runner $stagedRunner $true
+  foreach ($number in 1..32) {
+    $prefix = '{0:D3}' -f $number
+    $matchesForNumber = @(Get-ChildItem -LiteralPath $sqlDir -File -Filter ("${prefix}_*.sql"))
+    if ($matchesForNumber.Count -ne 1) {
+      throw "Se esperaba exactamente un SQL para $prefix."
+    }
+    $migration = $matchesForNumber[0]
+    Copy-LinuxText $migration.FullName (Join-Path $stagedMigrations $migration.Name)
+  }
+  Write-Host 'SHA256 comprobado. Iniciando PostgreSQL temporal sin red...'
   # La misma version que usa compose.yaml. No hay red ni puertos publicados.
   $id = & docker run --detach --pull=never --name $container --network none --env POSTGRES_USER=vitalia_restore --env POSTGRES_DB=vitalia_restored --env POSTGRES_HOST_AUTH_METHOD=trust --env PGUSER=vitalia_restore --env PGDATABASE=vitalia_restored --env PGHOST=/var/run/postgresql --env VITALIA_ISOLATED_REHEARSAL=YES postgres:16.15-bookworm
   Assert-Docker 'creacion del contenedor temporal'
@@ -55,6 +86,12 @@ try {
 
   $ready = $false
   for ($attempt = 0; $attempt -lt 45; $attempt++) {
+    # El entrypoint inicia un servidor intermedio antes de hacer exec de postgres.
+    $process = & docker exec $container cat /proc/1/comm 2>$null
+    if ($LASTEXITCODE -ne 0 -or $process -ne 'postgres') {
+      Start-Sleep -Seconds 1
+      continue
+    }
     & docker exec $container pg_isready --username=$user --dbname=$db *> $null
     if ($LASTEXITCODE -eq 0) {
       $ready = $true
@@ -81,17 +118,22 @@ try {
   & docker exec $container mkdir -p $workdir
   Assert-Docker 'creacion de directorio temporal'
   $targetDir = '{0}:{1}' -f $container, $workdir
-  & docker cp $sqlDir $targetDir
+  & docker cp $stagedMigrations $targetDir
   Assert-Docker 'copia de migraciones SQL al contenedor'
   $targetRunner = '{0}:{1}' -f $container, "$workdir/run.sh"
-  & docker cp $runner $targetRunner
+  & docker cp $stagedRunner $targetRunner
   Assert-Docker 'copia del runner'
+  & docker exec $container sh -n "$workdir/run.sh"
+  Assert-Docker 'sintaxis del runner Linux'
   Write-Host 'Ensayando SQL 012-032 exclusivamente en la copia temporal...'
   & docker exec $container sh "$workdir/run.sh"
   Assert-Docker 'ejecucion y validacion del ensayo'
   $approved = $true
 }
 finally {
+  if ($staged) {
+    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction Continue
+  }
   if ($created -and $container -match '^vitalia-migration-rehearsal-[a-f0-9]{12}$') {
     # Solo nuestro contenedor temporal y su volumen anonimo.
     & docker rm --force --volumes $container *> $null
