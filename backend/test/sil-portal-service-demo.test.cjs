@@ -10,13 +10,15 @@ function dbMock(){
  let tokenHashes=[];
  let attempts=0;
  let recent=0;
+ let status='pending';
+ let expired=false;
  const db={connect:async()=>({
    query:async(sql,args=[])=>{
      calls.push({sql,args});
      if(sql.includes('FROM public.vitalia_sil_portal_access_demo access')
        &&sql.includes('FOR UPDATE OF access')
        &&sql.includes('SELECT a.email,access.status')){
-       return {rows:[{email,status:'pending',givenNames:'Paciente',
+       return {rows:[{email,status, givenNames:'Paciente',
         familyNames:'Nuevo',syntheticIdentifier:'DEMO-TEST99',
         birthDate:'1990-01-01'}]};
      }
@@ -27,17 +29,20 @@ function dbMock(){
      }
      if(sql.includes('SELECT a.id AS "patientId"')){
        return {rows:[{
-         patientId,status:'invited',invitationId:tokenHashes[0],
+         patientId,status,invitationId:tokenHashes[0],
          emailTokenHash:tokenHashes[2],handoffTokenHash:tokenHashes[3],
-         attempts,expiresAt:new Date(Date.now()+15*60*1000),
+         attempts,expiresAt:new Date(Date.now()+(expired?-1000:15*60*1000)),
        }]};
      }
+     if(sql.includes("SET status='invited'")){status='invited';return {rows:[]};}
+     if(sql.includes("SET status='active'")){status='active';return {rows:[]};}
      if(sql.includes('SET attempts=')){attempts=args[1];return {rows:[]};}
      return {rows:[]};
    },
    release:()=>{},
  })};
- return {db,calls,getAttempts:()=>attempts,setRecent:(x)=>recent=x};
+ return {db,calls,getAttempts:()=>attempts,setRecent:(x)=>recent=x,
+   setExpired:(value)=>expired=value};
 }
 test('el operador no recibe el token de correo y el buzón simulado es separado',async()=>{
  const fixture=dbMock();
@@ -68,6 +73,10 @@ test('el operador no recibe el token de correo y el buzón simulado es separado'
     &&q.sql.includes("role_code='paciente'"))).toBe(true);
  expect(fixture.calls.some(q=>q.args.includes('portal_activated'))).toBe(true);
  expect(service.demoMailbox(email)).not.toHaveProperty('emailCode');
+ await expect(service.activate({
+   email,emailCode:mail.emailCode,handoffCode:reply.handoffCode,
+   password:'OtraContraseñaSegura2026',confirmedDetails:true,
+ })).rejects.toBeInstanceOf(PortalDemoInvalidCode);
 });
 
 test('código de canal incorrecto incrementa intentos y no modifica la contraseña',async()=>{
@@ -114,4 +123,38 @@ test('alta DEMO crea ficha sin habilitar rol web ni compartir contraseñas',asyn
    .toBe(true);
  expect(fixture.calls.some(q=>q.args.includes('patient_provisioned'))).toBe(true);
  expect(fixture.calls.some(q=>q.sql.includes('COMMIT'))).toBe(true);
+});
+
+test('una invitación vencida nunca habilita credenciales',async()=>{
+ const fixture=dbMock();
+ const service=createSilPortalActivationDemo(fixture.db);
+ const invitation=await service.invite(patientId,operatorId,
+   {contactConfirmed:true,identityChecked:true});
+ const mail=service.demoMailbox(email);
+ fixture.setExpired(true);
+ await expect(service.activate({
+   email,emailCode:mail.emailCode,handoffCode:invitation.handoffCode,
+   password:'ContraseñaSeguraNueva2026',confirmedDetails:true,
+ })).rejects.toBeInstanceOf(PortalDemoInvalidCode);
+ expect(fixture.calls.some(q=>q.sql.includes('SET active=true'))).toBe(false);
+});
+
+test('cinco errores bloquean la invitación aun con códigos correctos',async()=>{
+ const fixture=dbMock();
+ const service=createSilPortalActivationDemo(fixture.db);
+ const invitation=await service.invite(patientId,operatorId,
+   {contactConfirmed:true,identityChecked:true});
+ const mail=service.demoMailbox(email);
+ for(let i=0;i<5;i++){
+   await expect(service.activate({
+     email,emailCode:mail.emailCode,handoffCode:'X'.repeat(12),
+     password:'ContraseñaSeguraNueva2026',confirmedDetails:true,
+   })).rejects.toBeInstanceOf(PortalDemoInvalidCode);
+ }
+ expect(fixture.getAttempts()).toBe(5);
+ await expect(service.activate({
+   email,emailCode:mail.emailCode,handoffCode:invitation.handoffCode,
+   password:'ContraseñaSeguraNueva2026',confirmedDetails:true,
+ })).rejects.toBeInstanceOf(PortalDemoInvalidCode);
+ expect(fixture.calls.some(q=>q.sql.includes('SET active=true'))).toBe(false);
 });
