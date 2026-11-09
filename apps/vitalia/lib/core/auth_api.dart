@@ -280,6 +280,41 @@ class AuthApi {
     }
   }
 
+  /// Documento pendiente para revisión privada del profesional acreditado.
+  Future<Uint8List> silMainDownloadReportForReview({
+    required String labId,
+    required String orderId,
+  }) async {
+    if(!_silMainMode)throw const AuthFailure('SIL principal no habilitado.');
+    final id=RegExp(r'^[a-f0-9-]{36}$');
+    if(!id.hasMatch(labId)||!id.hasMatch(orderId)){
+      throw const AuthFailure('Orden inválida.');
+    }
+    final token=_token;
+    if(token==null||expiresAt==null||!expiresAt!.isAfter(DateTime.now())){
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+    }
+    try{
+      final response=await _client.get(
+        _base.resolve('/api/sil/main/labs/$labId/orders/$orderId/report/file'),
+        headers:{'Authorization':'Bearer $token'},
+      ).timeout(const Duration(seconds:35));
+      if(token!=_token||response.statusCode==401){
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+      }
+      if(response.statusCode!=200||
+         response.headers['content-type']?.startsWith('application/pdf')!=true||
+         response.bodyBytes.length>2*1024*1024){
+        throw AuthFailure('Informe pendiente no disponible.',response.statusCode);
+      }
+      return response.bodyBytes;
+    }on AuthFailure {rethrow;}
+    on TimeoutException {throw const AuthFailure('La descarga tardó demasiado.');}
+    catch(_){throw const AuthFailure('No fue posible descargar el informe para revisión.');}
+  }
+
   /// Consulta un archivo recibido desde el SIL principal, autenticado y
   /// limitado por laboratorio en el backend.
   Future<Uint8List> silMainDownloadMedicalRequest({
