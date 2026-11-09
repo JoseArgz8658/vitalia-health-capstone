@@ -1,4 +1,5 @@
 import '../features/incorporacion/activar_invitacion_page.dart';
+import '../features/acceso/activar_portal_sil_page.dart';
 import '../features/asignaciones/asignaciones_page.dart';
 import '../features/laboratorio/operador_laboratorio_page.dart';
 import '../features/laboratorio/paciente_informes_sil_page.dart';
@@ -134,6 +135,11 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
     theme: temaVitalia(),
     initialRoute: widget.initialRoute,
     onGenerateRoute: (settings) {
+      if (settings.name == '/activar-portal')
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => ActivarPortalSilPage(api: _api),
+        );
       if (settings.name == '/activar-invitacion')
         return MaterialPageRoute<void>(
           settings: settings,
