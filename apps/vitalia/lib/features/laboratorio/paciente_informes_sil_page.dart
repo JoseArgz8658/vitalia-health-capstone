@@ -744,12 +744,16 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     switch (action) {
       case 'profile':
         _openProfile();
+        break;
       case 'refresh':
         if (!_loading) _refresh();
+        break;
       case 'recovery':
         _openRecovery();
+        break;
       case 'logout':
         widget.onLogout();
+        break;
     }
   }
 
@@ -794,7 +798,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               : '';
           final firstName = rawName.isEmpty
               ? ''
-              : rawName.split(RegExp(r'\\s+')).first;
+              : rawName.split(RegExp(r'\s+')).first;
           return PortalHeroSil(
             eyebrow: 'Tu espacio personal · SIL DEMO',
             title: firstName.isEmpty
