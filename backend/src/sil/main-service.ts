@@ -1,6 +1,8 @@
 import {randomUUID,createHash} from 'node:crypto';
 import {type Pool,type PoolClient} from 'pg';
 import {identifyDocument} from '../documents/file-validation';
+import {createSilPatientReportOverview} from './patient-report-overview';
+import {createSilPatientEducation} from './patient-education';
 
 export class SilMainAccessDenied extends Error {}
 export class SilMainNotFound extends Error {}
@@ -9,6 +11,10 @@ export class SilMainConflict extends Error {}
 type Queryable=Pick<Pool,'query'>;
 
 export function createSilMainService(db:Pool) {
+  // Reutilizar la lógica educativa validada, pero con consultas SQL propias
+  // del SIL principal. No se lee ninguna tabla *_demo.
+  const mainOverview=createSilPatientReportOverview(db,undefined,'main');
+  const mainEducation=createSilPatientEducation(db,undefined,mainOverview,'main');
   async function audit(tx:Pick<PoolClient,'query'>,labId:string,actorId:string,
     action:'laboratory_created'|'staff_granted'|'patient_identity_linked'|
       'order_created'|'report_attached'|'report_published'|'report_downloaded',
@@ -59,6 +65,8 @@ export function createSilMainService(db:Pool) {
   }
 
   return {
+    getPatientReportOverview:mainOverview,
+    askPatientReport:mainEducation.ask,
     async laboratoriesFor(accountId:string,role:string){
       const res=role==='administrador'
         ?await db.query(
