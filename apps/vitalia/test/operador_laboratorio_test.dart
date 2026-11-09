@@ -27,6 +27,28 @@ class _OperatorApi extends AuthApi {
       };
 
   @override
+  Future<Map<String,dynamic>> silPortalRequest(
+    String path,{Map<String,dynamic>? body}
+  ) async {
+    calls.add(Uri.parse(path));
+    if(path=='/portal/patients/$_id'){
+      return {
+        'patient':{
+          'id':_id,
+          'email':'paciente.sil@example.invalid',
+          'givenNames':'Paciente',
+          'familyNames':'Ficticio',
+          'birthDate':'1990-01-01',
+          'syntheticIdentifier':'DEMO-1111',
+          'portalStatus':null,
+        },
+        'canInvite':false,
+      };
+    }
+    throw const AuthFailure('Acción DEMO no configurada en el test.');
+  }
+
+  @override
   Future<Map<String, dynamic>> silRequest(
     String path, {
     Map<String, dynamic>? body,
