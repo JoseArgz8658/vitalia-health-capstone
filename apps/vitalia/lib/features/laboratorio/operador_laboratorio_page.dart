@@ -1257,6 +1257,84 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     );
   }
 
+  /// Una ruta visual que hace reconocible la secuencia de trabajo.
+  /// Ningún estado posterior se habilita automáticamente por extracción IA.
+  Widget _workflowMap(Map<String,dynamic> summary){
+    int amount(String key)=>(summary[key] as num?)?.toInt()??0;
+    final stages=<({IconData icon,String title,String sub,String count,String? status})>[
+      (icon:Icons.note_add_outlined,title:'Solicitud',
+        sub:'Cotejar identidad y documento',count:'Iniciar',status:null),
+      (icon:Icons.inventory_2_outlined,title:'Muestras',
+        sub:'Recepción declarada de tubos',
+        count:'${amount('pendingSample')}',status:'registered'),
+      (icon:Icons.biotech_outlined,title:'Resultados',
+        sub:'Ingreso o prelectura asistida',
+        count:'${amount('pendingResults')}',status:'sampled'),
+      (icon:Icons.fact_check_outlined,title:'Revisión',
+        sub:'Decisión del operador autorizado',
+        count:'${amount('pendingReview')}',status:'results_recorded'),
+      (icon:Icons.file_present_outlined,title:'Publicación',
+        sub:'Informe externo autorizado',
+        count:'${amount('attached')}',status:'report_attached'),
+    ];
+    return _panel(
+      'Ruta de trabajo postanalítica',
+      'Cada etapa tiene requisitos explícitos. La extracción asistida no sustituye la revisión humana.',
+      LayoutBuilder(builder:(context,constraints){
+        final columns=constraints.maxWidth>=1080?5:
+          constraints.maxWidth>=670?3:
+          constraints.maxWidth>=360?2:1;
+        final width=(constraints.maxWidth-(columns-1)*9)/columns;
+        return Wrap(spacing:9,runSpacing:9,children:[
+          for(final (index,stage) in stages.indexed)
+            SizedBox(width:width,child:Material(
+              color: index==2?ColoresVitalia.azulSuave:
+                ColoresVitalia.fondoAzul,
+              shape:RoundedRectangleBorder(
+                borderRadius:BorderRadius.circular(13),
+                side:const BorderSide(color:ColoresVitalia.bordeTenue)),
+              clipBehavior:Clip.antiAlias,
+              child:InkWell(
+                onTap:_busy?null:()=>stage.status==null
+                  ?_goTo(_OperatorSection.request)
+                  :_openQueue(stage.status),
+                child:Padding(padding:const EdgeInsets.all(13),
+                  child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                    Row(children:[
+                      CircleAvatar(radius:16,
+                        backgroundColor:Colors.white,
+                        child:Icon(stage.icon,color:ColoresVitalia.azul,size:18)),
+                      const Spacer(),
+                      Text('${index+1}/5',
+                        style:const TextStyle(
+                          color:ColoresVitalia.textoSecundario,fontSize:10)),
+                    ]),
+                    const SizedBox(height:10),
+                    Text(stage.title,style:const TextStyle(
+                      color:ColoresVitalia.texto,fontWeight:FontWeight.w700)),
+                    const SizedBox(height:3),
+                    Text(stage.sub,maxLines:2,overflow:TextOverflow.ellipsis,
+                      style:const TextStyle(
+                        color:ColoresVitalia.textoSecundario,fontSize:11)),
+                    const SizedBox(height:10),
+                    Row(children:[
+                      Text(stage.count,style:const TextStyle(
+                        fontWeight:FontWeight.w700,color:ColoresVitalia.azul,
+                        fontSize:13)),
+                      const Spacer(),
+                      const Icon(Icons.arrow_forward,
+                        color:ColoresVitalia.azul,size:17),
+                    ]),
+                  ]),
+                ),
+              ),
+            )),
+        ]);
+      }),
+      icon:Icons.account_tree_outlined,
+    );
+  }
+
   Widget _dashboard() {
     final summary = _summary;
     if (summary == null) {
@@ -1299,6 +1377,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _dashboardHeader(),
+        const SizedBox(height: 16),
+        _workflowMap(summary),
         const SizedBox(height: 16),
         _panel(
           'Trabajo del operador',
