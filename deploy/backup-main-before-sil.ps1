@@ -59,7 +59,7 @@ try {
   Assert-Docker 'el calculo de la huella del respaldo en Docker'
   $hashMatch = [regex]::Match(
     ($remoteHashOutput | Out-String).Trim(),
-    '^([0-9a-fA-F]{64})\\s+'
+    '^([0-9a-fA-F]{64})\s+'
   )
   if (-not $hashMatch.Success) {
     throw 'Docker devolvió una huella SHA256 en un formato inesperado.'
@@ -92,13 +92,9 @@ try {
 }
 finally {
   if ($createdInside) {
-    # Limpiar exclusivamente el archivo temporal creado por este script.
-    # La ruta se genera en este script y siempre queda bajo /tmp;
-    # evitar un segundo "sh -c" al limpiar el archivo temporal.
-    if ($inside -match '^/tmp/vitalia-principal-pre-sil-[0-9]{8}-[0-9]{6}\\.dump
-  }
-}
-) {
+    # Limpiar exclusivamente el archivo temporal que genera este script.
+    # Usar argumento directo evita los problemas de comillas de sh -c.
+    if ($inside -match '^/tmp/vitalia-principal-pre-sil-[0-9]{8}-[0-9]{6}\.dump$') {
       & docker exec $container rm -f -- $inside *> $null
     }
   }
