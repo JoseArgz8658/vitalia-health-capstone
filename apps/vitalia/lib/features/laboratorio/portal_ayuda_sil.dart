@@ -430,28 +430,34 @@ class PortalAyudaFooterSil extends StatelessWidget {
                   ),
                 ],
               );
-              final actions = Wrap(
-                spacing: 9,
-                runSpacing: 9,
-                children: [
-                  FilledButton.icon(
-                    onPressed: () =>
-                        PortalAyudaSil.contacto(context, reports),
-                    icon: const Icon(Icons.support_agent_outlined),
-                    label: Text(
-                      constraints.maxWidth < 410
-                          ? 'Cómo contactar'
-                          : 'Contacto del laboratorio',
-                    ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: () =>
-                        PortalAyudaSil.preguntasFrecuentes(context),
-                    icon: const Icon(Icons.help_outline),
-                    label: const Text('Preguntas frecuentes'),
-                  ),
-                ],
+              final contactButton = FilledButton.icon(
+                onPressed: () => PortalAyudaSil.contacto(context, reports),
+                icon: const Icon(Icons.support_agent_outlined),
+                label: Text(
+                  constraints.maxWidth < 410
+                      ? 'Cómo contactar'
+                      : 'Contacto del laboratorio',
+                ),
               );
+              final faqButton = OutlinedButton.icon(
+                onPressed: () => PortalAyudaSil.preguntasFrecuentes(context),
+                icon: const Icon(Icons.help_outline),
+                label: const Text('Preguntas frecuentes'),
+              );
+              final actions = constraints.maxWidth < 410
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        contactButton,
+                        const SizedBox(height: 9),
+                        faqButton,
+                      ],
+                    )
+                  : Wrap(
+                      spacing: 9,
+                      runSpacing: 9,
+                      children: [contactButton, faqButton],
+                    );
               if (constraints.maxWidth >= 860) {
                 return Row(
                   children: [
@@ -489,12 +495,16 @@ class PortalAyudaFooterSil extends StatelessWidget {
                     children: [
                       Icon(Icons.favorite_outline, color: Colors.white),
                       SizedBox(width: 8),
-                      Text(
-                        'Vitalia Health',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 19,
-                          fontWeight: FontWeight.w800,
+                      Expanded(
+                        child: Text(
+                          'Vitalia Health',
+                          maxLines: 2,
+                          softWrap: true,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                     ],
