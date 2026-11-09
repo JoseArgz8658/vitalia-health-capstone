@@ -27,7 +27,7 @@ export function createSilPortalRouterDemo(
   const router=Router();
   const allowActivate=createLoginAttemptLimiter();
   const allowMailbox=createLoginAttemptLimiter();
-  router.use((_req,res,next)=>{
+  router.use('/portal',(_req,res,next)=>{
     res.set('Cache-Control','no-store');
     res.set('X-Content-Type-Options','nosniff');
     if(process.env.VITALIA_SIL_DEMO!=='YES'){
@@ -67,7 +67,7 @@ export function createSilPortalRouterDemo(
 
   // El resto requiere sesión de operador; un paciente o administrador
   // no puede consultar destinatarios ni crear invitaciones.
-  router.use(async(req,res,next)=>{
+  router.use('/portal',async(req,res,next)=>{
     const parts=req.get('Authorization')?.split(' ');
     const token=parts?.length===2&&parts[0].toLowerCase()==='bearer'&&
       isSessionToken(parts[1])?parts[1]:null;
