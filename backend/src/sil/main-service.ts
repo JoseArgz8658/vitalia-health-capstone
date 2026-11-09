@@ -174,7 +174,8 @@ export function createSilMainService(db:Pool) {
 
     async listOrders(labId:string,accountId:string,role:string,
       limit:number,offset:number){
-      if(role!=='administrador')await operator(labId,accountId);
+      if(role==='profesional')await validator(labId,accountId);
+      else if(role!=='administrador')await operator(labId,accountId);
       const results=await db.query(
         `SELECT o.id,o.order_number AS "orderNumber",o.status,
            o.patient_id AS "patientId",o.created_at AS "createdAt",
