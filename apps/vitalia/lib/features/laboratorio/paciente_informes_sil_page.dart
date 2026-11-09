@@ -86,8 +86,9 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         setState(() => _error = error.message);
       }
     } catch (_) {
-      if (mounted)
+      if (mounted) {
         setState(() => _error = 'No se pudo consultar tus informes.');
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -399,8 +400,9 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
 
   Future<void> _askChat(String reportId) async {
     final question = _question.text.trim();
-    if (_chatBusyReport != null || question.length < 3 || question.length > 400)
+    if (_chatBusyReport != null || question.length < 3 || question.length > 400) {
       return;
+    }
     setState(() {
       _chatBusyReport = reportId;
       _chatError = null;
@@ -410,8 +412,9 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         '/patient/reports/$reportId/chat',
         body: {'question': question, if (_simpleReading) 'simple': true},
       );
-      if (!mounted || !widget.api.hasSession || _activeChatReport != reportId)
+      if (!mounted || !widget.api.hasSession || _activeChatReport != reportId) {
         return;
+      }
       final response = Map<String, dynamic>.from(result['response'] as Map);
       final answer = response['answer'] as String?;
       if (answer == null || answer.isEmpty) {
@@ -1211,12 +1214,17 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               ),
             ),
             const SizedBox(width: 10),
-            Text(
-              narrow ? 'Vitalia' : 'Vitalia Health',
-              style: TextStyle(
-                fontSize: narrow ? 19 : 21,
-                color: ColoresVitalia.texto,
-                fontWeight: FontWeight.w800,
+            Flexible(
+              child: Text(
+                narrow ? 'Vitalia' : 'Vitalia Health',
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: narrow ? 18 : 21,
+                  color: ColoresVitalia.texto,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
             if (width >= 1700) ...[
