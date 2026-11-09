@@ -3,8 +3,9 @@
 const assert = require('node:assert/strict');
 const {createHash, randomUUID} = require('node:crypto');
 const {spawnSync} = require('node:child_process');
-const {readFileSync, readdirSync} = require('node:fs');
+const {readFileSync, readdirSync, writeFileSync} = require('node:fs');
 const {resolve} = require('node:path');
+const {createInterface} = require('node:readline/promises');
 const express = require('express');
 const {Pool} = require('pg');
 const {createApp} = require('../dist/app');
@@ -15,10 +16,32 @@ const {createSilMainService} = require('../dist/sil/main-service');
 
 const origin = 'http://127.0.0.1:3119';
 const password = 'SoloPrueba-2026!';
-const pdf = Buffer.from('%PDF-1.4\n% Informe sintetico para el ensayo\n%%EOF\n');
+const pdf = syntheticPdf();
+
+function syntheticPdf() {
+  const stream = 'BT /F1 18 Tf 50 740 Td (Vitalia - informe ficticio) Tj ET';
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+  ];
+  let content = '%PDF-1.4\n';
+  const offsets = [];
+  for (const [index, object] of objects.entries()) {
+    offsets.push(content.length);
+    content += `${index+1} 0 obj\n${object}\nendobj\n`;
+  }
+  const start = content.length;
+  content += `xref\n0 ${offsets.length+1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) content += `${String(offset).padStart(10,'0')} 00000 n \n`;
+  content += `trailer\n<< /Size ${offsets.length+1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF\n`;
+  return Buffer.from(content,'ascii');
+}
 const migrations = resolve(__dirname, '../database/migrations');
 
-async function prepare(db) {
+async function prepare(db, container) {
   const target = await db.query(`SELECT current_database() AS db, current_user AS actor,
     NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public') AS empty`);
   assert.deepEqual(target.rows[0], {db:'vitalia_restored', actor:'vitalia_restore', empty:true},
@@ -46,9 +69,19 @@ async function prepare(db) {
   } finally {
     client.release();
   }
-  const migrated = spawnSync(process.execPath,
-    [resolve(__dirname,'../dist/database/migrate-main-sil.js'),'--rehearse'],
-    {stdio:'inherit',timeout:30000});
+  const script = 'dist/database/migrate-main-sil.js';
+  const migrated = container
+    ? spawnSync('docker',[
+      'run','--rm','--pull=never','--network','container:'+container,
+      '--mount','type=bind,source='+resolve(__dirname,'../dist')+',target=/app/dist,readonly',
+      '--mount','type=bind,source='+resolve(__dirname,'../database')+',target=/app/database,readonly',
+      '-e','PGHOST=127.0.0.1','-e','PGPORT=5432','-e','PGUSER=vitalia_restore',
+      '-e','PGDATABASE=vitalia_restored','-e','PGPASSWORD','-e','VITALIA_ISOLATED_REHEARSAL=YES',
+      '--workdir','/app','--entrypoint','node','vitalia-backend:local',script,'--rehearse',
+    ],{stdio:'inherit',timeout:45000})
+    : spawnSync(process.execPath,[resolve(__dirname,'../'+script),'--rehearse'],
+      {stdio:'inherit',timeout:30000});
+  if (migrated.error) throw migrated.error;
   assert.equal(migrated.status,0,'Falló el migrador del ensayo.');
 }
 
@@ -221,10 +254,19 @@ async function main() {
     process.env.PGDATABASE!=='vitalia_restored') {
     throw new Error('Se requiere PostgreSQL aislado, vacío y accesible por loopback.');
   }
+  const container=process.env.VITALIA_JOURNEY_DB_CONTAINER;
+  if(container && (!/^vitalia-edge-qa-[a-f0-9]{12}$/.test(container) || process.env.PGPORT!=='55439')){
+    throw new Error('El contenedor local debe pertenecer al ensayo de Edge.');
+  }
+  const manual=process.env.VITALIA_JOURNEY_MANUAL==='YES';
+  const fixture=process.env.VITALIA_JOURNEY_FIXTURE;
+  if(manual && (!process.env.VITALIA_JOURNEY_WEB || !fixture)){
+    throw new Error('El ensayo manual requiere una compilación web y una ruta para el PDF ficticio.');
+  }
   const db=new Pool({connectionTimeoutMillis:5000});
   let server, webServer;
   try {
-    await prepare(db);
+    await prepare(db,container);
     const roles={
       admin:'administrador', uploader:'operador_laboratorio',
       reviewer:'operador_laboratorio', patient:'paciente', other:'paciente',
@@ -328,7 +370,25 @@ async function main() {
       const browserOrder=await call('uploader','POST',base+'/orders',201,{json:{
         patientId:ids.patient,examCodes:['glicemia'],
       }});
-      await browserJourney((await browserOrder.json()).order,base);
+      const {order:ready}=await browserOrder.json();
+      if(manual){
+        writeFileSync(fixture,pdf,{flag:'wx'});
+        console.log('\nSIL temporal listo en http://localhost:5173/#/laboratorio');
+        console.log('Orden disponible: VH-'+String(ready.orderNumber).padStart(6,'0'));
+        console.log('Adjunta el PDF con uploader@example.invalid.');
+        console.log('Revisa y publica con reviewer@example.invalid.');
+        console.log('Consulta el informe con patient@example.invalid en http://localhost:5173/.');
+        console.log('Contraseña de estas cuentas ficticias: '+password);
+        console.log('PDF para adjuntar: '+fixture);
+        const input=createInterface({input:process.stdin,output:process.stdout});
+        try {
+          await input.question('Pulsa Enter para cerrar el ensayo.\n');
+        } finally {
+          input.close();
+        }
+      } else {
+        await browserJourney(ready,base);
+      }
     }
   } finally {
     if(webServer)await new Promise(done=>webServer.close(done));
