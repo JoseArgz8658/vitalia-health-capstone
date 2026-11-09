@@ -355,20 +355,21 @@ class DirectorioPacientesSilState extends State<DirectorioPacientesSil> {
                 Text('Cuentas ficticias · $_total resultados',
                   style: text.bodySmall),
               ]),
-              Row(mainAxisSize:MainAxisSize.min,children:[
-                if(widget.onCreatePatient!=null)
-                  FilledButton.tonalIcon(
-                    onPressed: widget.onCreatePatient,
-                    icon: const Icon(Icons.person_add_alt_1_outlined,size:18),
-                    label: const Text('Nuevo paciente DEMO'),
+              Wrap(spacing:8,runSpacing:7,
+                crossAxisAlignment:WrapCrossAlignment.center,
+                children:[
+                  if(widget.onCreatePatient!=null)
+                    FilledButton.tonalIcon(
+                      onPressed: widget.onCreatePatient,
+                      icon: const Icon(Icons.person_add_alt_1_outlined,size:18),
+                      label: const Text('Nuevo paciente DEMO'),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: _loading ? null : refresh,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Actualizar'),
                   ),
-                const SizedBox(width:8),
-                OutlinedButton.icon(
-                  onPressed: _loading ? null : refresh,
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('Actualizar'),
-                ),
-              ]),
+                ]),
             ]),
           const SizedBox(height: 14),
           TextField(
