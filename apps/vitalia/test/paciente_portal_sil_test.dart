@@ -66,6 +66,23 @@ class _PatientApi extends AuthApi {
         },
       };
     }
+    if (path == '/patient/reports/overview') {
+      expect(body?['reportIds'], [_id]);
+      return {
+        'reports': [
+          {
+            'orderNumber': 'VH-000001',
+            'laboratory': 'Laboratorio ficticio',
+            'measurements': [
+              {'analyte': 'Glucosa', 'value': 91, 'unit': 'mg/dL'},
+            ],
+            'observation': 'Control de seguimiento.',
+            'reference': 'SOL-DEMO',
+          },
+        ],
+        'statistics': [],
+      };
+    }
     if (path.endsWith('/chat')) {
       expect(path, '/patient/reports/$_id/chat');
       expect(body?['question'], '¿Qué significa rango de referencia?');
@@ -193,6 +210,13 @@ void main() {
     expect(find.text('No encontramos informes que coincidan con tu búsqueda.'),
         findsOneWidget);
     await _type(tester, search, 'VH-000001');
+    await _tap(tester, 'Ver resultados');
+    await _tap(tester, 'Leer informes');
+    expect(find.text('Glucosa · 91 mg/dL'), findsOneWidget);
+    await _tap(tester, '¿Qué dice la derivación?');
+    expect(find.text('«Control de seguimiento.»'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
     await _tap(tester, 'Preguntar sobre el informe');
     await _tap(tester, 'Lectura fácil');
     await _tap(tester, 'Rango de referencia');

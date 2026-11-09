@@ -49,7 +49,7 @@ class AuthApi {
   }) async {
     final uri = Uri.tryParse(path);
     final validPath = RegExp(
-      r'^/(?:catalog|branches|summary|medical-requests/(?:confirm)|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results|review|report(?:/publish)?))?)?|patients(?:/(?:profile|list))?|patient/profile|patient/reports(?:/[a-f0-9-]{36}/(?:file|chat))?)$',
+      r'^/(?:catalog|branches|summary|medical-requests/(?:confirm)|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results|review|report(?:/publish)?))?)?|patients(?:/(?:profile|list))?|patient/profile|patient/reports/overview|patient/reports(?:/[a-f0-9-]{36}/(?:file|chat))?)$',
     );
     final allowedParams = uri?.path == '/patients/list'
         ? <String>{'limit', 'offset', 'search', 'profile', 'orders', 'sex', 'sort'}
@@ -86,9 +86,11 @@ class AuthApi {
       final response = await (body == null
               ? _client.get(uri, headers: headers)
               : _client.post(uri, headers: headers, body: jsonEncode(body)))
-          .timeout(uri.path.endsWith('/chat')
-              ? const Duration(seconds: 27)
-              : const Duration(seconds: 20));
+          .timeout(switch (uri.path) {
+            '/api/sil/patient/reports/overview' => const Duration(seconds: 130),
+            final path when path.endsWith('/chat') => const Duration(seconds: 38),
+            _ => const Duration(seconds: 20),
+          });
       if (_token != token || response.statusCode == 401) {
         clear();
         throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);

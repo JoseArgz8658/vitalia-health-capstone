@@ -1,4 +1,5 @@
 import {type Pool} from 'pg';
+import {type createSilPatientReportOverview} from './patient-report-overview';
 import {type Extraction} from '../ai/contract';
 import {educationalEvidence,questionIndices} from '../exam-assistant/knowledge';
 import {gate,normalize,validateReply} from '../exam-assistant/contract';
@@ -7,7 +8,7 @@ import {createExamAssistant,type ExamAssistant} from '../exam-assistant/local-mo
 /**
  * Asistente educativo exclusivo del SIL local de prueba.
  * El modelo recibe solo las prestaciones de la orden publicada.
- * NUNCA utiliza los bytes del PDF ni afirma que extrajo valores de él.
+ * Las cifras y las observaciones salen del lector de documentos, fuera del modelo.
  */
 export class SilEducationNotFound extends Error {}
 export class SilEducationBusy extends Error {}
@@ -15,12 +16,13 @@ export class SilEducationUnavailable extends Error {}
 
 const educationNotice =
   'Información registrada y orientación educativa sobre la orden. ' +
-  'No lee ni interpreta los valores del PDF, no diagnostica ni indica tratamientos. ' +
-  'Consulta el informe original para conocer tus cifras.';
+  'Las cifras detectadas deben cotejarse con el PDF original. ' +
+  'Para interpretar tus resultados, consulta al profesional que solicitó los exámenes.';
 
 export function createSilPatientEducation(
   db:Pick<Pool,'query'>,
   model:ExamAssistant=createExamAssistant(),
+  overview?:ReturnType<typeof createSilPatientReportOverview>,
 ) {
   const recent=new Map<string,number[]>();
   const busy=new Set<string>();
@@ -60,8 +62,32 @@ export function createSilPatientEducation(
       if(blocked?.kind==='restricted'){
         return result(blocked.answer,'politica');
       }
-      if(/\b(?:otr[oa]s? (?:pacientes?|informes?|examenes?|personas?|documentos?|pruebas?)|historial completo|compara(?:r)?)\b/.test(normalized)){
+      if(/\b(?:otr[oa]s? (?:pacientes?|informes?|examenes?|personas?|documentos?|pruebas?)|historial completo)\b/.test(normalized)){
         return result('Puedo ayudarte con el informe que tienes abierto.','politica');
+      }
+      if(/\b(?:estadisticas?|promedio|evolucion|tendencia|compara(?:r|n|cion)?)\b/.test(normalized)
+        && !/\b(?:rango|referencia|normal|anormal)\b/.test(normalized)){
+        return result('Abre «Resumen de informes» y elige dos o más documentos. Allí verás los valores detectados y su promedio cuando el examen, la unidad y el laboratorio coincidan.','informe');
+      }
+      const wantsObservation=/\b(?:observaci[oó]n(?:es)?|motivo de (?:la )?derivacion)\b/.test(normalized);
+      const wantsMeasurements=/\b(?:mis resultados|mis cifras|que (?:resultado|valor) (?:tengo|obtuve)|cuanto (?:me )?salio|resultados? (?:de este|del) (?:examen|informe))\b/.test(normalized)
+        && !/\b(?:normal|anormal|alt[oa]s?|baj[oa]s?|grave|diabetes|rango|referencia|riesgo)\b/.test(normalized);
+      if(overview&&(wantsObservation||wantsMeasurements)){
+        const {reports:[document]}=await overview(patientId,[reportId]);
+        if(wantsObservation){
+          return result(document.observation
+            ? 'En la solicitud '+document.reference+' aparece este texto: «'+document.observation+'». '+(document.observationExplanation??'')+' Coteja la transcripción con el laboratorio.'
+            : 'No encontré una observación claramente rotulada en la solicitud asociada.','informe');
+        }
+        if(!document.measurements.length){
+          return result('No pude reconocer cifras con su unidad en este informe. Pulsa «Descargar PDF» para consultar el original.','informe');
+        }
+        return result([
+          'Cifras detectadas en el PDF de la orden '+document.orderNumber+':',
+          ...document.measurements.map(item=>'• '+item.analyte+': '+String(item.value).replace('.',',')+' '+item.unit+'.'
+            +(item.explanation?' '+item.explanation:'')),
+          'Confirma las cifras en el PDF original.',
+        ].join('\n'),'informe');
       }
       const referral=rows.rows[0];
       if(/\bquien\b.{0,42}\b(?:pidio|solicito|derivo|indico|ordeno|mando)\b|\b(?:medico|profesional) (?:solicitante|derivador)\b/.test(normalized)){

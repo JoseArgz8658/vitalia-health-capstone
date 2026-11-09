@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
 import 'clave_recuperacion_sil_dialog.dart';
+import 'resumen_informes_sil_page.dart';
 
 /// Solo demostración local: consulta privada de PDFs autorizados externamente.
 class PacienteInformesSilPage extends StatefulWidget {
@@ -255,6 +256,8 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     final exams = _examNames(report);
     final prompts = [
       if (exams.isNotEmpty) ('Qué mide', '¿Qué mide la prueba ${exams.first}?'),
+      ('Mis resultados', '¿Cuáles son mis resultados?'),
+      ('Observación médica', '¿Qué dice la observación de la derivación?'),
       ('¿Qué datos veo?', '¿Qué datos tengo?'),
       ('¿Quién pidió el examen?', '¿Quién me pidió estos exámenes?'),
       ('Pruebas de la orden', '¿Qué exámenes incluye esta orden?'),
@@ -367,7 +370,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Para conocer tus cifras abre el PDF. El asistente explica conceptos generales. '
+          'Coteja las cifras detectadas con el PDF. El asistente explica conceptos generales. '
           'Cada pregunta se responde por separado y el historial solo se muestra durante tu sesión.',
           style: Theme.of(context).textTheme.bodySmall,
         ),
@@ -392,6 +395,17 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       builder: (_) => ClaveRecuperacionSilDialog(
           api: widget.api, onExpired: widget.onExpired),
     );
+  }
+
+  void _openOverview([String? reportId]) {
+    Navigator.of(context).push<void>(MaterialPageRoute(
+      builder: (_) => ResumenInformesSilPage(
+        api: widget.api,
+        reports: List.of(_reports),
+        onExpired: widget.onExpired,
+        initialReportId: reportId,
+      ),
+    ));
   }
 
   Widget _reportCard(Map<String, dynamic> report) {
@@ -426,9 +440,8 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 'Publicado el ${_date(report['publishedAt'])} · Autorizado el ${_date(report['externallyAuthorizedAt'])}',
                 style: theme.textTheme.bodySmall),
             const SizedBox(height: 8),
-            Text(report['prescriberName'] == null
-                ? 'Profesional solicitante sin registrar'
-                : 'Profesional indicado en la solicitud: ${report['prescriberName']}'),
+            if (report['prescriberName'] != null)
+              Text('Solicitó: ${report['prescriberName']}'),
             if (report['requestDate'] != null)
               Text('Fecha de solicitud: ${_date(report['requestDate'])}'),
             if (report['documentReference'] != null)
@@ -442,6 +455,10 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 label: Text(_downloading == id
                     ? 'Preparando descarga…'
                     : 'Descargar PDF'),
+              ),
+              OutlinedButton(
+                onPressed: () => _openOverview(id),
+                child: const Text('Ver resultados'),
               ),
               OutlinedButton.icon(
                 onPressed:
@@ -458,6 +475,106 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       ),
     );
   }
+
+  Widget _portalTools(ThemeData theme) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(spacing: 8, runSpacing: 6, children: [
+            OutlinedButton.icon(
+              onPressed: _openProfile,
+              icon: const Icon(Icons.person_outline),
+              label: const Text('Mi perfil'),
+            ),
+            OutlinedButton.icon(
+              onPressed: _loading ? null : _refresh,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Actualizar informes'),
+            ),
+            TextButton.icon(
+              onPressed: _openRecovery,
+              icon: const Icon(Icons.key_outlined),
+              label: const Text('Configurar recuperación'),
+            ),
+          ]),
+          if (_reports.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Card(
+              color: theme.colorScheme.primaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Tus resultados en conjunto',
+                        style: theme.textTheme.titleMedium),
+                    const SizedBox(height: 4),
+                    const Text(
+                        'Elige informes para ver sus cifras, compararlas y consultar las observaciones de la derivación.'),
+                    const SizedBox(height: 10),
+                    FilledButton.icon(
+                      onPressed: () => _openOverview(),
+                      icon: const Icon(Icons.insights_outlined),
+                      label: const Text('Resumen de informes'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      );
+
+  Widget _reportList(ThemeData theme, String query,
+          List<Map<String, dynamic>> visibleReports) =>
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_reports.isNotEmpty) ...[
+            TextField(
+              controller: _filter,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: 'Buscar por orden, examen o laboratorio',
+                helperText: 'Busca en los informes recientes.',
+                helperMaxLines: 2,
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Limpiar búsqueda',
+                        onPressed: () => setState(_filter.clear),
+                        icon: const Icon(Icons.close),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+                query.isEmpty
+                    ? 'Informes recientes · ${_reports.length}'
+                    : 'Coincidencias · ${visibleReports.length}',
+                style: theme.textTheme.labelLarge),
+            const SizedBox(height: 8),
+          ],
+          if (_loading) const LinearProgressIndicator(),
+          if (_error != null) ...[
+            Semantics(
+                liveRegion: true,
+                child: Text(_error!,
+                    style: TextStyle(color: theme.colorScheme.error))),
+            const SizedBox(height: 12),
+          ],
+          if (!_loading && visibleReports.isEmpty && _error == null)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(query.isEmpty
+                    ? 'Aún no tienes informes publicados. Aparecerán aquí cuando el laboratorio los publique.'
+                    : 'No encontramos informes que coincidan con tu búsqueda.'),
+              ),
+            ),
+          for (final report in visibleReports) _reportCard(report),
+        ],
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -499,105 +616,41 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
           padding: EdgeInsets.all(narrow ? 14 : 24),
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 920),
+              constraints: const BoxConstraints(maxWidth: 1000),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [
-                        ColoresVitalia.azulActivo,
-                        ColoresVitalia.verde
-                      ]),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.all(narrow ? 16 : 22),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  Text('PORTAL PRIVADO · DEMO',
+                      style: theme.textTheme.labelMedium
+                          ?.copyWith(color: ColoresVitalia.azul)),
+                  const SizedBox(height: 6),
+                  Text('Mis informes',
+                      style: theme.textTheme.headlineMedium
+                          ?.copyWith(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 6),
+                  const Text(
+                      'Consulta tus resultados, las solicitudes del laboratorio y tus informes publicados.'),
+                  const SizedBox(height: 14),
+                  LayoutBuilder(builder: (context, constraints) {
+                    final tools = _portalTools(theme);
+                    final reports = _reportList(theme, query, visibleReports);
+                    if (constraints.maxWidth >= 800) {
+                      return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(child: reports),
+                            const SizedBox(width: 24),
+                            SizedBox(width: 285, child: tools),
+                          ]);
+                    }
+                    return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text('PORTAL PRIVADO · DEMO',
-                              style: theme.textTheme.labelMedium
-                                  ?.copyWith(color: Colors.white)),
-                          const SizedBox(height: 5),
-                          Text('Mis informes',
-                              style: theme.textTheme.headlineMedium?.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 6),
-                          Text(widget.email,
-                              style: const TextStyle(color: Colors.white)),
-                          const SizedBox(height: 9),
-                          const Text(
-                              'Consulta y descarga los informes que el laboratorio publicó para ti.',
-                              style: TextStyle(color: Colors.white)),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(spacing: 8, runSpacing: 6, children: [
-                    OutlinedButton.icon(
-                      onPressed: _openProfile,
-                      icon: const Icon(Icons.person_outline),
-                      label: const Text('Mi perfil'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _loading ? null : _refresh,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Actualizar informes'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _openRecovery,
-                      icon: const Icon(Icons.key_outlined),
-                      label: const Text('Configurar recuperación'),
-                    ),
-                  ]),
-                  const SizedBox(height: 16),
-                  if (_reports.isNotEmpty) ...[
-                    TextField(
-                      controller: _filter,
-                      onChanged: (_) => setState(() {}),
-                      decoration: InputDecoration(
-                        labelText: 'Buscar por orden, examen o laboratorio',
-                        helperText: 'Busca en los informes recientes.',
-                        helperMaxLines: 2,
-                        prefixIcon: const Icon(Icons.search),
-                        suffixIcon: query.isEmpty
-                            ? null
-                            : IconButton(
-                                tooltip: 'Limpiar búsqueda',
-                                onPressed: () => setState(_filter.clear),
-                                icon: const Icon(Icons.close),
-                              ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                        query.isEmpty
-                            ? 'Informes recientes · ${_reports.length}'
-                            : 'Coincidencias · ${visibleReports.length}',
-                        style: theme.textTheme.labelLarge),
-                    const SizedBox(height: 8),
-                  ],
-                  if (_loading) const LinearProgressIndicator(),
-                  if (_error != null) ...[
-                    Semantics(
-                        liveRegion: true,
-                        child: Text(_error!,
-                            style: TextStyle(color: theme.colorScheme.error))),
-                    const SizedBox(height: 12),
-                  ],
-                  if (!_loading && visibleReports.isEmpty && _error == null)
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: Text(query.isEmpty
-                            ? 'Aún no tienes informes publicados. Aparecerán aquí cuando el laboratorio los publique.'
-                            : 'No encontramos informes que coincidan con tu búsqueda.'),
-                      ),
-                    ),
-                  for (final report in visibleReports) _reportCard(report),
+                          tools,
+                          const SizedBox(height: 20),
+                          reports,
+                        ]);
+                  }),
                   const SizedBox(height: 18),
                   Text(
                     'Entorno de demostración con informes y cuentas ficticias.',

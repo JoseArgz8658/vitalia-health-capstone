@@ -1,4 +1,5 @@
 import {SIL_ANALYZER_ID} from './analyzer';
+import {createSilPatientReportOverview} from './patient-report-overview';
 import {createSilPatientEducation} from './patient-education';
 import {createSilResultsFilePreview} from './results-file-preview';
 import {createSilMedicalRequestIntake} from './medical-request-intake';
@@ -24,7 +25,8 @@ export interface SilManualInput {
   numericValue:number;
 }
 export function createSilService(db: Pool) {
-  const education=createSilPatientEducation(db);
+  const reportOverview=createSilPatientReportOverview(db);
+  const education=createSilPatientEducation(db,undefined,reportOverview);
   const previewResultsFile=createSilResultsFilePreview(db);
   const medicalIntake=createSilMedicalRequestIntake(db);
   // Comprobante temporal asociado a cuenta y orden; no se confía en un
@@ -56,6 +58,7 @@ export function createSilService(db: Pool) {
   }
   return {
     askPatientReport:education.ask,
+    getPatientReportOverview:reportOverview,
     previewMedicalRequest:medicalIntake.preview,
     confirmMedicalRequest:medicalIntake.confirm,
     async downloadMedicalRequest(orderId:string,actorId:string){

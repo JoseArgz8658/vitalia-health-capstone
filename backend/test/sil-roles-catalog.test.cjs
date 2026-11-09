@@ -58,6 +58,7 @@ function setup(role, options) {
     attachExternalReport: jest.fn(async () => ({id:actorId,status:'report_attached'})),
     publishExternalReport: jest.fn(async () => ({status:'report_published'})),
     getOwnPatientProfile: jest.fn(async () => ({profile:{hasProfile:false}})),
+    getPatientReportOverview: jest.fn(async () => ({reports:[],statistics:[]})),
     listPatientReports: jest.fn(async () => ({reports:[{id:actorId}]})),
     askPatientReport: jest.fn(async () => ({answer:'Concepto educativo de prueba.',source:'catalogo',approved:false})),
     downloadPatientReport: jest.fn(async () => ({
@@ -377,6 +378,16 @@ describe('SIL: permisos y catálogo multiprestación', () => {
     expect(patient.service.getOwnPatientProfile).toHaveBeenCalledWith(actorId);
     await authorized(request(setup('operador_laboratorio').app).get(path)).expect(403);
     await request(patient.app).get(path).expect(401);
+  });
+  test('resumen de informes usa la sesión de paciente y acota la selección',async()=>{
+    const patient=setup('paciente');
+    const path='/api/sil/patient/reports/overview';
+    await authorized(request(patient.app).post(path)).send({reportIds:[actorId]}).expect(200);
+    expect(patient.service.getPatientReportOverview).toHaveBeenCalledWith(actorId,[actorId]);
+    await authorized(request(patient.app).post(path)).send({reportIds:[actorId,actorId]}).expect(400);
+    await authorized(request(patient.app).post(path)).send({reportIds:[actorId],patientId}).expect(400);
+    await authorized(request(setup('operador_laboratorio').app).post(path))
+      .send({reportIds:[actorId]}).expect(403);
   });
   test('paciente consulta IA solo sobre su informe publicado con sesión',async () => {
     const patient=setup('paciente');

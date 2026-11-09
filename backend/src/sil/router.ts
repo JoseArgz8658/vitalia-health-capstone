@@ -32,7 +32,8 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
       (req.path==='/patient/reports' || req.path==='/patient/profile' ||
        /^\/patient\/reports\/[a-f0-9-]{36}\/file$/.test(req.path))) ||
       (req.method==='POST' &&
-       /^\/patient\/reports\/[a-f0-9-]{36}\/chat$/.test(req.path));
+       (req.path==='/patient/reports/overview' ||
+        /^\/patient\/reports\/[a-f0-9-]{36}\/chat$/.test(req.path)));
     if(patientRoute){
       if(account.role!=='paciente' || process.env.VITALIA_SIL_DEMO!=='YES'){
         res.status(403).json({error:{code:'FORBIDDEN'}});return;
@@ -76,6 +77,16 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     const answer=await service.askPatientReport(
       res.locals.account.id,req.params.id as string,data.data.question,data.data.simple);
     res.json({response:answer});
+  });
+  router.post('/patient/reports/overview',async(req,res)=>{
+    const parsed=z.object({
+      reportIds:z.array(uuid).min(1).max(4)
+        .refine(ids=>new Set(ids.map(id=>id.toLowerCase())).size===ids.length),
+    }).strict().safeParse(req.body);
+    if(!parsed.success){
+      res.status(400).json({error:{code:'INVALID_REPORT_SELECTION'}});return;
+    }
+    res.json(await service.getPatientReportOverview(res.locals.account.id,parsed.data.reportIds));
   });
   router.get('/patient/profile',async(_req,res)=>{
     res.json(await service.getOwnPatientProfile(res.locals.account.id));

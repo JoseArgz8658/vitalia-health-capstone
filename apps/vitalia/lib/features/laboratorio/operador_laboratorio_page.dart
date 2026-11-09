@@ -1848,6 +1848,12 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               ),
           ]),
           const SizedBox(height:12),
+          if (_requestPreview?['suggestedObservation'] case final String observation) ...[
+            Text('Observación detectada en el PDF', style:Theme.of(context).textTheme.titleSmall),
+            Text('«$observation»'),
+            const Text('Coteja este texto con el original antes de confirmar.'),
+            const SizedBox(height:8),
+          ],
           CheckboxListTile(
             value:_requestHumanConfirmed,
             onChanged:_busy?null:(value)=>

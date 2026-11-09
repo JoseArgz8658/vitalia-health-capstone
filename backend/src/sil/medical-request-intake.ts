@@ -3,6 +3,7 @@ import {type Pool} from 'pg';
 import {readPdfText,type PdfReadResult} from '../pdf/reader';
 import {identifyDocument} from '../documents/file-validation';
 import {SilConflictError,SilNotFoundError} from './service';
+import {readSilReferralObservation} from './patient-report-overview';
 import {readSilDemoIdentifiers} from './identifiers';
 
 function suggestRequestReference(text: string): string | null {
@@ -179,6 +180,7 @@ export function createSilMedicalRequestIntake(
       identity:{identifierMatches,givenNamesMatch,familyNamesMatch,birthDateMatches},
       suggestedExams:selected,
       suggestedDocumentReference:verified?suggestRequestReference(source):null,
+      suggestedObservation:verified?readSilReferralObservation(source):null,
       ...(verified?suggestReferralDetails(source):{suggestedPrescriberName:null,suggestedRequestDate:null}),
       warnings,previewToken,confirmed:false as const,
       extractionMethod:'text_catalog_match' as const,

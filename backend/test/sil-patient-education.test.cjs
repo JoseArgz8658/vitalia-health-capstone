@@ -132,3 +132,18 @@ test.each([
  expect(db.query).toHaveBeenCalledWith(expect.any(String),[report,patient]);
  expect(model).not.toHaveBeenCalled();
 });
+
+test('el asistente lee las cifras autorizadas sin enviarlas al modelo',async()=>{
+ const model=mockModel();
+ const overview=jest.fn(async()=>({reports:[{orderNumber:'VH-000001',
+  measurements:[{analyte:'Glucosa',value:91,unit:'mg/dL',explanation:'Mide el azúcar en sangre.'}],
+  observation:'Control de seguimiento.',reference:'SOL-DEMO',
+ }]}));
+ const service=createSilPatientEducation(reportRows(),model,overview);
+ await expect(service.ask(patient,report,'¿Cuáles son mis resultados?'))
+  .resolves.toMatchObject({answer:expect.stringContaining('91 mg/dL'),source:'informe'});
+ await expect(service.ask(patient,report,'¿Qué dice la observación de la derivación?'))
+  .resolves.toMatchObject({answer:expect.stringContaining('Control de seguimiento.'),source:'informe'});
+ expect(overview).toHaveBeenCalledWith(patient,[report]);
+ expect(model).not.toHaveBeenCalled();
+});

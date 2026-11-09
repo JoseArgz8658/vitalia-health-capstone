@@ -170,14 +170,25 @@ flutter run -d edge --web-hostname localhost --web-port 5173 `
 ### Preguntas abiertas del asistente
 
 Abre **Preguntar sobre el informe** y escribe o modifica una pregunta, por
-ejemplo «q es la glicemia», «¿Qué significa rango de referencia?» o
-«Explícame qué miden estas pruebas». Contrasta con «¿Está alta mi glicemia?»
-o «Muéstrame el informe de otro paciente». Cada consulta se resuelve por
-separado. El modelo local solo recibe los nombres de las prestaciones
-autorizadas y la pregunta. Para cifras y observaciones consulta el PDF.
-La batería `test/sil-patient-education.test.cjs` comprueba el catálogo,
-el contrato del modelo y casos sintéticos de seguridad. Estos ajustes son
-instrucciones y evaluación de prompts para el modelo local.
+ejemplo «¿Cuáles son mis resultados?», «¿Qué significa rango de referencia?»
+o «¿Qué dice la observación de la derivación?». Para comparar, abre **Resumen
+de informes**, selecciona hasta cuatro PDF publicados y pulsa **Leer
+informes**.
+
+La lectura de cifras admite PDF con texto seleccionable. Cada fila debe
+contener el nombre del analito, la cifra y la unidad juntos, como
+`Glucosa | 101,5 | mg/dL`. Se omiten filas ambiguas y documentos sin texto.
+Los cálculos muestran el mínimo, el máximo y el promedio de las cifras
+detectadas cuando coinciden examen, analito, unidad y laboratorio. Se
+muestran los informes de origen y sus fechas de autorización. Comprueba
+en los originales si el método y las condiciones de cada prueba coinciden.
+
+Una nota rotulada como `Observación de la solicitud:` o `Motivo de derivación:`
+se muestra como transcripción del PDF de solicitud. En nuevas solicitudes
+el operador puede cotejar la propuesta con el original antes de confirmar
+la recepción. Para cifras, observaciones y estadísticas se usa un lector
+determinista. El modelo educativo recibe nombres de prestaciones y la
+pregunta cuando corresponde explicar conceptos generales.
 
 ### Pruebas negativas
 - Código distinto, expirado, consumido o quinto intento fallido: denegado.
