@@ -422,6 +422,14 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       if (_requestDocumentReference.text.trim().isEmpty) {
         _requestDocumentReference.text=preview['suggestedDocumentReference'] as String? ?? '';
       }
+      if (_requestPrescriberName.text.trim().isEmpty) {
+        _requestPrescriberName.text=preview['suggestedPrescriberName'] as String? ?? '';
+      }
+      final suggestedDate=DateTime.tryParse(preview['suggestedRequestDate'] as String? ?? '');
+      final today=DateUtils.dateOnly(DateTime.now());
+      if (_requestDate==null && suggestedDate!=null && !suggestedDate.isAfter(today)) {
+        _requestDate=suggestedDate;
+      }
       _requestExamCodes..clear()..addAll(suggestions.map(
         (item)=>(item as Map)['code'] as String));
       _requestHumanConfirmed=false;
@@ -1789,7 +1797,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
             maxLength:120,
             decoration:const InputDecoration(
               labelText:'Profesional solicitante según documento',
-              helperText:'Transcribir del original. No comprueba matrícula ni firma.',
+              helperText:'Verifica el nombre con el PDF original.',
               border:OutlineInputBorder()),
           ),
           const SizedBox(height:12),

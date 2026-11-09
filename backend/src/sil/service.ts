@@ -630,6 +630,17 @@ export function createSilService(db: Pool) {
         throw error;
       }finally{client.release(failed);}
     },
+    async getOwnPatientProfile(patientId:string) {
+      const result=await db.query(
+        `SELECT a.email,p.given_names AS "givenNames",p.family_names AS "familyNames",
+           p.birth_date::text AS "birthDate",p.synthetic_identifier AS identifier,
+           p.contact_phone_demo AS "phone",p.patient_id IS NOT NULL AS "hasProfile"
+         FROM public.vitalia_accounts a
+         LEFT JOIN public.vitalia_sil_patient_profiles_demo p ON p.patient_id=a.id
+         WHERE a.id=$1`,[patientId]);
+      if(!result.rows.length)throw new SilNotFoundError();
+      return {profile:result.rows[0]};
+    },
     async listPatientReports(patientId:string) {
       const result=await db.query(
         `SELECT r.id,r.file_name AS "fileName",
@@ -640,9 +651,13 @@ export function createSilService(db: Pool) {
            ARRAY(SELECT c.name FROM public.vitalia_sil_order_exams e
              JOIN public.vitalia_sil_exam_catalog c ON c.code=e.exam_code
              WHERE e.order_id=o.id ORDER BY c.name) AS "examNames",
-           r.pdf_sha256 AS sha256
+           r.pdf_sha256 AS sha256,
+           m.prescriber_name AS "prescriberName",m.request_date::text AS "requestDate",
+           m.document_reference AS "documentReference"
          FROM public.vitalia_sil_external_reports r
          JOIN public.vitalia_sil_orders o ON o.id=r.order_id
+         LEFT JOIN public.vitalia_sil_medical_requests_demo m
+           ON m.order_id=o.id AND m.patient_id=r.patient_id
          WHERE r.patient_id=$1 AND r.published_at IS NOT NULL
            AND o.status='report_published'
          ORDER BY r.published_at DESC LIMIT 50`,[patientId]);

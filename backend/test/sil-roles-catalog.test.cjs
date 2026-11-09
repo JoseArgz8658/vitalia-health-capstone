@@ -57,6 +57,7 @@ function setup(role, options) {
     reviewOrder: jest.fn(async (_order,_actor,decision) => ({orderId:actorId,decision})),
     attachExternalReport: jest.fn(async () => ({id:actorId,status:'report_attached'})),
     publishExternalReport: jest.fn(async () => ({status:'report_published'})),
+    getOwnPatientProfile: jest.fn(async () => ({profile:{hasProfile:false}})),
     listPatientReports: jest.fn(async () => ({reports:[{id:actorId}]})),
     askPatientReport: jest.fn(async () => ({answer:'Concepto educativo de prueba.',source:'catalogo',approved:false})),
     downloadPatientReport: jest.fn(async () => ({
@@ -369,6 +370,14 @@ describe('SIL: permisos y catálogo multiprestación', () => {
       .get('/api/sil/patient/reports')).expect(403);
     await authorized(request(patient.app).get('/api/sil/orders')).expect(403);
   });
+  test('Mi perfil se identifica por sesión y requiere rol paciente',async()=>{
+    const patient=setup('paciente');
+    const path='/api/sil/patient/profile';
+    await authorized(request(patient.app).get(path+'?patientId='+patientId)).expect(200);
+    expect(patient.service.getOwnPatientProfile).toHaveBeenCalledWith(actorId);
+    await authorized(request(setup('operador_laboratorio').app).get(path)).expect(403);
+    await request(patient.app).get(path).expect(401);
+  });
   test('paciente consulta IA solo sobre su informe publicado con sesión',async () => {
     const patient=setup('paciente');
     const path='/api/sil/patient/reports/'+actorId+'/chat';
@@ -376,7 +385,11 @@ describe('SIL: permisos y catálogo multiprestación', () => {
       .send({question:'¿Qué es la glicemia?'}).expect(200);
     expect(answer.body.response.answer).toContain('educativo');
     expect(patient.service.askPatientReport).toHaveBeenCalledWith(
-      actorId,actorId,'¿Qué es la glicemia?');
+      actorId,actorId,'¿Qué es la glicemia?',undefined);
+    await authorized(request(patient.app).post(path))
+      .send({question:'¿Qué es la glicemia?',simple:true}).expect(200);
+    expect(patient.service.askPatientReport).toHaveBeenLastCalledWith(
+      actorId,actorId,'¿Qué es la glicemia?',true);
     await authorized(request(patient.app).post(path))
       .send({question:'a'}).expect(400);
     await authorized(request(patient.app).post(path))

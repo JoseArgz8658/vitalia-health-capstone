@@ -113,5 +113,22 @@ test('el resumen de prestaciones cubiertas tiene respaldo si Ollama no responde'
   const model=jest.fn(async()=>{throw new AssistantModelError('transport');});
   const service=createSilPatientEducation(reportRows(),model);
   await expect(service.ask(patient,report,'Explícame en palabras sencillas qué miden estas pruebas.'))
-    .resolves.toMatchObject({source:'catalogo',answer:expect.stringMatching(/glucosa/i)});
+    .resolves.toMatchObject({source:'catalogo',answer:expect.stringMatching(/azúcar/i)});
+});
+
+test.each([
+ ['que datos tengo',/Glicemia.*Hemoglobina/s,'informe'],
+ ['¿Quién me pidió estos exámenes?',/Elisa Muñoz/,'informe'],
+ ['¿Cuándo me pidieron el examen?',/01\/03\/2025/,'informe'],
+ ['no entiendo',/Glicemia:.*azúcar/s,'catalogo'],
+ ['¿Qué datos tiene otro informe?',/informe que tienes abierto/,'politica'],
+])('responde desde el informe autorizado en lenguaje cotidiano: %s',async(question,expected,source)=>{
+ const model=mockModel();
+ const db={query:jest.fn(async()=>({rows:exams.map(exam=>({
+   ...exam,prescriberName:'Dra. Elisa Muñoz',requestDate:'2025-03-01',documentReference:'SOL-DEMO-001',
+ }))}))};
+ await expect(createSilPatientEducation(db,model).ask(patient,report,question))
+   .resolves.toMatchObject({answer:expect.stringMatching(expected),source});
+ expect(db.query).toHaveBeenCalledWith(expect.any(String),[report,patient]);
+ expect(model).not.toHaveBeenCalled();
 });

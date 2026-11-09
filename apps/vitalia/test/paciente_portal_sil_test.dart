@@ -55,9 +55,21 @@ class _PatientApi extends AuthApi {
   @override
   Future<Map<String, dynamic>> silRequest(String path,
       {Map<String, dynamic>? body}) async {
+    if (path == '/patient/profile') {
+      calls.add('profile');
+      return {
+        'profile': {
+          'hasProfile': true,
+          'givenNames': 'Paciente',
+          'familyNames': 'De prueba',
+          'birthDate': '1990-01-01',
+        },
+      };
+    }
     if (path.endsWith('/chat')) {
       expect(path, '/patient/reports/$_id/chat');
       expect(body?['question'], '¿Qué significa rango de referencia?');
+      expect(body?['simple'], true);
       calls.add('chat');
       return {
         'response': {
@@ -75,6 +87,7 @@ class _PatientApi extends AuthApi {
           'examNames': ['Glicemia'],
           'orderNumber': 'VH-000001',
           'issuingLaboratory': 'Laboratorio ficticio',
+          'prescriberName': 'Dra. Elisa Muñoz',
           'publishedAt': '2026-10-20',
         },
       ],
@@ -170,6 +183,10 @@ void main() {
           api: api, email: _email, onExpired: () {}, onLogout: () {}),
     ));
     await tester.pumpAndSettle();
+    await _tap(tester, 'Mi perfil');
+    expect(find.text('Nombre: Paciente De prueba'), findsOneWidget);
+    await _tap(tester, 'Cerrar');
+    expect(find.textContaining('Dra. Elisa Muñoz'), findsOneWidget);
     final search = find.widgetWithText(
         TextField, 'Buscar por orden, examen o laboratorio');
     await _type(tester, search, 'inexistente');
@@ -177,6 +194,7 @@ void main() {
         findsOneWidget);
     await _type(tester, search, 'VH-000001');
     await _tap(tester, 'Preguntar sobre el informe');
+    await _tap(tester, 'Lectura fácil');
     await _tap(tester, 'Rango de referencia');
     await _tap(tester, 'Preguntar al asistente');
     expect(
@@ -188,7 +206,7 @@ void main() {
     expect(find.text(_key), findsOneWidget);
     await _tap(tester, 'Ya guardé la clave');
     expect(find.text(_key), findsNothing);
-    expect(api.calls, ['chat', 'generate']);
+    expect(api.calls, ['profile', 'chat', 'generate']);
     expect(tester.takeException(), isNull);
   });
 }

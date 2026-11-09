@@ -49,7 +49,7 @@ class AuthApi {
   }) async {
     final uri = Uri.tryParse(path);
     final validPath = RegExp(
-      r'^/(?:catalog|branches|summary|medical-requests/(?:confirm)|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results|review|report(?:/publish)?))?)?|patients(?:/(?:profile|list))?|patient/reports(?:/[a-f0-9-]{36}/(?:file|chat))?)$',
+      r'^/(?:catalog|branches|summary|medical-requests/(?:confirm)|orders(?:/[a-f0-9-]{36}(?:/(?:sample|simulate|results|review|report(?:/publish)?))?)?|patients(?:/(?:profile|list))?|patient/profile|patient/reports(?:/[a-f0-9-]{36}/(?:file|chat))?)$',
     );
     final allowedParams = uri?.path == '/patients/list'
         ? <String>{'limit', 'offset', 'search', 'profile', 'orders', 'sex', 'sort'}

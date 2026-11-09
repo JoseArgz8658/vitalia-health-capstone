@@ -21,7 +21,7 @@ export function createExamAssistant(options:{model?:string;fetchImpl?:typeof fet
  const model=options.model??'qwen3:4b-instruct';
  if(!/^[a-zA-Z0-9_.:-]{1,100}$/.test(model)||model.toLowerCase().includes('cloud'))throw new AssistantModelError('configuration');
  const fetchImpl=options.fetchImpl??fetch;
- type Input={extraction:Extraction;question:string;mode:Mode;history:History;catalogOnly?:boolean};
+ type Input={extraction:Extraction;question:string;mode:Mode;history:History;catalogOnly?:boolean;plainLanguage?:boolean};
  const generate=async(input:Input,deadline:number,repair=false)=>{
   let extraction:Extraction;
   try{extraction=extractionSchema.parse(input.extraction);}catch{throw new AssistantModelError('input');}
@@ -64,7 +64,8 @@ export function createExamAssistant(options:{model?:string;fetchImpl?:typeof fet
      kind:{type:'string',enum:['education','insufficient','out_of_scope','restricted']},answer:{type:'string'},
      indices:{type:'array',items:{type:'integer',minimum:0,maximum:extraction.resultados.length-1,...(targetIndices?{enum:targetIndices}:{})}},
      definitions:{type:'array',...(input.mode==='chat'?{maxItems:0}:{minItems:extraction.resultados.length,maxItems:extraction.resultados.length}),items:{type:'object',additionalProperties:false,required:['index','text','known'],properties:{index:{type:'integer'},text:{type:'string'},known:{type:'boolean'}}}}}},
-    messages:[{role:'system',content:prompt+'\n'+conversationalGuidance+'\n'+educationalGuidance+'\n'+masterPromptFor(input.question,extraction.examen??'')+(input.catalogOnly?
+    messages:[{role:'system',content:prompt+'\n'+conversationalGuidance+'\n'+educationalGuidance+'\n'+masterPromptFor(input.question,extraction.examen??'')+(input.plainLanguage?
+     '\nLECTURA FÁCIL: usa frases cortas, una idea por frase y palabras habituales. Si usas un término técnico, explícalo de inmediato con palabras cotidianas. Dirígete a la persona con respeto. Evita inferir su edad, capacidad o diagnóstico.':'')+(input.catalogOnly?
      '\nCONTEXTO SIL: recibes solo los nombres de las prestaciones, nunca el PDF ni las cifras. '+
      'Explica en pocas frases, en español cotidiano y sin sugerir acciones clínicas. '+
      'Ejemplo abierto: «Explícame qué se mide aquí como si fuera mi primer examen» pide una explicación general de las prestaciones presentes. '+

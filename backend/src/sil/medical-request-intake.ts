@@ -12,6 +12,24 @@ function suggestRequestReference(text: string): string | null {
   return references.length === 1 ? references[0] : null;
 }
 
+function suggestReferralDetails(text:string) {
+  // Solo tomar campos rotulados. Una firma o un nombre suelto no identifica al solicitante.
+  const names=[...new Set([...text.matchAll(
+    /(?:^|\|)[ \t]*(?:profesional solicitante|m[eé]dic[oa] solicitante|derivado por|solicitado por)[ \t]*:[ \t]*([\p{L}\p{M}.'’\-]+(?:[ \t]+[\p{L}\p{M}.'’\-]+)+)[ \t]*(?=$|\|)/gimu
+  )].map(match=>match[1].trim().replace(/\s+/g,' ')).filter(name=>name.length<=120))];
+  const dates=[...new Set([...text.matchAll(
+    /(?:^|\|)[ \t]*fecha de (?:la )?(?:solicitud|derivaci[oó]n)[ \t]*:[ \t]*(\d{4}-\d{2}-\d{2}|\d{2}[/-]\d{2}[/-]\d{4})[ \t]*\.?(?=$|\|)/gim
+  )].map(match=>/^\d{4}/.test(match[1])?match[1]:match[1].split(/[/-]/).reverse().join('-')))];
+  const date=dates.length===1?dates[0]:null;
+  const parsed=date?new Date(date+'T00:00:00Z'):null;
+  return {
+    suggestedPrescriberName:names.length===1?names[0]:null,
+    suggestedRequestDate:date&&parsed&&Number.isFinite(parsed.getTime())&&
+      parsed.toISOString().slice(0,10)===date&&date>='2000-01-01'&&
+      date<=new Date().toISOString().slice(0,10)?date:null,
+  };
+}
+
 type IntakeIdentity={
   identifier:string;
   givenNames:string;
@@ -161,6 +179,7 @@ export function createSilMedicalRequestIntake(
       identity:{identifierMatches,givenNamesMatch,familyNamesMatch,birthDateMatches},
       suggestedExams:selected,
       suggestedDocumentReference:verified?suggestRequestReference(source):null,
+      ...(verified?suggestReferralDetails(source):{suggestedPrescriberName:null,suggestedRequestDate:null}),
       warnings,previewToken,confirmed:false as const,
       extractionMethod:'text_catalog_match' as const,
       // No devolver el contenido clínico del PDF al cliente.

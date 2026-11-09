@@ -126,6 +126,69 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     }
   }
 
+  bool _simpleReading = false;
+
+  void _openProfile() {
+    final request = widget.api.silRequest('/patient/profile');
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => FutureBuilder<Map<String, dynamic>>(
+        future: request,
+        builder: (context, snapshot) {
+          final profile = snapshot.data?['profile'] as Map?;
+          final expired = snapshot.error is AuthFailure &&
+              (snapshot.error as AuthFailure).status == 401;
+          return AlertDialog(
+            title: const Text('Mi perfil'),
+            scrollable: true,
+            content: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Cuenta activa · Paciente DEMO'),
+                Text(widget.email),
+                const SizedBox(height: 12),
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  const LinearProgressIndicator()
+                else if (snapshot.hasError)
+                  Text(expired
+                      ? 'Tu sesión terminó. Vuelve a ingresar.'
+                      : 'No pudimos cargar tu ficha. Intenta abrir Mi perfil otra vez.')
+                else if (profile?['hasProfile'] == true) ...[
+                  for (final (label, value) in [
+                    (
+                      'Nombre',
+                      [profile?['givenNames'], profile?['familyNames']]
+                          .whereType<String>()
+                          .join(' ')
+                    ),
+                    ('Fecha de nacimiento', _date(profile?['birthDate'])),
+                    ('Identificador DEMO', profile?['identifier']),
+                    ('Teléfono', profile?['phone']),
+                  ])
+                    if (value is String && value.isNotEmpty)
+                      Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text('$label: $value')),
+                ] else
+                  const Text(
+                      'Tu cuenta web aún no tiene una ficha asociada por el laboratorio.'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  if (expired && mounted) widget.onExpired();
+                },
+                child: Text(expired ? 'Volver a ingresar' : 'Cerrar'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   void _toggleChat(String reportId) {
     if (_chatBusyReport != null) return;
     setState(() {
@@ -146,7 +209,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     try {
       final result = await widget.api.silRequest(
         '/patient/reports/$reportId/chat',
-        body: {'question': question},
+        body: {'question': question, if (_simpleReading) 'simple': true},
       );
       if (!mounted || !widget.api.hasSession || _activeChatReport != reportId)
         return;
@@ -192,6 +255,8 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     final exams = _examNames(report);
     final prompts = [
       if (exams.isNotEmpty) ('Qué mide', '¿Qué mide la prueba ${exams.first}?'),
+      ('¿Qué datos veo?', '¿Qué datos tengo?'),
+      ('¿Quién pidió el examen?', '¿Quién me pidió estos exámenes?'),
       ('Pruebas de la orden', '¿Qué exámenes incluye esta orden?'),
       ('Rango de referencia', '¿Qué significa rango de referencia?'),
       (
@@ -207,28 +272,34 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 6),
         const Text(
-          'Escribe una pregunta abierta sobre las prestaciones de la orden. '
-          'Puedes partir de un ejemplo y editarlo. Deja fuera datos personales.',
+          'Escribe tu pregunta o elige un ejemplo. Usa Lectura fácil para explicaciones más directas. Evita escribir datos personales.',
         ),
         const SizedBox(height: 12),
-        if (turns.isEmpty)
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              for (final (label, prompt) in prompts)
-                ActionChip(
-                  label: Text(label),
-                  onPressed: working
-                      ? null
-                      : () => setState(() {
-                            _question.text = prompt;
-                            _question.selection =
-                                TextSelection.collapsed(offset: prompt.length);
-                          }),
-                ),
-            ],
-          ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Lectura fácil'),
+          value: _simpleReading,
+          onChanged: working
+              ? null
+              : (value) => setState(() => _simpleReading = value),
+        ),
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            for (final (label, prompt) in prompts)
+              ActionChip(
+                label: Text(label),
+                onPressed: working
+                    ? null
+                    : () => setState(() {
+                          _question.text = prompt;
+                          _question.selection =
+                              TextSelection.collapsed(offset: prompt.length);
+                        }),
+              ),
+          ],
+        ),
         for (final turn in turns) ...[
           Align(
             alignment: turn['role'] == 'user'
@@ -250,6 +321,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                           switch (turn['source']) {
                             'modelo_local' => 'Modelo de IA local',
                             'politica' => 'Alcance de la consulta',
+                            'informe' => 'Datos de este informe',
                             _ => 'Biblioteca educativa de Vitalia',
                           },
                           style: Theme.of(context).textTheme.labelSmall,
@@ -353,6 +425,14 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             Text(
                 'Publicado el ${_date(report['publishedAt'])} · Autorizado el ${_date(report['externallyAuthorizedAt'])}',
                 style: theme.textTheme.bodySmall),
+            const SizedBox(height: 8),
+            Text(report['prescriberName'] == null
+                ? 'Profesional solicitante sin registrar'
+                : 'Profesional indicado en la solicitud: ${report['prescriberName']}'),
+            if (report['requestDate'] != null)
+              Text('Fecha de solicitud: ${_date(report['requestDate'])}'),
+            if (report['documentReference'] != null)
+              Text('Referencia de solicitud: ${report['documentReference']}'),
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, children: [
               FilledButton.icon(
@@ -457,6 +537,11 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                   ),
                   const SizedBox(height: 12),
                   Wrap(spacing: 8, runSpacing: 6, children: [
+                    OutlinedButton.icon(
+                      onPressed: _openProfile,
+                      icon: const Icon(Icons.person_outline),
+                      label: const Text('Mi perfil'),
+                    ),
                     OutlinedButton.icon(
                       onPressed: _loading ? null : _refresh,
                       icon: const Icon(Icons.refresh),

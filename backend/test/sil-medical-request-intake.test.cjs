@@ -175,3 +175,14 @@ test('documento duplicado produce rollback sin generar orden nueva',async()=>{
  expect(txQueries.at(-1).sql).toBe('ROLLBACK');
  expect(client.release).toHaveBeenCalled();
 });
+
+test.each([
+ ['Profesional solicitante: Dra. Elisa Muñoz | Fecha de solicitud: 01/03/2025','Dra. Elisa Muñoz','2025-03-01'],
+ ['Derivado por: Pedro Silva\nSolicitado por: Elisa Muñoz\nFecha de solicitud: 30/02/2025',null,null],
+])('propone datos inequívocos de la solicitud: %s',async(extra,name,date)=>{
+ const {db}=createDb();
+ const intake=createSilMedicalRequestIntake(db,{read:read(source+extra)});
+ const preview=await intake.preview(actorId,'paciente.sil@example.invalid','solicitud-demo.pdf',pdf);
+ expect(preview).toMatchObject({suggestedPrescriberName:name,suggestedRequestDate:date,confirmed:false});
+ expect(db.connect).not.toHaveBeenCalled();
+});

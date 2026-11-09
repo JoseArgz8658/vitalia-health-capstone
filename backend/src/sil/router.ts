@@ -29,7 +29,7 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
     if(!account) {res.status(401).json({error:{code:'UNAUTHORIZED'}});return;}
     // Informes publicados: el paciente solo puede leer sus propios documentos.
     const patientRoute=(req.method==='GET' &&
-      (req.path==='/patient/reports' ||
+      (req.path==='/patient/reports' || req.path==='/patient/profile' ||
        /^\/patient\/reports\/[a-f0-9-]{36}\/file$/.test(req.path))) ||
       (req.method==='POST' &&
        /^\/patient\/reports\/[a-f0-9-]{36}\/chat$/.test(req.path));
@@ -68,13 +68,17 @@ export function createSilRouter(auth:Pick<AuthServices,'find'>,service:SilServic
   router.post('/patient/reports/:id/chat',async(req,res)=>{
     const data=z.object({
       question:z.string().trim().min(3).max(400),
+      simple:z.boolean().optional(),
     }).strict().safeParse(req.body);
     if(!uuid.safeParse(req.params.id).success||!data.success){
       res.status(400).json({error:{code:'INVALID_QUESTION'}});return;
     }
     const answer=await service.askPatientReport(
-      res.locals.account.id,req.params.id as string,data.data.question);
+      res.locals.account.id,req.params.id as string,data.data.question,data.data.simple);
     res.json({response:answer});
+  });
+  router.get('/patient/profile',async(_req,res)=>{
+    res.json(await service.getOwnPatientProfile(res.locals.account.id));
   });
   router.get('/patient/reports',async(_req,res)=>{
     res.json(await service.listPatientReports(res.locals.account.id));
