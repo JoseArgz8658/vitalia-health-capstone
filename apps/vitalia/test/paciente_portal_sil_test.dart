@@ -256,9 +256,15 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(find.text('Hola, Paciente'), findsOneWidget);
+    expect(find.text('Ir a mis informes'), findsOneWidget);
     expect(find.text('Informes disponibles'), findsOneWidget);
     expect(find.text('Última publicación'), findsOneWidget);
     expect(find.text('Consulta conjunta'), findsOneWidget);
+    // La imagen es vectorial y no muestra información clínica falsa.
+    expect(find.byIcon(Icons.family_restroom), findsOneWidget);
+    // Con un único PDF, la ayuda no duplica el acceso a la comparación.
+    expect(find.text('Cómo leer mis resultados'), findsOneWidget);
+    expect(find.text('Comparar informes'), findsNothing);
     expect(find.text('Mi perfil'), findsOneWidget);
     expect(find.text('Actualizar informes'), findsOneWidget);
     // En pantallas de escritorio intermedias, la recuperación se
@@ -270,6 +276,7 @@ void main() {
     await tester.tapAt(const Offset(600, 450));
     await tester.pumpAndSettle();
     expect(find.text('Ver resultados'), findsOneWidget);
+    expect(find.text('Ir a mis informes'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
