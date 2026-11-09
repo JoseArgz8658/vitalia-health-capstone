@@ -182,6 +182,12 @@ export function createSilPortalActivationDemo(db:Pool) {
       if(!item||Date.now()>item.expiresAt)return {message:'No hay invitaciones vigentes.'};
       return {
         message:'Mensaje ficticio disponible. Nunca contiene informes ni datos clínicos.',
+        subject:'Vitalia Health · Activa tu acceso privado (DEMO)',
+        guidance:'Este mensaje sirve únicamente para activar el acceso. '
+          +'Verifica que el correo de la invitación sea tuyo, introduce el '
+          +'código y la clave recibida en persona, corrobora tus datos y '
+          +'crea tu propia contraseña al ingresar. No compartas códigos. '
+          +'Si no solicitaste este acceso, comunícate con el laboratorio.',
         emailCode:item.code,expiresAt:new Date(item.expiresAt).toISOString(),
       };
     },
