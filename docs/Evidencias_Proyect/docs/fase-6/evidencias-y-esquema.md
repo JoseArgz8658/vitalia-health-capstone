@@ -1,7 +1,7 @@
 # Evidencias de interfaz y esquema real
 
 ## Estado comprobado
-El usuario informó flutter analyze sin incidencias y, después del ajuste CAM-069, confirmó que la prueba fallida se resolvió. No se registra un número nuevo de pruebas ni una ejecución local del asistente. Las comprobaciones con texto ampliado, emulador y capturas siguen pendientes.
+Se ejecutó `flutter analyze` sin incidencias. Después del ajuste CAM-069 se volvió a probar el caso que fallaba y se confirmó que quedó resuelto. Quedó pendiente registrar el total de pruebas y comprobar el asistente en local, la vista con texto ampliado y el emulador con capturas.
 
 ## Capturas para la entrega
 Usar únicamente cuentas y documentos ficticios. No capturar contraseñas, tokens, .env ni datos personales reales.
