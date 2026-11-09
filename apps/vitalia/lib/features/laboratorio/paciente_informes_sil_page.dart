@@ -987,7 +987,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 ? (profile?['givenNames'] as String? ?? '').trim()
                 : '';
             final initial = names.isNotEmpty
-                ? names.characters.first.toUpperCase()
+                ? names.substring(0, 1).toUpperCase()
                 : 'P';
             return CircleAvatar(
               radius: 18,
@@ -1126,7 +1126,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             ),
             PortalIndicadorSil(
               icon: Icons.query_stats_outlined,
-              label: 'Comparación',
+              label: 'Consulta conjunta',
               value: _reports.length >= 2 ? 'Hasta 4' : 'Desde 2',
               detail: _reports.length >= 2
                   ? 'Compara mediciones cuando sean compatibles.'
@@ -1248,7 +1248,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             TextButton.icon(
               onPressed: _loading ? null : _refresh,
               icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Actualizar'),
+              label: const Text('Actualizar informes'),
             ),
           ],
           if (fullAccountActions) ...[
