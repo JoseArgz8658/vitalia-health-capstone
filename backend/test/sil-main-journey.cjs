@@ -78,6 +78,7 @@ async function signIn(page, account, route='') {
   const response=page.waitForResponse(r=>r.url().endsWith('/api/auth/login') && r.request().method()==='POST');
   await page.getByRole('button',{name:'Iniciar sesión'}).click();
   assert.equal((await response).status(),200,'Acceso desde Edge de '+account);
+  console.log('Microsoft Edge: inició sesión '+account+'.');
 }
 
 async function reach(page, locator, description) {
@@ -100,6 +101,12 @@ async function operatorJourney(browser, order, base) {
     try {
       await signIn(page,account,'#/laboratorio');
       await page.getByRole('button',{name:'Cerrar sesión'}).waitFor();
+      page.on('response', response=>{
+        const url=new URL(response.url());
+        if(url.pathname.startsWith('/api/sil/main/')){
+          console.log('Edge '+account+': '+response.request().method()+' '+url.pathname+' '+response.status());
+        }
+      });
       const id=value=>page.locator('[flt-semantics-identifier="'+value+'"]');
       const button=label=>page.getByRole('button',{name:label,exact:true});
       const checkbox=label=>page.getByRole('checkbox',{name:label,exact:true});
@@ -108,7 +115,20 @@ async function operatorJourney(browser, order, base) {
         await click(id(control),control);
         await page.getByRole('menuitem',{name:new RegExp(name)}).click({timeout:7000});
       };
-      return await task({page,id,button,checkbox,click,select});
+      try {
+        return await task({page,id,button,checkbox,click,select});
+      } catch(error) {
+        for(const message of [
+          'Selecciona orden, PDF y confirma autorización y paciente.',
+          'Indica una fecha válida de autorización externa.',
+          'Comprueba el PDF (máximo 2 MiB) y su autorización.',
+          'No fue posible conectar con el laboratorio.',
+        ]){
+          const seen=await page.getByText(message,{exact:true}).count();
+          if(seen)console.log('Edge '+account+': '+message);
+        }
+        throw new Error('Estación de '+account+': '+error.message);
+      }
     } finally {
       await page.close();
     }
@@ -119,19 +139,27 @@ async function operatorJourney(browser, order, base) {
     const choose=page.waitForEvent('filechooser');
     await click(button('Elegir archivo PDF (máx. 2 MiB)'),'Elegir archivo PDF');
     await (await choose).setFiles({name:'informe-operador.pdf',mimeType:'application/pdf',buffer:pdf});
+    await button('informe-operador.pdf').waitFor({timeout:10000});
+    console.log('Microsoft Edge: orden y archivo seleccionados.');
     for(const [key,value] of [
       ['sil-report-professional','Profesional Ficticio'],
       ['sil-report-reference','AUT-OPERADOR-EDGE'],
       ['sil-report-date','2024-01-01'],
     ]){
-      await click(id(key),key);
+      const input=id(key).locator('input[data-semantics-role="text-field"]');
+      await click(input,key);
       await page.keyboard.insertText(value);
+      assert.equal(await input.inputValue(),value,key);
     }
-    await click(checkbox('El informe ya fue autorizado fuera de Vitalia'),'Autorización externa');
-    await click(checkbox('Confirmé que el PDF corresponde al paciente de la orden'),'Paciente de la orden');
+    const authorized=checkbox('El informe ya fue autorizado fuera de Vitalia');
+    const matched=checkbox('Confirmé que el PDF corresponde al paciente de la orden');
+    await click(authorized,'Autorización externa');
+    await click(matched,'Paciente de la orden');
+    assert.equal(await authorized.getAttribute('aria-checked'),'true');
+    assert.equal(await matched.getAttribute('aria-checked'),'true');
+    console.log('Microsoft Edge: datos de autorización y paciente comprobados.');
     const response=page.waitForResponse(r=>r.url().endsWith(endpoint) && r.request().method()==='POST');
-    await click(button('Adjuntar para revisión'),'Adjuntar para revisión');
-    const uploaded=await response;
+    const [uploaded]=await Promise.all([response,click(button('Adjuntar para revisión'),'Adjuntar para revisión')]);
     assert.equal(uploaded.status(),201,'Carga del PDF desde la estación');
     console.log('Microsoft Edge: se adjuntó el PDF desde la estación del operador.');
     return (await uploaded.json()).report.id;
