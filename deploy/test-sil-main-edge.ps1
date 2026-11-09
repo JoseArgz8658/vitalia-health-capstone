@@ -1,13 +1,25 @@
 [CmdletBinding()]
-param([switch]$Manual)
+param([switch]$Manual, [switch]$DemoAccounts)
 
 $ErrorActionPreference = 'Stop'
+if ($DemoAccounts -and -not $Manual) { throw 'Usa -DemoAccounts junto con -Manual.' }
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $backend = Join-Path $root 'backend'
 $app = Join-Path $root 'apps\vitalia'
 $container = 'vitalia-edge-qa-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
 $temp = Join-Path ([System.IO.Path]::GetTempPath()) $container
 $created = $false
+
+function Read-DemoPassword([string]$Email) {
+  $secret = Read-Host ('Contraseña DEMO de ' + $Email) -AsSecureString
+  $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
+  try {
+    return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+  } finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+    $secret.Dispose()
+  }
+}
 
 function Assert-Native([string]$Step) {
   if ($LASTEXITCODE -ne 0) { throw ('Falló: ' + $Step) }
@@ -26,7 +38,9 @@ $testEnv = @{
   VITALIA_JOURNEY_MANUAL = $(if ($Manual) { 'YES' } else { 'NO' })
   VITALIA_JOURNEY_FIXTURE = Join-Path $temp 'informe-operador.pdf'
 }
-$previousEnv = @{}
+$previousEnv = @{
+  VITALIA_JOURNEY_DEMO_PASSWORDS = [Environment]::GetEnvironmentVariable('VITALIA_JOURNEY_DEMO_PASSWORDS', 'Process')
+}
 foreach ($key in $testEnv.Keys) {
   $previousEnv[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
 }
@@ -74,17 +88,29 @@ try {
   }
   if (-not $ready) { throw 'PostgreSQL temporal no inició.' }
 
+  if ($DemoAccounts) {
+    $demoPasswords = @{
+      uploader = Read-DemoPassword 'operador.sil@example.invalid'
+      admin = Read-DemoPassword 'admin.sil@example.invalid'
+      patient = Read-DemoPassword 'paciente.sil@example.invalid'
+    } | ConvertTo-Json -Compress
+    [Environment]::SetEnvironmentVariable('VITALIA_JOURNEY_DEMO_PASSWORDS', $demoPasswords, 'Process')
+    Remove-Variable demoPasswords
+  } else {
+    [Environment]::SetEnvironmentVariable('VITALIA_JOURNEY_DEMO_PASSWORDS', $null, 'Process')
+  }
+
   & node (Join-Path $backend 'test\sil-main-journey.cjs')
   Assert-Native 'ensayar el flujo del operador'
 } finally {
+  foreach ($key in $previousEnv.Keys) {
+    [Environment]::SetEnvironmentVariable($key, $previousEnv[$key], 'Process')
+  }
   if ($created) {
     & docker stop $container *> $null
     if ($LASTEXITCODE -ne 0) {
       Write-Warning ('Revisa el contenedor temporal ' + $container)
     }
-  }
-  foreach ($key in $previousEnv.Keys) {
-    [Environment]::SetEnvironmentVariable($key, $previousEnv[$key], 'Process')
   }
   if (Test-Path -LiteralPath $temp) {
     Remove-Item -LiteralPath $temp -Recurse -Force

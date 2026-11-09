@@ -256,6 +256,31 @@ async function browserJourney(order, base) {
   }
 }
 
+function demoAccounts(manual) {
+  const raw=process.env.VITALIA_JOURNEY_DEMO_PASSWORDS;
+  delete process.env.VITALIA_JOURNEY_DEMO_PASSWORDS;
+  if(raw===undefined)return {};
+  if(!manual)throw new Error('Los accesos del DEMO requieren el modo manual.');
+  const emails={
+    admin:'admin.sil@example.invalid',
+    uploader:'operador.sil@example.invalid',
+    patient:'paciente.sil@example.invalid',
+  };
+  let passwords;
+  try {
+    passwords=JSON.parse(raw);
+  } catch {
+    throw new Error('No se pudieron leer las contraseñas del ensayo.');
+  }
+  return Object.fromEntries(Object.entries(emails).map(([key,email])=>{
+    const value=passwords?.[key];
+    if(typeof value!=='string'||value.length===0||Buffer.byteLength(value,'utf8')>1024){
+      throw new Error('Ingresa una contraseña válida para '+email+'.');
+    }
+    return [key,{email,password:value}];
+  }));
+}
+
 async function main() {
   if(process.env.VITALIA_ISOLATED_REHEARSAL!=='YES' ||
     process.env.PGHOST!=='127.0.0.1' ||
@@ -268,6 +293,7 @@ async function main() {
     throw new Error('El contenedor local debe pertenecer al ensayo de Edge.');
   }
   const manual=process.env.VITALIA_JOURNEY_MANUAL==='YES';
+  const demo=demoAccounts(manual);
   const fixture=process.env.VITALIA_JOURNEY_FIXTURE;
   if(manual && (!process.env.VITALIA_JOURNEY_WEB || !fixture)){
     throw new Error('El ensayo manual requiere una compilación web y una ruta para el PDF ficticio.');
@@ -281,11 +307,14 @@ async function main() {
       reviewer:'operador_laboratorio', patient:'paciente', other:'paciente',
     };
     const ids={};
+    const credentials=Object.fromEntries(Object.keys(roles).map(name=>[
+      name,demo[name]??{email:name+'@example.invalid',password},
+    ]));
     const passwordHash=await hashPassword(password);
     for(const [name,role] of Object.entries(roles)){
       ids[name]=randomUUID();
       await db.query('INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code) VALUES($1,$2,$3,$4)',
-        [ids[name],name+'@example.invalid',passwordHash,role]);
+        [ids[name],credentials[name].email,demo[name]?await hashPassword(credentials[name].password):passwordHash,role]);
     }
 
     process.env.VITALIA_SIL_MAIN_MODE='YES';
@@ -305,7 +334,7 @@ async function main() {
     const tokens={};
     for(const [name,mode] of Object.entries(roles)){
       const login=await api('POST','/api/auth/login',200,{
-        json:{mode,email:name+'@example.invalid',password},
+        json:{mode,...credentials[name]},
       });
       const {token}=await login.json();
       tokens[name]=token;
@@ -384,10 +413,15 @@ async function main() {
         writeFileSync(fixture,pdf,{flag:'wx'});
         console.log('\nSIL temporal listo en http://localhost:5173/#/laboratorio');
         console.log('Orden disponible: VH-'+String(ready.orderNumber).padStart(6,'0'));
-        console.log('Adjunta el PDF con uploader@example.invalid.');
+        console.log('Adjunta el PDF con '+credentials.uploader.email+'.');
         console.log('Con esa misma cuenta, descarga el PDF de revisión, confirma y publica.');
-        console.log('Consulta el informe con patient@example.invalid en http://localhost:5173/.');
-        console.log('Contraseña de estas cuentas ficticias: '+password);
+        console.log('Consulta el informe con '+credentials.patient.email+' en http://localhost:5173/.');
+        if(demo.admin){
+          console.log('Acceso de administración de prueba: '+credentials.admin.email+'.');
+          console.log('Usa las contraseñas del DEMO que ingresaste en PowerShell.');
+        } else {
+          console.log('Contraseña de estas cuentas ficticias: '+password);
+        }
         console.log('PDF para adjuntar: '+fixture);
         const input=createInterface({input:process.stdin,output:process.stdout});
         try {
