@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../core/auth_api.dart';
+import '../../core/tema_vitalia.dart';
+import 'portal_visual_sil.dart';
 
 class ResumenInformesSilPage extends StatefulWidget {
   const ResumenInformesSilPage({
@@ -172,106 +174,389 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
     ];
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final overview = _overview;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Resumen de informes')),
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(16),
+  Widget _selector() {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 760),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _panel('Elige hasta cuatro informes', [
-                      const Text(
-                          'Usa uno para entender sus cifras o varios para compararlos.'),
-                      const SizedBox(height: 8),
-                      ExpansionTile(
-                        tilePadding: EdgeInsets.zero,
-                        initiallyExpanded:
-                            _selected.isEmpty && widget.reports.length <= 6,
-                        title: Text('${_selected.length} seleccionados'),
-                        children: [
-                          for (final report in widget.reports)
-                            CheckboxListTile(
-                              controlAffinity: ListTileControlAffinity.leading,
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(
-                                  '${report['orderNumber']} · ${report['issuingLaboratory']}'),
-                              subtitle:
-                                  Text(_date(report['externallyAuthorizedAt'])),
-                              value: _selected.contains(report['id']),
-                              onChanged: _loading ||
-                                      (_selected.length == 4 &&
-                                          !_selected.contains(report['id']))
-                                  ? null
-                                  : (checked) => setState(() {
-                                        final id = report['id'] as String;
-                                        if (checked == true) {
-                                          _selected.add(id);
-                                        } else {
-                                          _selected.remove(id);
-                                        }
-                                        _overview = null;
-                                        _error = null;
-                                      }),
-                            ),
-                        ],
-                      ),
-                      FilledButton(
-                        onPressed:
-                            _loading || _selected.isEmpty ? null : _analyze,
-                        child: Text(_loading
-                            ? 'Leyendo los documentos…'
-                            : 'Leer informes'),
-                      ),
-                    ]),
-                    if (_loading) ...[
-                      const SizedBox(height: 12),
-                      const LinearProgressIndicator(
-                          semanticsLabel: 'Leyendo informes seleccionados'),
-                    ],
-                    if (_error case final String error) ...[
-                      const SizedBox(height: 12),
-                      Semantics(liveRegion: true, child: Text(error)),
-                    ],
-                    if (overview != null) ...[
-                      const SizedBox(height: 20),
-                      Text('¿Qué quieres revisar?',
-                          style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          for (final (section, label) in [
-                            (_Section.results, '¿Cuáles son mis resultados?'),
-                            (_Section.comparison, '¿Cómo se comparan?'),
-                            (_Section.referral, '¿Qué dice la derivación?'),
-                          ])
-                            ChoiceChip(
-                              label: Text(label),
-                              selected: _section == section,
-                              onSelected: (_) =>
-                                  setState(() => _section = section),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      ..._content(overview),
-                      const Text(
-                          'Lectura de apoyo. Verifica las cifras y las observaciones en los documentos originales.'),
-                    ],
-                  ],
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: ColoresVitalia.azulSuave,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.library_books_outlined,
+                    color: ColoresVitalia.azul,
+                    size: 24,
+                  ),
                 ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Elige hasta cuatro informes',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          )),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Usa uno para entender sus cifras o varios para compararlos.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: ColoresVitalia.textoSecundario,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 13),
+            Container(
+              decoration: BoxDecoration(
+                color: ColoresVitalia.fondoAzul,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: ExpansionTile(
+                tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+                initiallyExpanded:
+                    _selected.isEmpty && widget.reports.length <= 6,
+                title: Text('${_selected.length} seleccionados'),
+                subtitle: const Text('Máximo cuatro documentos publicados'),
+                children: [
+                  if (widget.reports.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(14),
+                      child: Text('Todavía no hay informes publicados '
+                          'disponibles para seleccionar.'),
+                    ),
+                  for (final report in widget.reports)
+                    CheckboxListTile(
+                      controlAffinity: ListTileControlAffinity.leading,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                      ),
+                      title: Text(
+                        '${report['orderNumber']} · '
+                        '${report['issuingLaboratory']}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                      subtitle: Text(
+                        _date(report['externallyAuthorizedAt']),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      value: _selected.contains(report['id']),
+                      onChanged: _loading ||
+                              (_selected.length == 4 &&
+                                  !_selected.contains(report['id']))
+                          ? null
+                          : (checked) => setState(() {
+                                final id = report['id'] as String;
+                                if (checked == true) {
+                                  _selected.add(id);
+                                } else {
+                                  _selected.remove(id);
+                                }
+                                _overview = null;
+                                _error = null;
+                              }),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 15),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _loading || _selected.isEmpty ? null : _analyze,
+                icon: const Icon(Icons.analytics_outlined),
+                label: Text(_loading
+                    ? 'Leyendo los documentos…'
+                    : 'Leer informes'),
+              ),
+            ),
+            const SizedBox(height: 11),
+            Text(
+              _selected.length < 2
+                  ? 'Para una comparación descriptiva necesitas al menos '
+                      'dos informes con valores compatibles.'
+                  : 'Los cálculos solo agrupan cifras del mismo examen, '
+                      'analito, unidad y laboratorio.',
+              style: const TextStyle(
+                color: ColoresVitalia.textoSecundario,
+                fontSize: 12,
+                height: 1.45,
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _contentArea() {
+    final overview = _overview;
+    final theme = Theme.of(context);
+    if (overview == null) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(13),
+                decoration: BoxDecoration(
+                  color: ColoresVitalia.verdeSuave,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: const Icon(Icons.auto_graph_outlined,
+                    color: ColoresVitalia.verde, size: 27),
+              ),
+              const SizedBox(height: 15),
+              Text(
+                'Una lectura más clara de tus informes',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 9),
+              const Text(
+                'Selecciona los documentos publicados que quieras revisar '
+                'y pulsa «Leer informes». Aquí aparecerán sus cifras '
+                'detectadas y las observaciones de su derivación.',
+                style: TextStyle(
+                  height: 1.5,
+                  color: ColoresVitalia.textoSecundario,
+                ),
+              ),
+              const SizedBox(height: 16),
+              for (final item in const [
+                (
+                  Icons.fact_check_outlined,
+                  'Resultados del documento',
+                  'Conservamos la referencia de la orden original.',
+                ),
+                (
+                  Icons.compare_arrows_outlined,
+                  'Comparación responsable',
+                  'Solo se comparan cifras compatibles.',
+                ),
+                (
+                  Icons.notes_outlined,
+                  'Observación de derivación',
+                  'Puedes leer el texto detectado en la solicitud.',
+                ),
+              ]) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(item.$1, color: ColoresVitalia.azul, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item.$2,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 2),
+                          Text(item.$3,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: ColoresVitalia.textoSecundario,
+                              )),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PortalEncabezadoSeccionSil(
+          title: 'Tu lectura guiada',
+          subtitle:
+              'Selecciona lo que necesitas comprender de los documentos.',
+        ),
+        const SizedBox(height: 13),
+        Wrap(
+          spacing: 8,
+          runSpacing: 7,
+          children: [
+            for (final (section, label, icon) in [
+              (
+                _Section.results,
+                '¿Cuáles son mis resultados?',
+                Icons.biotech_outlined,
+              ),
+              (
+                _Section.comparison,
+                '¿Cómo se comparan?',
+                Icons.insights_outlined,
+              ),
+              (
+                _Section.referral,
+                '¿Qué dice la derivación?',
+                Icons.notes_outlined,
+              ),
+            ])
+              ChoiceChip(
+                avatar: Icon(icon, size: 17),
+                label: Text(label),
+                selected: _section == section,
+                onSelected: (_) => setState(() => _section = section),
+              ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        ..._content(overview),
+        const SizedBox(height: 7),
+        Container(
+          padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            color: ColoresVitalia.azulSuave,
+          ),
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.info_outline,
+                  size: 20, color: ColoresVitalia.azul),
+              SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  'Lectura de apoyo. Verifica cifras, unidades y '
+                  'observaciones en los PDF originales. '
+                  'Estos datos no sustituyen una evaluación profesional.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: ColoresVitalia.texto,
+                    height: 1.45,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final narrow = MediaQuery.sizeOf(context).width < 600;
+    return Scaffold(
+      appBar: AppBar(
+        toolbarHeight: 65,
+        title: const Text('Resumen de informes'),
+        actions: [
+          if (!narrow)
+            Padding(
+              padding: const EdgeInsets.only(right: 18),
+              child: Center(
+                child: Chip(
+                  avatar: const Icon(Icons.lock_outline, size: 16),
+                  label: const Text('Consulta privada · DEMO'),
+                  backgroundColor: ColoresVitalia.azulSuave,
+                ),
+              ),
+            ),
+        ],
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: EdgeInsets.symmetric(
+            horizontal: narrow ? 14 : 24,
+            vertical: narrow ? 17 : 25,
+          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1190),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  PortalHeroSil(
+                    eyebrow: 'Explorador de informes · SIL DEMO',
+                    title: 'Comprende mejor tus exámenes',
+                    subtitle:
+                        'Consulta las cifras de tus documentos publicados, '
+                        'revisa las observaciones de la derivación y compara '
+                        'mediciones cuando correspondan.',
+                    icon: Icons.monitor_heart_outlined,
+                    compact: narrow,
+                  ),
+                  const SizedBox(height: 20),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final selector = _selector();
+                      final details = _contentArea();
+                      if (constraints.maxWidth >= 900) {
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(width: 400, child: selector),
+                            const SizedBox(width: 18),
+                            Expanded(child: details),
+                          ],
+                        );
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          selector,
+                          const SizedBox(height: 16),
+                          details,
+                        ],
+                      );
+                    },
+                  ),
+                  if (_loading) ...[
+                    const SizedBox(height: 14),
+                    const LinearProgressIndicator(
+                      semanticsLabel: 'Leyendo informes seleccionados',
+                    ),
+                  ],
+                  if (_error case final String error) ...[
+                    const SizedBox(height: 12),
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(error,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          )),
+                    ),
+                  ],
+                  const SizedBox(height: 25),
+                  const Text(
+                    'Vitalia Health · Lectura educativa sobre documentos '
+                    'ficticios. Conserva siempre el informe original.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: ColoresVitalia.textoSecundario,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
