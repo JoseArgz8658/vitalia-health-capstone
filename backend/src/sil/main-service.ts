@@ -163,6 +163,27 @@ export function createSilMainService(db:Pool) {
       return {laboratories:res.rows};
     },
 
+    // Administración: consulta de personal por laboratorio, sin credenciales.
+    // Solo se expone mediante una ruta protegida por el rol administrador.
+    async listStaff(labId:string){
+      const found=await db.query(
+        `SELECT s.account_id AS "accountId",
+                a.email,
+                s.active,
+                s.can_review_reports AS "canReviewReports"
+         FROM public.vitalia_sil_main_staff s
+         JOIN public.vitalia_sil_main_laboratories l
+           ON l.id=s.lab_id AND l.active
+         JOIN public.vitalia_accounts a ON a.id=s.account_id
+         JOIN public.vitalia_account_roles r
+           ON r.account_id=a.id
+           AND r.role_code='operador_laboratorio' AND r.active
+         WHERE s.lab_id=$1 AND s.kind='operator'
+         ORDER BY a.email,s.account_id
+         LIMIT 200`,[labId]);
+      return {staff:found.rows};
+    },
+
     async createLaboratory(name:string,adminId:string){
       return transaction(async tx=>{
         const id=randomUUID();
