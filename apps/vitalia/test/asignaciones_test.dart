@@ -355,11 +355,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Panel del laboratorio'), findsOneWidget);
     expect(find.text('Administración de Vitalia Health'), findsNothing);
-    expect(find.text('Registrar orden'), findsOneWidget);
+    expect(find.text('Recibir solicitud de exámenes'), findsOneWidget);
     await tester.ensureVisible(find.text('Ver todas las órdenes'));
     await tester.tap(find.text('Ver todas las órdenes'));
     await tester.pumpAndSettle();
-    expect(find.text('Gestión de órdenes'), findsOneWidget);
+    expect(find.text('Buscar y gestionar órdenes'), findsOneWidget);
+    expect(find.text('Crear orden manual'), findsOneWidget);
     expect(find.text('Buscar'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     auth.close();
