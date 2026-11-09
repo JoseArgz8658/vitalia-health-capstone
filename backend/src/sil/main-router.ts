@@ -258,6 +258,26 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
         res.locals.account.id,data.data,req.body));
     });
 
+  router.get('/labs/:labId/orders/:orderId/report/file',
+    staff,labPath,async(req,res)=>{
+      if(res.locals.account.role!=='profesional'){
+        res.status(403).json({error:{code:'FORBIDDEN'}});return;
+      }
+      if(!uuid.safeParse(req.params.orderId).success){
+        res.status(404).json({error:{code:'NOT_FOUND'}});return;
+      }
+      const file=await main.reportForReview(
+        req.params.labId as string,req.params.orderId as string,
+        res.locals.account.id);
+      res.set('Cache-Control','private, no-store');
+      res.set('X-Content-Type-Options','nosniff');
+      res.set('Content-Type','application/pdf');
+      res.set('Content-Disposition',
+        "attachment; filename*=UTF-8''"+encodeURIComponent(file.fileName));
+      res.set('Content-Length',String(file.bytes.length));
+      res.send(file.bytes);
+    });
+
   router.post('/labs/:labId/orders/:orderId/report/publish',staff,labPath,
     async(req,res)=>{
       if(res.locals.account.role!=='profesional'){
