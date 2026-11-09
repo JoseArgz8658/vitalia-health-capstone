@@ -1,4 +1,5 @@
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../core/auth_api.dart';
@@ -147,6 +148,23 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
     });
   }
 
+  String _folio(Map order) =>
+      'VH-${order['orderNumber'].toString().padLeft(6, '0')}';
+
+  Future<void> _downloadMedicalRequest() async {
+    final order = widget.orders.firstWhere((order) => order['id'] == _orderId);
+    final name = 'solicitud-${_folio(order)}.pdf';
+    final target = kIsWeb ? null : await getSaveLocation(suggestedName: name);
+    if (!mounted || (!kIsWeb && target == null)) return;
+    final bytes = await widget.api.silMainDownloadMedicalRequest(
+      labId: widget.labId,
+      orderId: order['id'] as String,
+    );
+    if (!mounted || !widget.api.hasSession) return;
+    final pdf = XFile.fromData(bytes, name: name, mimeType: 'application/pdf');
+    await pdf.saveTo(target?.path ?? name);
+  }
+
   Future<void> _showActivity() async {
     final activity = await widget.api.silMainRequest('$_path/audit');
     if (!mounted) return;
@@ -265,9 +283,7 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
               for (final order in widget.orders)
                 DropdownMenuItem(
                   value: order['id'] as String,
-                  child: Text(
-                    'VH-${order['orderNumber'].toString().padLeft(6, '0')}',
-                  ),
+                  child: Text(_folio(order)),
                 ),
             ],
             onChanged: _busy
@@ -288,13 +304,22 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
         if (_error != null) Text(_error!),
         if (_details != null) ...[
           const SizedBox(height: 12),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: OutlinedButton.icon(
-              onPressed: _busy ? null : () => _run(_showActivity),
-              icon: const Icon(Icons.history),
-              label: const Text('Ver historial de la orden'),
-            ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (_details?['hasMedicalRequest'] == true)
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _run(_downloadMedicalRequest),
+                  icon: const Icon(Icons.download_outlined),
+                  label: const Text('Descargar solicitud original'),
+                ),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : () => _run(_showActivity),
+                icon: const Icon(Icons.history),
+                label: const Text('Ver historial de la orden'),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           const Text('Contenedores requeridos'),

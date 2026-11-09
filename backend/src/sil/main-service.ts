@@ -362,7 +362,11 @@ export function createSilMainService(db:Pool) {
         const result=await tx.query(
           'SELECT status,values_json AS values FROM public.vitalia_sil_main_result_sets WHERE order_id=$1',
           [orderId]);
-        return {status,containers,analytes,results:result.rows[0]??null};
+        const request=await tx.query<{present:boolean}>(
+          `SELECT EXISTS(SELECT 1 FROM public.vitalia_sil_main_medical_requests
+             WHERE lab_id=$1 AND order_id=$2) AS present`,[labId,orderId]);
+        return {status,containers,analytes,results:result.rows[0]??null,
+          hasMedicalRequest:request.rows[0].present};
       });
     },
 
@@ -559,20 +563,22 @@ export function createSilMainService(db:Pool) {
     },
 
     async downloadMedicalRequest(labId:string,orderId:string,actorId:string){
-      await operator(labId,actorId);
-      const file=await db.query<{
-        id:string;fileName:string;bytes:Buffer;sha256:string
-      }>(
-        `SELECT id,file_name AS "fileName",pdf_data AS bytes,pdf_sha256 AS sha256
-         FROM public.vitalia_sil_main_medical_requests
-         WHERE lab_id=$1 AND order_id=$2`,[labId,orderId]);
-      if(!file.rows.length)throw new SilMainNotFound();
-      const item=file.rows[0];
-      if(item.bytes.length>2*1024*1024 ||
-        createHash('sha256').update(item.bytes).digest('hex')!==item.sha256)
-        throw new SilMainConflict();
-      await audit(db,labId,actorId,'medical_request_downloaded',orderId,{requestId:item.id});
-      return {fileName:item.fileName,bytes:item.bytes};
+      return transaction(async tx=>{
+        await operator(labId,actorId,tx);
+        const file=await tx.query<{
+          id:string;fileName:string;bytes:Buffer;sha256:string
+        }>(
+          `SELECT id,file_name AS "fileName",pdf_data AS bytes,pdf_sha256 AS sha256
+           FROM public.vitalia_sil_main_medical_requests
+           WHERE lab_id=$1 AND order_id=$2`,[labId,orderId]);
+        if(!file.rows.length)throw new SilMainNotFound();
+        const item=file.rows[0];
+        if(item.bytes.length>2*1024*1024 ||
+          createHash('sha256').update(item.bytes).digest('hex')!==item.sha256)
+          throw new SilMainConflict();
+        await audit(tx,labId,actorId,'medical_request_downloaded',orderId,{requestId:item.id});
+        return {fileName:item.fileName,bytes:item.bytes};
+      });
     },
 
     async attachReport(labId:string,orderId:string,operatorId:string,

@@ -17,6 +17,10 @@ const {createSilMainService} = require('../dist/sil/main-service');
 const origin = 'http://127.0.0.1:3119';
 const password = 'SoloPrueba-2026!';
 const pdf = syntheticPdf();
+const browserRequestPdf = syntheticPdf([
+  'Referencia: SOL-1004','Profesional solicitante: Persona Ficticia',
+  'Fecha de solicitud: 2024-01-01','Glicemia',
+]);
 
 function syntheticPdf(lines=['Vitalia - informe ficticio']) {
   const stream = 'BT /F1 18 Tf 50 740 Td '+
@@ -204,10 +208,17 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
     assert.equal(recorded.status(),201);
     assert.equal(recorded.request().postDataJSON().values[0].numericValue,91.2);
     console.log('Microsoft Edge: el operador cotejó y guardó la sugerencia del PDF.');
+    const requestDownload=page.waitForEvent('download');
+    await click(button('Descargar solicitud original'),'Descargar solicitud original');
+    const requestFile=await requestDownload;
+    assert.deepEqual(readFileSync(await requestFile.path()),browserRequestPdf);
+    assert.equal(requestFile.suggestedFilename(),
+      'solicitud-VH-'+String(sampleOrder.orderNumber).padStart(6,'0')+'.pdf');
     await click(button('Ver historial de la orden'),'Ver historial de la orden');
     const closeHistory=button('Cerrar historial');
     await closeHistory.waitFor();
     await page.getByText('Resultados registrados',{exact:true}).waitFor();
+    await page.getByText('Solicitud descargada',{exact:true}).waitFor();
     await page.getByText(/uploader@example[.]invalid/).first().waitFor();
     await closeHistory.click();
     await closeHistory.waitFor({state:'hidden'});
@@ -430,10 +441,15 @@ async function main() {
     const orderId=(await created.json()).order.id;
     await call('uploader','POST',intake,409,confirmation);
     assert.equal((await (await call('uploader','GET',base+'/orders',200)).json()).orders.length,1);
-    const original=await call('uploader','GET',base+'/orders/'+orderId+'/medical-request/file',200);
+    const requestPath='/orders/'+orderId+'/medical-request/file';
+    await call('patient','GET',base+requestPath,403);
+    await call('uploader','GET',otherLab+requestPath,403);
+    await call('reviewer','GET',otherLab+requestPath,404);
+    const original=await call('uploader','GET',base+requestPath,200);
     assert.deepEqual(Buffer.from(await original.arrayBuffer()),requestPdf);
     console.log('API: lectura, confirmación y registro atómico de solicitud verificados.');
     const clinical=base+'/orders/'+orderId+'/clinical';
+    assert.equal((await (await call('uploader','GET',clinical,200)).json()).hasMedicalRequest,true);
     const sample=code=>({json:{containerCode:code}});
     const values={json:{values:[{examCode:'glicemia',analyte:'Glucosa',numericValue:91.2}]}};
     await call('uploader','GET',otherLab+'/orders/'+orderId+'/clinical',403);
@@ -578,6 +594,15 @@ async function main() {
       const {order:sampleOrder}=await (await call('uploader','POST',base+'/orders',201,{json:{
         patientId:ids.patient,examCodes:['glicemia'],
       }})).json();
+      const samplePath=base+'/orders/'+sampleOrder.id;
+      assert.equal((await (await call('uploader','GET',samplePath+'/clinical',200)).json()).hasMedicalRequest,false);
+      await call('uploader','POST',samplePath+'/medical-request',201,{
+        bytes:browserRequestPdf,headers:{
+          ...requestFile.headers,'x-request-reference':'SOL-1004',
+          'x-request-prescriber':'Persona Ficticia','x-request-date':'2024-01-01',
+          'x-request-identity-confirmed':'true','x-request-reviewed':'true',
+        },
+      });
       const {barcode:sampleCode}=await (await call('uploader','POST',
         base+'/orders/'+sampleOrder.id+'/clinical/samples',201,sample('fluoride'))).json();
       const samplePdf=resultsPdf(sampleCode,'Glucosa 91,2 mg/dL').bytes;
