@@ -8,6 +8,10 @@ electrónicos reales: el correo se simula en memoria del proceso
 `vitalia-sil-demo` y el acceso al buzón sólo se expone cuando este ejecutable
 aislado habilita `VITALIA_SIL_DEV_MAILBOX=YES`.
 
+El buzón está en memoria: si se reinicia el contenedor durante una
+invitación, el correo simulado desaparece. El operador puede emitir una
+invitación nueva (con los límites indicados), que invalida la anterior.
+
 La pantalla muestra un destinatario completo ANTES de enviar la invitación:
 nombre, apellidos, identificador sintético, fecha de nacimiento y correo.
 Dos confirmaciones independientes del operador son obligatorias. Es una
