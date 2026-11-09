@@ -301,6 +301,7 @@ cd ..\..
 docker inspect vitalia-sil-demo --format '{{range .Mounts}}{{println .Destination}}{{end}}'
 docker restart vitalia-sil-demo
 Invoke-RestMethod http://127.0.0.1:3101/api/health
+docker exec vitalia-sil-demo node test/sil-patients-directory-smoke.cjs
 ```
 
 Si no hay montaje `/app/dist` o falla el servidor de pruebas, **no** recrear
