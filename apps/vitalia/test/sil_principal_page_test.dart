@@ -80,7 +80,7 @@ void main() {
       final review = _field('Informe pendiente de revisión');
       expect(review, findsOneWidget);
       final dropdown = tester.widget<DropdownButton<String>>(
-        find.descendant(
+        find.ancestor(
           of: review,
           matching: find.byType(DropdownButton<String>),
         ),
