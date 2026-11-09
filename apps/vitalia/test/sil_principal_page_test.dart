@@ -44,6 +44,12 @@ class _StationApi extends AuthApi {
         ],
       },
       '/labs/$restrictedLab/orders' => {'orders': []},
+      '/labs/$restrictedLab/patients' => {
+        'patients': [
+          {'id': ownOrder, 'email': 'prueba@example.invalid', 'givenNames': 'Ana', 'familyNames': 'Prueba'},
+        ],
+        'hasMore': false,
+      },
       _ => throw StateError('Ruta inesperada: $path'),
     };
   }
@@ -75,6 +81,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
 
+      expect(find.text('Panel del laboratorio'), findsOneWidget);
+      final reviewTab = find.text('Revisión interna (2)');
+      await tester.ensureVisible(reviewTab);
+      await tester.tap(reviewTab);
+      await tester.pumpAndSettle();
       final review = _field('Informe pendiente de revisión');
       expect(review, findsOneWidget);
       final dropdown = tester.widget<DropdownButton<String>>(
@@ -98,6 +109,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(review, findsNothing);
       expect(reviewButton, findsNothing);
+      final patientsTab = find.text('Pacientes');
+      await tester.ensureVisible(patientsTab);
+      await tester.tap(patientsTab);
+      await tester.pumpAndSettle();
+      expect(find.text('Directorio de pacientes'), findsOneWidget);
+      expect(find.text('Ana Prueba'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }

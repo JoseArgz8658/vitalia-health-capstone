@@ -185,6 +185,7 @@ async function operatorJourney(browser, order, base) {
   };
 
   return stage('uploader',async ({page,id,button,click,select,confirm})=>{
+    await button('Órdenes').click();
     await select('sil-upload-order');
     const choose=page.waitForEvent('filechooser');
     await click(button('Elegir archivo PDF (máx. 2 MiB)'),'Elegir archivo PDF');
@@ -217,6 +218,7 @@ async function operatorJourney(browser, order, base) {
     const reportId=(await uploaded.json()).report.id;
     console.log('Microsoft Edge: se adjuntó el PDF desde la estación del operador.');
 
+    await page.getByRole('button',{name:/^Revisión interna/}).click();
     await select('sil-review-order');
     const publication=button('Publicar informe');
     await reach(page,publication,'Publicar informe');
@@ -354,6 +356,13 @@ async function main() {
     await call('uploader','POST',base+'/patients',201,{json:{
       patientId:ids.patient,identityEvidenceReference:'verificacion-ficticia',identityVerified:true,
     }});
+    const directory=await call('uploader','GET',base+'/patients?search=PATIENT&limit=1',200);
+    const linked=await directory.json();
+    assert.deepEqual(linked.patients.map(patient=>patient.id),[ids.patient]);
+    assert.equal(linked.hasMore,false);
+    const otherDirectory=await call('reviewer','GET',otherLab+'/patients',200);
+    assert.deepEqual((await otherDirectory.json()).patients,[]);
+    await call('uploader','GET',otherLab+'/patients',403);
     const created=await call('uploader','POST',base+'/orders',201,{json:{
       patientId:ids.patient,examCodes:['glicemia'],
     }});

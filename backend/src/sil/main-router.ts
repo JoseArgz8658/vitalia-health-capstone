@@ -130,6 +130,19 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       req.params.labId as string,data.data.accountId,res.locals.account.id,data.data.enabled));
   });
 
+  router.get('/labs/:labId/patients',staff,labPath,async(req,res)=>{
+    if(res.locals.account.role!=='operador_laboratorio'){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    const page=z.object({
+      limit:z.coerce.number().int().min(1).max(50).default(20),
+      offset:z.coerce.number().int().min(0).max(10000).default(0),
+      search:z.string().trim().max(120).default(''),
+    }).strict().safeParse(req.query);
+    if(!page.success){res.status(400).json({error:{code:'INVALID_PAGE'}});return;}
+    res.json(await main.listPatients(req.params.labId as string,res.locals.account.id,page.data));
+  });
+
   router.post('/labs/:labId/patients',staff,labPath,async(req,res)=>{
     if(res.locals.account.role!=='operador_laboratorio'){
       res.status(403).json({error:{code:'FORBIDDEN'}});return;

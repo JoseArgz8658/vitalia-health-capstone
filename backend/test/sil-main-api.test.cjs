@@ -19,6 +19,7 @@ function demo(role='operador_laboratorio',authenticated=true){
     grantStaff:jest.fn().mockResolvedValue({membership:{labId:lab}}),
     associatePatient:jest.fn().mockResolvedValue({patientId:patient,linked:true}),
     createOrder:jest.fn().mockResolvedValue({order:{id:order}}),
+    listPatients:jest.fn().mockResolvedValue({patients:[],hasMore:false}),
     listOrders:jest.fn().mockResolvedValue({orders:[]}),
     attachReport:jest.fn().mockResolvedValue({report:{id:report}}),
     publishReport:jest.fn().mockResolvedValue({publication:{orderId:order}}),
@@ -152,4 +153,14 @@ test('consulta de informes principales está filtrada por paciente y laboratorio
   expect(sql).toMatch(/r\.patient_id=\$1/);
   expect(sql).toMatch(/report_published/);
   expect(values).toEqual([patient]);
+});
+
+test('el directorio solo admite operadores y valida los parámetros de búsqueda',async()=>{
+  const path='/api/sil/main/labs/'+lab+'/patients';
+  const {application,service}=demo();
+  await request(application).get(path+'?limit=10&offset=20&search=ana').set(bearer).expect(200);
+  expect(service.listPatients).toHaveBeenCalledWith(lab,operator,{limit:10,offset:20,search:'ana'});
+  await request(application).get(path+'?limit=51').set(bearer).expect(400);
+  await request(demo('paciente').application).get(path).set(bearer).expect(403);
+  await request(demo('administrador').application).get(path).set(bearer).expect(403);
 });

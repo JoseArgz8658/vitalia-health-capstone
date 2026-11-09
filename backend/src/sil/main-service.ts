@@ -250,6 +250,25 @@ export function createSilMainService(db:Pool) {
       });
     },
 
+    async listPatients(labId:string,operatorId:string,
+      {limit,offset,search}:{limit:number;offset:number;search:string}){
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx);
+        const result=await tx.query(
+          `SELECT a.id,a.email,p.first_name AS "givenNames",p.first_surname AS "familyNames"
+           FROM public.vitalia_sil_main_patients lp
+           JOIN public.vitalia_accounts a ON a.id=lp.patient_id
+           JOIN public.vitalia_account_roles r
+             ON r.account_id=a.id AND r.role_code='paciente' AND r.active
+           LEFT JOIN public.vitalia_people p ON p.account_id=a.id
+           WHERE lp.lab_id=$1 AND lp.active
+             AND strpos(lower(concat_ws(' ',a.email,p.first_name,p.first_surname)),lower($2))>0
+           ORDER BY a.email,a.id LIMIT $3 OFFSET $4`,
+          [labId,search,limit+1,offset]);
+        return {patients:result.rows.slice(0,limit),hasMore:result.rows.length>limit};
+      });
+    },
+
     async listOrders(labId:string,accountId:string,role:string,
       limit:number,offset:number){
       if(role!=='administrador')await operator(labId,accountId);

@@ -28,10 +28,17 @@ class SilPrincipalPage extends StatefulWidget {
   State<SilPrincipalPage> createState() => _SilPrincipalPageState();
 }
 
+enum _StationSection { dashboard, orders, requests, patients, review }
+
 class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _name = TextEditingController();
   final _inviteEmail = TextEditingController();
   final _staffAccount = TextEditingController();
+  final _patientSearch = TextEditingController();
+  List<Map<String,dynamic>> _patients = [];
+  int _patientOffset = 0;
+  bool _morePatients = false;
+  String _activePatientSearch = '';
   final _patientAccount = TextEditingController();
   final _evidence = TextEditingController();
   final _orderPatient = TextEditingController();
@@ -41,6 +48,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _reportProfessional = TextEditingController();
   final _reportReference = TextEditingController();
   final _reportDate = TextEditingController();
+  _StationSection _activeSection = _StationSection.dashboard;
   bool _verifiedPatient = false;
   bool _externallyAuthorized = false;
   bool _confirmedMatch = false;
@@ -88,7 +96,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   @override
   void dispose(){
     for(final ctrl in [
-      _name,_inviteEmail,_staffAccount,_patientAccount,_evidence,_orderPatient,
+      _name,_inviteEmail,_staffAccount,_patientSearch,_patientAccount,_evidence,_orderPatient,
       _requestPrescriber,_requestReference,_requestDate,
       _reportProfessional,_reportReference,_reportDate,
     ]){ctrl.dispose();}
@@ -126,7 +134,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       : labs.isEmpty?null:labs.first['id'] as String?;
     setState((){
       _labs=labs;
-      _labId=selected;
+      if (selected != _labId) _resetLab(selected);
     });
     await _loadOrders();
   }
@@ -152,20 +160,39 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     });
   }
 
-  void _selectLab(String? value){
-    if(value==_labId||_busy)return;
-    setState((){
-      _labId=value;
-      _orders=[];
-      _requestOrderId=null;
-      _uploadOrderId=null;
-      _reviewOrderId=null;
-      _reviewPdfDownloaded=false;
-      _reviewConfirmed=false;
-      _notice=null;
-      _error=null;
-    });
-    _execute(_loadOrders,showNotice:false);
+  void _resetLab(String? value) {
+    _labId = value;
+    _activeSection = _StationSection.dashboard;
+    _patients = [];
+    _patientSearch.clear();
+    _activePatientSearch = '';
+    _patientOffset = 0;
+    _morePatients = false;
+    _orders = [];
+    for (final controller in [
+      _patientAccount, _evidence, _orderPatient, _requestPrescriber,
+      _requestReference, _requestDate, _reportProfessional, _reportReference, _reportDate,
+    ]) {
+      controller.clear();
+    }
+    _verifiedPatient = false;
+    _requestOrderId = null;
+    _medicalRequestFile = null;
+    _requestIdentityChecked = false;
+    _requestHumanChecked = false;
+    _uploadOrderId = null;
+    _pdf = null;
+    _externallyAuthorized = false;
+    _confirmedMatch = false;
+    _reviewOrderId = null;
+    _reviewPdfDownloaded = false;
+    _reviewConfirmed = false;
+  }
+
+  void _selectLab(String? value) {
+    if (value == _labId || _busy) return;
+    setState(() => _resetLab(value));
+    _execute(_loadOrders, showNotice: false);
   }
 
   String? _requireUuid(String value) {
@@ -277,9 +304,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       'identityEvidenceReference':evidence,
       'identityVerified':true,
     });
+    if (!mounted) return;
     _patientAccount.clear();
     _evidence.clear();
     setState(()=>_verifiedPatient=false);
+    await _loadPatients(offset: 0);
   }
 
   Future<void> _createOrder() async {
@@ -474,10 +503,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _=>'Estado pendiente',
   };
 
-  Widget _ordersPanel(){
-    final list=_orders;
+  Widget _ordersPanel({bool recent = false}){
+    final list=recent ? _orders.take(5) : _orders;
     return _section(
-      'Órdenes del laboratorio',
+      recent ? 'Actividad reciente' : 'Órdenes del laboratorio',
       'Consulta postanalítica del laboratorio seleccionado.',
       Icons.assignment_outlined,
       [
@@ -567,9 +596,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ]);
   }
 
-  Widget _operatorPanel(){
-    return Column(children:[
-      _section('Vincular paciente verificado',
+  Widget _patientLink() => _section('Vincular paciente verificado',
         'Primero comprueba la identidad por el procedimiento autorizado '
         'del laboratorio. Un correo coincidente no es verificación suficiente.',
         Icons.person_add_alt_1_outlined,[
@@ -584,8 +611,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           controlAffinity:ListTileControlAffinity.leading,
         ),
         _action('Vincular paciente',Icons.verified_outlined,_linkPatient),
-      ]),
-      _section('Crear orden postanalítica',
+      ]);
+
+  Widget _newOrder() => _section('Crear orden postanalítica',
         'Selecciona prestaciones del catálogo para un paciente '
         'previamente vinculado al laboratorio.',
         Icons.note_add_outlined,[
@@ -602,8 +630,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         ]),
         const SizedBox(height:12),
         _action('Registrar orden',Icons.add_circle_outline,_createOrder),
-      ]),
-      _section('Recibir solicitud médica',
+      ]);
+
+  Widget _requestIntake() => _section('Recibir solicitud médica',
         'Vincula una solicitud ya emitida a una orden existente. '
         'Los datos se registran tras revisar el PDF original.',
         Icons.note_add_outlined,[
@@ -647,8 +676,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           onChanged:_busy?null:(v)=>setState(()=>_requestHumanChecked=v??false),
         ),
         _action('Registrar solicitud',Icons.post_add_outlined,_attachMedicalRequest),
-      ]),
-      _section('Adjuntar informe autorizado',
+      ]);
+
+  Widget _reportUpload() => _section('Adjuntar informe autorizado',
         'Solo se reciben PDF ya validados externamente. '
         'El informe queda pendiente de revisión antes de publicarlo.',
         Icons.upload_file_outlined,[
@@ -698,9 +728,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           onChanged:_busy?null:(v)=>setState(()=>_confirmedMatch=v??false),
         ),
         _action('Adjuntar para revisión',Icons.upload_file,_attachReport),
-      ]),
-    ]);
-  }
+      ]);
 
   Widget _reviewPanel(){
     return _section('Validación y publicación',
@@ -760,12 +788,186 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ]);
   }
 
+  Future<void> _loadPatients({required int offset, String? search}) async {
+    final lab = _labId;
+    if (lab == null) return;
+    final term = search ?? _activePatientSearch;
+    final query = Uri(queryParameters: {
+      'limit': '20', 'offset': '$offset', if (term.isNotEmpty) 'search': term,
+    }).query;
+    final data = await widget.api.silMainRequest('/labs/$lab/patients?$query');
+    if (!mounted || _labId != lab) return;
+    setState(() {
+      _patients = (data['patients'] as List? ?? [])
+          .map((entry) => Map<String,dynamic>.from(entry as Map)).toList();
+      _patientOffset = offset;
+      _activePatientSearch = term;
+      _morePatients = data['hasMore'] == true;
+    });
+  }
+
+  void _openSection(_StationSection section) {
+    if (_busy || section == _activeSection) return;
+    setState(() => _activeSection = section);
+    if (section == _StationSection.patients) {
+      _execute(() => _loadPatients(offset: 0), showNotice: false);
+    }
+  }
+
+  String _patientName(Map<String,dynamic> patient) {
+    final name = [patient['givenNames'], patient['familyNames']].whereType<String>().join(' ').trim();
+    return name.isEmpty ? patient['email'] as String : name;
+  }
+
+  Widget _patientDirectory() => _section(
+    'Directorio de pacientes', 'Pacientes vinculados al laboratorio activo.',
+    Icons.badge_outlined, [
+      _field(_patientSearch, 'Buscar por nombre o correo'),
+      _action('Buscar pacientes', Icons.search,
+        () => _loadPatients(offset: 0, search: _patientSearch.text.trim())),
+      if (_patients.isEmpty)
+        const Padding(padding: EdgeInsets.symmetric(vertical: 12),
+          child: Text('No hay pacientes para mostrar.')),
+      for (final patient in _patients)
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(_patientName(patient)),
+          subtitle: Text(patient['email'] as String),
+          trailing: IconButton(
+            tooltip: 'Crear orden para este paciente',
+            onPressed: _busy ? null : () {
+              _orderPatient.text = patient['id'] as String;
+              _openSection(_StationSection.orders);
+            },
+            icon: const Icon(Icons.note_add_outlined),
+          ),
+        ),
+      if (_patientOffset > 0 || _morePatients)
+        Wrap(spacing: 8, children: [
+          OutlinedButton(
+            onPressed: _busy || _patientOffset == 0 ? null :
+              () => _execute(() => _loadPatients(offset: _patientOffset - 20), showNotice: false),
+            child: const Text('Anterior'),
+          ),
+          OutlinedButton(
+            onPressed: _busy || !_morePatients || _patientOffset >= 10000 ? null :
+              () => _execute(() => _loadPatients(offset: _patientOffset + 20), showNotice: false),
+            child: const Text('Siguiente'),
+          ),
+        ]),
+    ],
+  );
+
+  Widget _navigation(bool compact) {
+    final pending = _orders.where(_isReviewable).length;
+    final destinations = [
+      (_StationSection.dashboard, Icons.dashboard_outlined, 'Resumen'),
+      (_StationSection.orders, Icons.assignment_outlined, 'Órdenes'),
+      (_StationSection.requests, Icons.note_add_outlined, 'Recibir solicitud'),
+      (_StationSection.patients, Icons.badge_outlined, 'Pacientes'),
+      if (_canReview)
+        (_StationSection.review, Icons.fact_check_outlined, 'Revisión interna ($pending)'),
+    ];
+    return SingleChildScrollView(
+      primary: false,
+      scrollDirection: Axis.horizontal,
+      child: Row(children: [
+        for (final (section, icon, label) in destinations)
+          Padding(
+            padding: const EdgeInsets.only(right: 3),
+            child: TextButton.icon(
+              onPressed: _busy ? null : () => _openSection(section),
+              style: TextButton.styleFrom(
+                foregroundColor: section == _activeSection
+                    ? const Color(0xFF11263C) : const Color(0xFF415367),
+                backgroundColor: section == _activeSection
+                    ? const Color(0xFFE5F5F3) : Colors.transparent,
+                padding: EdgeInsets.symmetric(horizontal: compact ? 9 : 12, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              icon: compact ? const SizedBox.shrink() : Icon(icon, size: 18),
+              label: Text(label, maxLines: 1),
+            ),
+          ),
+      ]),
+    );
+  }
+
+  Widget _dashboard() {
+    final pending = _orders.where(_isReviewable).length;
+    final published = _orders.where((order) => order['status'] == 'report_published').length;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _section('Trabajo del operador', 'Accesos del laboratorio seleccionado. '
+          'Los recuentos corresponden a las órdenes cargadas.', Icons.space_dashboard_outlined, [
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _openSection(_StationSection.requests),
+            icon: const Icon(Icons.note_add_outlined),
+            label: const Text('Recibir solicitud de exámenes'),
+          ),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _openSection(_StationSection.orders),
+            icon: const Icon(Icons.assignment_outlined),
+            label: Text('Órdenes visibles · ${_orders.length}'),
+          ),
+          if (_canReview)
+            OutlinedButton.icon(
+              onPressed: _busy ? null : () => _openSection(_StationSection.review),
+              icon: const Icon(Icons.fact_check_outlined),
+              label: Text('Informes por revisar · $pending'),
+            ),
+          Chip(label: Text('Informes publicados · $published')),
+        ]),
+      ]),
+      _ordersPanel(recent: true),
+    ]);
+  }
+
+  Widget _station() {
+    if (_labId == null) return const SizedBox.shrink();
+    return switch (_activeSection) {
+      _StationSection.dashboard => _dashboard(),
+      _StationSection.orders => LayoutBuilder(builder: (context, constraints) {
+          final forms = Column(children: [_newOrder(), _reportUpload()]);
+          final list = _ordersPanel();
+          if (constraints.maxWidth < 860) return Column(children: [forms, list]);
+          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(flex: 6, child: forms),
+            const SizedBox(width: 14),
+            Expanded(flex: 4, child: list),
+          ]);
+        }),
+      _StationSection.requests => _requestIntake(),
+      _StationSection.patients => Column(children: [_patientDirectory(), _patientLink()]),
+      _StationSection.review => _canReview ? _reviewPanel() : _dashboard(),
+    };
+  }
+
   @override
   Widget build(BuildContext context){
-    final roleName=_admin?'Administración':'Laboratorio';
+    final roleName=_admin?'Administración':'Panel del laboratorio';
+    final compact = MediaQuery.sizeOf(context).width < 900;
     return Scaffold(
+      backgroundColor: const Color(0xFFF2F6FA),
       appBar:AppBar(
-        title:const Text('Vitalia Health · SIL principal'),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        title: Row(children: [
+          Image.asset('assets/branding/vitalia-simbolo.png',
+            width: 31, height: 31, excludeFromSemantics: true),
+          const SizedBox(width: 8),
+          const Flexible(child: Text('Vitalia Health', overflow: TextOverflow.ellipsis)),
+        ]),
+        bottom: _operator ? PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: _navigation(compact),
+            ),
+          ),
+        ) : null,
         actions:[
           if(widget.onOpenOriginal!=null)
             IconButton(
@@ -836,28 +1038,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                         onChanged:_busy?null:_selectLab,
                       ),
                   ]),
-                  LayoutBuilder(builder:(context,constraints){
-                    final oneColumn=constraints.maxWidth<860;
-                    final controls=Column(children:[
-                      if(_admin)_adminPanel(),
-                      if(_operator&&_labId!=null)_operatorPanel(),
-                      if(_canReview)_reviewPanel(),
-                    ]);
-                    final orders=_labId==null
-                      ?const SizedBox.shrink()
-                      :_ordersPanel();
-                    if(oneColumn) {
-                      return Column(children:[controls,orders]);
-                    }
-                    return Row(
-                      crossAxisAlignment:CrossAxisAlignment.start,
-                      children:[
-                        Expanded(flex:6,child:controls),
-                        const SizedBox(width:14),
-                        Expanded(flex:4,child:orders),
-                      ],
-                    );
-                  }),
+                  if (_operator) _station(),
+                  if (_admin) ...[
+                    _adminPanel(),
+                    if (_labId != null) _ordersPanel(),
+                  ],
                   const SizedBox(height:14),
                   const Text(
                     'Vitalia Health · Entorno de integración. '

@@ -137,10 +137,12 @@ class AuthApi {
     );
     final queries=candidate?.queryParametersAll ?? <String,List<String>>{};
     final isOrders=candidate?.path.endsWith('/orders') ?? false;
+    final isPatients=candidate?.path.endsWith('/patients') ?? false;
+    final allowedQuery = isPatients ? {'limit','offset','search'} : {'limit','offset'};
     if(candidate==null||candidate.hasScheme||candidate.hasAuthority||
        candidate.hasFragment||!allowed.hasMatch(candidate.path)||
-       (queries.isNotEmpty&&!isOrders)||
-       queries.keys.any((key)=>!{'limit','offset'}.contains(key))||
+       (queries.isNotEmpty&&(body!=null||(!isOrders&&!isPatients)))||
+       queries.keys.any((key)=>!allowedQuery.contains(key))||
        queries.values.any((values)=>values.length!=1)){
       throw const AuthFailure('Ruta del SIL principal inválida.');
     }
