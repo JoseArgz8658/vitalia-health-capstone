@@ -190,8 +190,9 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
   };
 
   return stage('uploader',async ({page,id,button,click,select,confirm})=>{
-    await click(button('Muestras y resultados'),'Muestras y resultados');
-    await select('sil-clinical-order','VH-'+String(sampleOrder.orderNumber).padStart(6,'0'));
+    await click(button('Órdenes'),'Órdenes');
+    const sampleFolio='VH-'+String(sampleOrder.orderNumber).padStart(6,'0');
+    await click(button('Abrir '+sampleFolio),'Abrir orden desde la lista');
     const clinical='/api/sil/main'+base+'/orders/'+sampleOrder.id+'/clinical/results';
     const chooseResults=page.waitForEvent('filechooser');
     const preview=page.waitForResponse(r=>r.url().endsWith(clinical+'/preview') && r.request().method()==='POST');
@@ -594,6 +595,26 @@ async function main() {
       const {order:sampleOrder}=await (await call('uploader','POST',base+'/orders',201,{json:{
         patientId:ids.patient,examCodes:['glicemia'],
       }})).json();
+      const queryOrders=async (actor,labPath,query,status=200)=>(await call(actor,'GET',
+        labPath+'/orders?'+new URLSearchParams(query),status)).json();
+      const page1=await queryOrders('uploader',base,{limit:1});
+      const page2=await queryOrders('uploader',base,{limit:1,offset:1});
+      assert.equal(page1.hasMore,true);
+      assert.notEqual(page1.orders[0].id,page2.orders[0].id);
+      const folio='VH-'+String(sampleOrder.orderNumber).padStart(6,'0');
+      const found=await queryOrders('uploader',base,{
+        search:folio.toLowerCase(),status:'registered',patientId:ids.patient,
+      });
+      assert.deepEqual(found.orders.map(order=>order.id),[sampleOrder.id]);
+      const email=await queryOrders('uploader',base,{search:credentials.patient.email.toUpperCase()});
+      assert.ok(email.orders.some(order=>order.id===sampleOrder.id));
+      assert.deepEqual((await queryOrders('uploader',base,{search:folio,status:'report_published'})).orders,[]);
+      assert.deepEqual((await queryOrders('uploader',base,{patientId:ids.other})).orders,[]);
+      assert.deepEqual((await queryOrders('reviewer',otherLab,{search:folio})).orders,[]);
+      await queryOrders('uploader',otherLab,{search:folio},403);
+      await queryOrders('admin',base,{search:credentials.patient.email},403);
+      await queryOrders('uploader',base,{status:'missing'},400);
+      console.log('API: búsqueda, filtros y paginación de órdenes verificados.');
       const samplePath=base+'/orders/'+sampleOrder.id;
       assert.equal((await (await call('uploader','GET',samplePath+'/clinical',200)).json()).hasMedicalRequest,false);
       await call('uploader','POST',samplePath+'/medical-request',201,{

@@ -70,6 +70,22 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   XFile? _pdf;
   List<Map<String,dynamic>> _labs = [];
   List<Map<String,dynamic>> _orders = [];
+  final _orderSearch = TextEditingController();
+  List<Map<String,dynamic>> _orderPage = [];
+  Map<String,dynamic>? _clinicalOrder;
+  String _activeOrderSearch = '';
+  String _orderStatus = '';
+  Map<String,dynamic>? _ordersPatient;
+  int _orderOffset = 0;
+  bool _moreOrders = false;
+  static const _orderPageSize = 20;
+
+  Iterable<Map<String,dynamic>> get _workflowOrders => {
+    if (_clinicalOrder != null) _clinicalOrder!['id']: _clinicalOrder!,
+    for (final order in _orderPage) order['id']: order,
+    for (final order in _orders) order['id']: order,
+  }.values;
+
   final _codes = <String>{'glicemia'};
   bool _busy = false;
   String? _notice;
@@ -102,7 +118,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   @override
   void dispose(){
     for(final ctrl in [
-      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_patientAccount,_evidence,_orderPatient,
+      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_patientAccount,_evidence,_orderPatient,
       _requestPatient,_requestPrescriber,_requestReference,_requestDate,
       _reportProfessional,_reportReference,_reportDate,
     ]){ctrl.dispose();}
@@ -155,15 +171,79 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     final orders=(data['orders'] as List? ?? [])
       .map((v)=>Map<String,dynamic>.from(v as Map)).toList();
     if(!mounted)return;
-    setState((){
-      _orders=orders;
-      if(!orders.any((v)=>v['id']==_uploadOrderId))_uploadOrderId=null;
-      if(!orders.any((v)=>v['id']==_reviewOrderId && _isReviewable(v))){
-        _reviewOrderId=null;
-        _reviewPdfDownloaded=false;
-        _reviewConfirmed=false;
-      }
+    setState(() {
+      _orders = orders;
+      _validateOrderSelections();
     });
+    if (_activeSection == _StationSection.orders || _admin || _orderPage.isNotEmpty) {
+      await _loadOrderPage(offset: _orderOffset);
+    }
+  }
+
+  void _validateOrderSelections() {
+    if (!_workflowOrders.any((order) =>
+        order['id'] == _uploadOrderId && order['status'] == 'registered')) {
+      _uploadOrderId = null;
+      _confirmedMatch = false;
+    }
+    if (!_workflowOrders.any((order) =>
+        order['id'] == _requestOrderId && order['status'] == 'registered')) {
+      _requestOrderId = null;
+      _requestIdentityChecked = false;
+      _requestHumanChecked = false;
+    }
+    if (!_workflowOrders.any((order) =>
+        order['id'] == _reviewOrderId && _isReviewable(order))) {
+      _reviewOrderId = null;
+      _reviewPdfDownloaded = false;
+      _reviewConfirmed = false;
+    }
+  }
+
+  Future<void> _loadOrderPage({required int offset, String? search, String? status}) async {
+    final lab = _labId;
+    if (lab == null) return;
+    final term = search ?? _activeOrderSearch;
+    final state = status ?? _orderStatus;
+    final patient = _ordersPatient?['id'] as String?;
+    final query = Uri(queryParameters: {
+      'limit': '$_orderPageSize', 'offset': '$offset',
+      if (term.isNotEmpty) 'search': term,
+      if (state.isNotEmpty) 'status': state,
+      if (patient != null) 'patientId': patient,
+    }).query;
+    final data = await widget.api.silMainRequest('/labs/$lab/orders?$query');
+    if (!mounted || _labId != lab) return;
+    final orders = (data['orders'] as List? ?? [])
+        .map((entry) => Map<String,dynamic>.from(entry as Map)).toList();
+    if (orders.isEmpty && offset > 0) {
+      await _loadOrderPage(offset: 0, search: term, status: state);
+      return;
+    }
+    setState(() {
+      _orderPage = orders;
+      _orderOffset = offset;
+      _activeOrderSearch = term;
+      _orderStatus = state;
+      _moreOrders = data['hasMore'] == true;
+      _validateOrderSelections();
+    });
+  }
+
+  void _showPatientOrders(Map<String,dynamic>? patient) {
+    if (_busy) return;
+    setState(() {
+      _ordersPatient = patient;
+      _orderSearch.clear();
+      _activeOrderSearch = '';
+      _orderStatus = '';
+      _orderOffset = 0;
+      _orderPage = [];
+      _moreOrders = false;
+      _validateOrderSelections();
+      _activeSection = _StationSection.orders;
+    });
+    _execute(() => _loadOrderPage(offset: 0), showNotice: false);
   }
 
   void _resetLab(String? value) {
@@ -175,6 +255,14 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _patientOffset = 0;
     _morePatients = false;
     _orders = [];
+    _orderPage = [];
+    _clinicalOrder = null;
+    _ordersPatient = null;
+    _orderSearch.clear();
+    _activeOrderSearch = '';
+    _orderStatus = '';
+    _orderOffset = 0;
+    _moreOrders = false;
     for (final controller in [
       _patientAccount, _invitedPatientEmail, _evidence, _orderPatient, _requestPatient, _requestPrescriber,
       _requestReference, _requestDate, _reportProfessional, _reportReference, _reportDate,
@@ -588,10 +676,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ),
   );
 
-  String _orderLabel(Map<String,dynamic> order){
-    final num=order['orderNumber'];
-    return 'VH-${num.toString().padLeft(6,'0')} · ${_status(order['status'])}';
-  }
+  String _folio(Map<String,dynamic> order) =>
+      'VH-${order['orderNumber'].toString().padLeft(6,'0')}';
+
+  String _orderLabel(Map<String,dynamic> order) =>
+      '${_folio(order)} · ${_status(order['status'])}';
 
   String _status(dynamic value)=>switch(value){
     'registered'=>'Orden registrada',
@@ -601,16 +690,54 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   };
 
   Widget _ordersPanel({bool recent = false}){
-    final list=recent ? _orders.take(5) : _orders;
+    final list=recent ? _orders.take(5) : _orderPage;
     return _section(
       recent ? 'Actividad reciente' : 'Órdenes del laboratorio',
       'Consulta postanalítica del laboratorio seleccionado.',
       Icons.assignment_outlined,
       [
+        if (!recent) ...[
+          if (_ordersPatient case final patient?)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: InputChip(
+                label: Text(_patientName(patient)),
+                onDeleted: _busy ? null : () => _showPatientOrders(null),
+              ),
+            ),
+          if (_operator)
+            _field(_orderSearch, 'Folio o correo del paciente',
+              identifier: 'sil-order-search'),
+          DropdownButtonFormField<String>(
+            key: ValueKey((_labId, _orderStatus)),
+            initialValue: _orderStatus,
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Estado de la orden'),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('Todos los estados')),
+              for (final status in ['registered', 'report_attached', 'report_published'])
+                DropdownMenuItem(value: status, child: Text(_status(status))),
+            ],
+            onChanged: _busy ? null : (value) => _execute(
+              () => _loadOrderPage(offset: 0, status: value, search: _orderSearch.text.trim()),
+              showNotice: false,
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _execute(
+              () => _loadOrderPage(offset: 0, search: _orderSearch.text.trim()),
+              showNotice: false,
+            ),
+            icon: const Icon(Icons.search),
+            label: const Text('Buscar órdenes'),
+          ),
+          const SizedBox(height: 8),
+        ],
         if(list.isEmpty)
           const Padding(
             padding:EdgeInsets.only(bottom:12),
-            child:Text('Aún no existen órdenes en este laboratorio.'),
+            child:Text('No hay órdenes para mostrar.'),
           )
         else
           for(final order in list.take(50))
@@ -635,11 +762,49 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                       Text((order['examCodes'] as List? ?? []).join(' · '),
                         style:const TextStyle(
                           fontSize:12,color:ColoresVitalia.textoSecundario)),
+                      if (_operator)
+                        Wrap(spacing: 8, children: [
+                          TextButton(
+                            onPressed: _busy ? null : () => setState(() {
+                              _clinicalOrder = order;
+                              _activeSection = _StationSection.clinical;
+                            }),
+                            child: Text('Abrir ${_folio(order)}'),
+                          ),
+                          if (_canReview && _isReviewable(order))
+                            TextButton(
+                              onPressed: _busy ? null : () => setState(() {
+                                _reviewOrderId = order['id'] as String;
+                                _reviewPdfDownloaded = false;
+                                _reviewConfirmed = false;
+                                _activeSection = _StationSection.review;
+                              }),
+                              child: const Text('Revisar informe'),
+                            ),
+                        ]),
                     ],
                   )),
                 ],
               ),
             ),
+        if (!recent && (_orderOffset > 0 || _moreOrders))
+          Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            OutlinedButton(
+              onPressed: _busy || _orderOffset == 0 ? null : () => _execute(
+                () => _loadOrderPage(offset: _orderOffset - _orderPageSize),
+                showNotice: false,
+              ),
+              child: const Text('Órdenes anteriores'),
+            ),
+            Text('Página ${_orderOffset ~/ _orderPageSize + 1}'),
+            OutlinedButton(
+              onPressed: _busy || !_moreOrders || _orderOffset >= 10000 ? null : () => _execute(
+                () => _loadOrderPage(offset: _orderOffset + _orderPageSize),
+                showNotice: false,
+              ),
+              child: const Text('Órdenes siguientes'),
+            ),
+          ]),
         OutlinedButton.icon(
           onPressed:_busy?null:()=>_execute(_loadLabs,showNotice:false),
           icon:const Icon(Icons.refresh),
@@ -753,7 +918,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               border:OutlineInputBorder(),labelText:'Orden del paciente',
             ),
             items:[
-              for(final order in _orders.where((v)=>v['status']=='registered'))
+              for(final order in _workflowOrders.where((v)=>v['status']=='registered'))
                 DropdownMenuItem<String>(
                   value:order['id'] as String,
                   child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
@@ -836,13 +1001,16 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               border:OutlineInputBorder(),labelText:'Orden disponible',
             ),
             items:[
-              for(final order in _orders.where((v)=>v['status']=='registered'))
+              for(final order in _workflowOrders.where((v)=>v['status']=='registered'))
                 DropdownMenuItem<String>(
                   value:order['id'] as String,
                   child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
                 ),
             ],
-            onChanged:_busy?null:(v)=>setState(()=>_uploadOrderId=v),
+            onChanged:_busy?null:(v)=>setState(() {
+              _uploadOrderId = v;
+              _confirmedMatch = false;
+            }),
           ),
         ),
         const SizedBox(height:10),
@@ -892,7 +1060,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             border:OutlineInputBorder(),labelText:'Informe pendiente de revisión',
           ),
           items:[
-            for(final order in _orders.where(_isReviewable))
+            for(final order in _workflowOrders.where(_isReviewable))
               DropdownMenuItem<String>(
                 value:order['id'] as String,
                 child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
@@ -960,6 +1128,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     setState(() => _activeSection = section);
     if (section == _StationSection.patients) {
       _execute(() => _loadPatients(offset: 0), showNotice: false);
+    } else if (section == _StationSection.orders) {
+      _execute(() => _loadOrderPage(offset: _orderOffset), showNotice: false);
     }
   }
 
@@ -986,6 +1156,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             tooltip: 'Acciones del paciente',
             enabled: !_busy,
             onSelected: (section) {
+              if (section == _StationSection.patients) {
+                _showPatientOrders(patient);
+                return;
+              }
               if (section == _StationSection.requests) {
                 _requestPatient.text = patient['id'] as String;
                 _attachToExistingOrder = false;
@@ -997,6 +1171,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               _openSection(section);
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: _StationSection.patients, child: Text('Ver órdenes del paciente')),
               PopupMenuItem(value: _StationSection.requests, child: Text('Recibir solicitud')),
               PopupMenuItem(value: _StationSection.orders, child: Text('Crear orden manual')),
             ],
@@ -1104,7 +1279,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         'Muestras y resultados', 'Registra la recepción y revisa los analitos de la orden.',
         Icons.science_outlined, [
           SilMainClinicalPanel(
-            key: ValueKey(_labId), api: widget.api, labId: _labId!, orders: _orders,
+            key: ValueKey(_labId), api: widget.api, labId: _labId!, orders: _workflowOrders.toList(),
+            initialOrderId: _clinicalOrder?['id'] as String?,
+            onOrderChanged: (id) => _clinicalOrder =
+              _workflowOrders.firstWhere((order) => order['id'] == id),
             canReview: _canReview, onExpired: widget.onExpired,
           ),
         ],

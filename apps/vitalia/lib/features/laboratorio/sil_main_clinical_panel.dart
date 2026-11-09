@@ -13,6 +13,8 @@ class SilMainClinicalPanel extends StatefulWidget {
     required this.orders,
     required this.canReview,
     required this.onExpired,
+    required this.onOrderChanged,
+    this.initialOrderId,
   });
 
   final AuthApi api;
@@ -20,6 +22,8 @@ class SilMainClinicalPanel extends StatefulWidget {
   final List<Map<String, dynamic>> orders;
   final bool canReview;
   final VoidCallback onExpired;
+  final ValueChanged<String> onOrderChanged;
+  final String? initialOrderId;
 
   @override
   State<SilMainClinicalPanel> createState() => _SilMainClinicalPanelState();
@@ -35,6 +39,17 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
   final _suggestions = <String, num>{};
   bool _busy = false;
   int _revision = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _orderId = widget.initialOrderId;
+    if (_orderId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _run(_load);
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -285,6 +300,7 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
           identifier: 'sil-clinical-order',
           child: DropdownButtonFormField<String>(
             key: ValueKey(widget.labId),
+            initialValue: _orderId,
             isExpanded: true,
             decoration: const InputDecoration(
               labelText: 'Orden para muestras y resultados',
@@ -300,6 +316,7 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
                 ? null
                 : (orderId) {
                     if (orderId == null) return;
+                    widget.onOrderChanged(orderId);
                     setState(() {
                       _orderId = orderId;
                       _details = null;

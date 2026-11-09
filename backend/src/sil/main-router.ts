@@ -204,11 +204,18 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     const data=z.object({
       limit:z.coerce.number().int().min(1).max(50).default(20),
       offset:z.coerce.number().int().min(0).max(10000).default(0),
+      search:z.string().trim().min(1).max(254).optional(),
+      status:z.enum(['registered','report_attached','report_published']).optional(),
+      patientId:uuid.optional(),
     }).strict().safeParse(req.query);
     if(!data.success){res.status(400).json({error:{code:'INVALID_PAGE'}});return;}
+    if(res.locals.account.role!=='operador_laboratorio'&&(data.data.search||data.data.patientId)){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    const {limit,offset,...filters}=data.data;
     res.json(await main.listOrders(
       req.params.labId as string,res.locals.account.id,res.locals.account.role,
-      data.data.limit,data.data.offset));
+      limit,offset,filters));
   });
 
   const allowPatientInvite=createLoginAttemptLimiter();

@@ -138,7 +138,11 @@ class AuthApi {
     final queries=candidate?.queryParametersAll ?? <String,List<String>>{};
     final isOrders=candidate?.path.endsWith('/orders') ?? false;
     final isPatients=candidate?.path.endsWith('/patients') ?? false;
-    final allowedQuery = isPatients ? {'limit','offset','search'} : {'limit','offset'};
+    final allowedQuery = {
+      'limit', 'offset',
+      if (isPatients || isOrders) 'search',
+      if (isOrders) ...{'status', 'patientId'},
+    };
     if(candidate==null||candidate.hasScheme||candidate.hasAuthority||
        candidate.hasFragment||!allowed.hasMatch(candidate.path)||
        (queries.isNotEmpty&&(body!=null||(!isOrders&&!isPatients)))||

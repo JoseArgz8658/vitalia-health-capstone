@@ -339,7 +339,9 @@ export function createSilMainService(db:Pool) {
     },
 
     async listOrders(labId:string,accountId:string,role:string,
-      limit:number,offset:number){
+      limit:number,offset:number,filters:{search?:string;status?:string;patientId?:string}={}){
+      const search=filters.search??null;
+      const folio=search?.match(/^(?:VH-)?0*(\d+)$/i)?.[1]??null;
       if(role!=='administrador')await operator(labId,accountId);
       const results=await db.query(
         `SELECT o.id,o.order_number AS "orderNumber",o.status,
@@ -348,9 +350,14 @@ export function createSilMainService(db:Pool) {
              WHERE e.order_id=o.id ORDER BY e.exam_code) AS "examCodes"
          FROM public.vitalia_sil_main_orders o
          JOIN public.vitalia_sil_main_laboratories l ON l.id=o.lab_id AND l.active
-         WHERE o.lab_id=$1 ORDER BY o.created_at DESC,o.id LIMIT $2 OFFSET $3`,
-        [labId,limit,offset]);
-      return {orders:results.rows};
+         JOIN public.vitalia_accounts a ON a.id=o.patient_id
+         WHERE o.lab_id=$1
+           AND ($4::text IS NULL OR o.order_number::text=$5 OR strpos(lower(a.email),lower($4))>0)
+           AND ($6::text IS NULL OR o.status=$6)
+           AND ($7::uuid IS NULL OR o.patient_id=$7)
+         ORDER BY o.created_at DESC,o.id LIMIT $2 OFFSET $3`,
+        [labId,limit+1,offset,search,folio,filters.status??null,filters.patientId??null]);
+      return {orders:results.rows.slice(0,limit),hasMore:results.rows.length>limit};
     },
 
     async clinicalDetails(labId:string,orderId:string,operatorId:string){
