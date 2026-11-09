@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:file_selector/file_selector.dart';
 
 import '../../core/auth_api.dart';
+import '../../core/tema_vitalia.dart';
+import 'directorio_pacientes_sil.dart';
 
 enum _OperatorSection {
   dashboard,
@@ -35,19 +37,24 @@ class OperadorLaboratorioPage extends StatefulWidget {
 
 class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   static const _pageSize = 20;
-  static const _navy = Color(0xFF142A41);
-  static const _teal = Color(0xFF086F72);
-  static const _workspace = Color(0xFFF4F7FB);
-  static const _line = Color(0xFFDBE5EE);
+  static const _navy = ColoresVitalia.texto;
+  static const _teal = ColoresVitalia.verde;
+  static const _workspace = ColoresVitalia.fondoAzul;
+  static const _line = ColoresVitalia.borde;
   static const _nav = <(_OperatorSection, IconData, String)>[
     (_OperatorSection.dashboard, Icons.dashboard_outlined, 'Resumen'),
     (_OperatorSection.orders, Icons.assignment_outlined, 'Órdenes'),
     (_OperatorSection.request, Icons.note_add_outlined, 'Recibir solicitud'),
-    (_OperatorSection.reviewQueue, Icons.fact_check_outlined, 'Revisión'),
-    (_OperatorSection.patient, Icons.badge_outlined, 'Pacientes DEMO'),
+    (_OperatorSection.reviewQueue, Icons.fact_check_outlined, 'Revisión interna'),
+    (_OperatorSection.patient, Icons.badge_outlined, 'Pacientes'),
   ];
 
+  // La búsqueda de fichas es distinta al correo usado al crear una orden.
   final _patientController = TextEditingController();
+  final _patientLookup = TextEditingController();
+  final _patientFormKey = GlobalKey<FormState>();
+  final _directoryKey = GlobalKey<DirectorioPacientesSilState>();
+  bool _mobilePatientDetail = false;
   final _requestPatientEmail = TextEditingController(
     text:'paciente.sil@example.invalid');
   final _requestDocumentReference = TextEditingController();
@@ -152,6 +159,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   @override
   void dispose() {
     _patientController.dispose();
+    _patientLookup.dispose();
     _requestPatientEmail.dispose();
     _requestDocumentReference.dispose();
     _requestPrescriberName.dispose();
@@ -631,17 +639,18 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     });
   }
 
-  Future<void> _loadDemoPatient() => _run(() async {
-    final email = _patientController.text.trim().toLowerCase();
-    if (!email.endsWith('@example.invalid')) {
-      throw const AuthFailure('Solo se permiten cuentas ficticias example.invalid.');
+  Future<void> _loadDemoPatient({String? email}) => _run(() async {
+    final address = (email ?? _patientLookup.text).trim().toLowerCase();
+    if (!address.endsWith('@example.invalid')) {
+      throw const AuthFailure('Solo se permiten cuentas ficticias @example.invalid.');
     }
     final response = await widget.api.silRequest(
-      '/patients/profile?email=${Uri.encodeQueryComponent(email)}',
+      '/patients/profile?email=${Uri.encodeQueryComponent(address)}',
     );
     final patient = Map<String, dynamic>.from(response['patient'] as Map);
     if (!mounted) return;
     setState(() {
+      _patientLookup.text = address;
       _patientDemoLoaded = patient;
       _patientDemoGiven.text = patient['givenNames'] as String? ?? '';
       _patientDemoFamily.text = patient['familyNames'] as String? ?? '';
@@ -649,11 +658,57 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       _patientDemoPhone.text = patient['contactPhoneDemo'] as String? ?? '';
       _patientDemoSex = patient['sexForReference'] as String? ?? 'not_specified';
       _syntheticPatientConfirmed = false;
+      _mobilePatientDetail = true;
     });
   });
 
+  void _prepareRequestForPatient(String email) {
+    if (_busy) return;
+    setState(() {
+      // El cambio de paciente invalida el PDF, la prelectura y las
+      // confirmaciones: nunca reutilizar comprobaciones entre pacientes.
+      _requestPatientEmail.text = email;
+      _requestPdf = null;
+      _requestPreview = null;
+      _requestBranchCode = null;
+      _requestDate = null;
+      _requestExamCodes.clear();
+      _requestDocumentReference.clear();
+      _requestPrescriberName.clear();
+      _requestHumanConfirmed = false;
+      _section = _OperatorSection.request;
+      _error = null;
+      _message = 'Paciente de prueba seleccionado. Adjunta su solicitud PDF y coteja la identidad.';
+    });
+  }
+
+  void _openPatientOrders(String email) {
+    if (_busy) return;
+    _searchController.text = email;
+    setState(() {
+      _section = _OperatorSection.orders;
+      _filterStatus = null;
+      _page = 0;
+      _error = null;
+      _message = null;
+    });
+    _refreshOrders();
+  }
+
+  Widget _patientDirectory() => DirectorioPacientesSil(
+    key: _directoryKey,
+    api: widget.api,
+    onExpired: widget.onExpired,
+    selectedEmail: _patientDemoLoaded?['email'] as String?,
+    onOpenProfile: (email) => _loadDemoPatient(email: email),
+    onPrepareRequest: _prepareRequestForPatient,
+    onViewOrders: _openPatientOrders,
+  );
+
+
   Future<void> _saveDemoPatient() => _run(() async {
-    if (_patientDemoLoaded == null || !_syntheticPatientConfirmed) {
+    if (_patientDemoLoaded == null || !_syntheticPatientConfirmed ||
+        !(_patientFormKey.currentState?.validate() ?? false)) {
       throw const AuthFailure('Consulta el paciente y confirma que todos los datos son ficticios.');
     }
     final email = _patientDemoLoaded!['email'] as String;
@@ -671,8 +726,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     setState(() {
       _patientDemoLoaded = Map<String, dynamic>.from(result['patient'] as Map);
       _syntheticPatientConfirmed = false;
-      _message = 'Ficha sintética guardada. Comprueba el identificador del PDF antes de publicarlo.';
+      _message = 'Ficha DEMO guardada. Coteja su identidad con el PDF antes de crear una solicitud.';
     });
+    _directoryKey.currentState?.refresh();
   });
 
   void _clearAiSuggestedFields() {
@@ -2453,129 +2509,235 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     ]);
   }
 
-  Widget _demoPatientView() => _panel(
-    'Ficha de identificación (solo datos ficticios)',
-    'Consulta y completa el perfil utilizado para cotejar la solicitud médica. No ingreses RUT, teléfonos ni datos personales reales.',
+  bool get _demoProfileComplete {
+    final p = _patientDemoLoaded;
+    return p != null &&
+        p['syntheticIdentifier'] is String &&
+        (p['givenNames'] as String? ?? '').trim().isNotEmpty &&
+        (p['familyNames'] as String? ?? '').trim().isNotEmpty &&
+        p['birthDate'] is String;
+  }
+
+  Widget _demoPatientForm({bool compact = false}) => _panel(
+    'Ficha de identificación DEMO',
+    'Comprueba la identidad sintética antes de asociar un documento.',
     Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      const Text('Paso 1 · Busca una cuenta de prueba existente. '
-          'Paso 2 · Comprueba o completa sus datos ficticios. '
-          'Paso 3 · Guarda la ficha para utilizarla al recibir una solicitud.'),
-      const SizedBox(height: 16),
+      if (compact && _mobilePatientDetail) ...[
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: _busy ? null : () => setState(() => _mobilePatientDetail = false),
+            icon: const Icon(Icons.arrow_back),
+            label: const Text('Volver al directorio'),
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
       TextField(
-        controller: _patientController,
+        controller: _patientLookup,
         enabled: !_busy,
+        textInputAction: TextInputAction.search,
+        onSubmitted: (_) => _loadDemoPatient(),
         decoration: const InputDecoration(
-          labelText: 'Correo de la cuenta de pruebas',
+          labelText: 'Correo de la cuenta ficticia',
           hintText: 'paciente.sil@example.invalid',
-          border: OutlineInputBorder(),
+          prefixIcon: Icon(Icons.alternate_email),
         ),
       ),
-      const SizedBox(height: 12),
+      const SizedBox(height: 9),
       Align(
         alignment: Alignment.centerLeft,
         child: OutlinedButton.icon(
-          onPressed: _busy ? null : _loadDemoPatient,
-          icon: const Icon(Icons.search),
-          label: const Text('Consultar paciente'),
+          onPressed: _busy ? null : () => _loadDemoPatient(),
+          icon: const Icon(Icons.person_search_outlined),
+          label: const Text('Consultar ficha'),
         ),
       ),
-      if (_patientDemoLoaded != null) ...[
+      if (_patientDemoLoaded == null) ...[
         const SizedBox(height: 18),
+        const Text('Selecciona «Ficha» junto a un paciente del directorio '
+          'o consulta una cuenta DEMO por su correo. No se crean cuentas '
+          'desde documentos médicos ni desde esta pantalla.'),
+      ] else ...[
+        const SizedBox(height: 15),
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: const Color(0xFFE5F5F3),
-            borderRadius: BorderRadius.circular(10),
+            color: ColoresVitalia.azulSuave,
+            borderRadius: BorderRadius.circular(11),
           ),
-          child: const Row(children: [
-            Icon(Icons.verified_user_outlined, color: _teal),
-            SizedBox(width: 10),
-            Expanded(child: Text('Ficha encontrada. Revisa los campos antes de guardar; esta ficha sirve para el cotejo de identidad DEMO.')),
+          child: Row(children: [
+            const Icon(Icons.account_circle_outlined,
+                color: ColoresVitalia.azul),
+            const SizedBox(width: 10),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${_patientDemoLoaded!['email']}',
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(
+                  _demoProfileComplete
+                      ? 'Ficha con datos para cotejo documental'
+                      : 'Ficha incompleta: completa y guarda los datos sintéticos',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            )),
           ]),
         ),
-        const SizedBox(height: 14),
-        Text('Cuenta: ${_patientDemoLoaded!['email']}',
-            style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 12),
-        if (_patientDemoLoaded!['syntheticIdentifier'] case final String identifier)
-          SelectableText('Identificador ficticio: $identifier')
-        else
-          const Text('Vitalia asignará el identificador ficticio al guardar.'),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _patientDemoGiven,
-          maxLength: 100,
-          decoration: const InputDecoration(
-            labelText: 'Nombres ficticios',
-            hintText: 'Paciente',
-            border: OutlineInputBorder(),
-          ),
+        SelectableText('Identificador: '
+          '${_patientDemoLoaded!['syntheticIdentifier'] ?? 'Se asignará al guardar'}'),
+        const SizedBox(height: 8),
+        Form(
+          key: _patientFormKey,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            TextFormField(
+              controller: _patientDemoGiven,
+              maxLength: 100,
+              enabled: !_busy,
+              validator: (value) => (value ?? '').trim().length < 2
+                  ? 'Ingresa al menos dos caracteres ficticios.' : null,
+              decoration: const InputDecoration(
+                labelText: 'Nombres ficticios',
+                hintText: 'Paciente',
+                counterText: '',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _patientDemoFamily,
+              maxLength: 100,
+              enabled: !_busy,
+              validator: (value) => (value ?? '').trim().length < 2
+                  ? 'Ingresa al menos dos caracteres ficticios.' : null,
+              decoration: const InputDecoration(
+                labelText: 'Apellidos ficticios',
+                hintText: 'De prueba',
+                counterText: '',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _patientDemoBirth,
+              enabled: !_busy,
+              validator: (value) {
+                final date = (value ?? '').trim();
+                final parsed = DateTime.tryParse(date);
+                if (!RegExp(r'^\\d{4}-\\d{2}-\\d{2}$').hasMatch(date) ||
+                    parsed == null ||
+                    parsed.toIso8601String().substring(0, 10) != date ||
+                    date.compareTo('1900-01-01') < 0 ||
+                    date.compareTo(DateTime.now().toIso8601String().substring(0, 10)) > 0) {
+                  return 'Utiliza una fecha ficticia válida: AAAA-MM-DD.';
+                }
+                return null;
+              },
+              decoration: const InputDecoration(
+                labelText: 'Fecha de nacimiento ficticia',
+                hintText: '1990-01-01',
+              ),
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              key: ValueKey(_patientDemoLoaded!['id']),
+              initialValue: _patientDemoSex,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Sexo para referencias DEMO',
+              ),
+              items: const [
+                DropdownMenuItem(value: 'not_specified', child: Text('No especificado')),
+                DropdownMenuItem(value: 'female', child: Text('Femenino')),
+                DropdownMenuItem(value: 'male', child: Text('Masculino')),
+              ],
+              onChanged: _busy ? null : (value) =>
+                  setState(() => _patientDemoSex = value ?? 'not_specified'),
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _patientDemoPhone,
+              maxLength: 20,
+              enabled: !_busy,
+              decoration: const InputDecoration(
+                labelText: 'Teléfono inventado (opcional)',
+                counterText: '',
+              ),
+            ),
+          ]),
         ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _patientDemoFamily,
-          maxLength: 100,
-          decoration: const InputDecoration(
-            labelText: 'Apellidos ficticios',
-            hintText: 'De Prueba',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _patientDemoBirth,
-          decoration: const InputDecoration(
-            labelText: 'Fecha de nacimiento ficticia (AAAA-MM-DD)',
-            hintText: '1990-01-01',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 10),
-        DropdownButtonFormField<String>(
-          initialValue: _patientDemoSex,
-          decoration: const InputDecoration(
-            labelText: 'Sexo para referencias de laboratorio (demo)',
-            border: OutlineInputBorder(),
-          ),
-          items: const [
-            DropdownMenuItem(value: 'not_specified',
-                child: Text('No especificado')),
-            DropdownMenuItem(value: 'female', child: Text('Femenino')),
-            DropdownMenuItem(value: 'male', child: Text('Masculino')),
-          ],
-          onChanged: _busy ? null : (value) =>
-              setState(() => _patientDemoSex = value ?? 'not_specified'),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _patientDemoPhone,
-          maxLength: 20,
-          decoration: const InputDecoration(
-            labelText: 'Teléfono ficticio (opcional)',
-            hintText: '000000000',
-            border: OutlineInputBorder(),
-          ),
+        const SizedBox(height: 8),
+        const Text(
+          'La edición queda bloqueada por el servidor cuando existen '
+          'solicitudes médicas o informes externos asociados.',
+          style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario),
         ),
         CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
           controlAffinity: ListTileControlAffinity.leading,
           value: _syntheticPatientConfirmed,
           onChanged: _busy ? null : (value) =>
               setState(() => _syntheticPatientConfirmed = value ?? false),
-          title: const Text('Confirmo que la ficha contiene únicamente datos '
-              'inventados para la demostración.'),
+          title: const Text('Confirmo que todos los datos son ficticios.'),
         ),
-        const SizedBox(height: 10),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            onPressed: _busy ? null : _saveDemoPatient,
-            icon: const Icon(Icons.save_outlined),
-            label: const Text('Guardar ficha de prueba'),
+        FilledButton.icon(
+          onPressed: _busy || !_syntheticPatientConfirmed
+              ? null : _saveDemoPatient,
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('Guardar ficha de prueba'),
+        ),
+        if (!_syntheticPatientConfirmed)
+          const Padding(
+            padding: EdgeInsets.only(top: 7),
+            child: Text('Para guardar, confirma primero el uso exclusivo de datos ficticios.',
+              style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario)),
           ),
-        ),
+        const Divider(height: 25),
+        const Text('Continuar con el paciente',
+          style: TextStyle(fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 6, children: [
+          OutlinedButton.icon(
+            onPressed: !_busy && _demoProfileComplete
+                ? () => _prepareRequestForPatient(_patientDemoLoaded!['email'] as String)
+                : null,
+            icon: const Icon(Icons.note_add_outlined, size: 18),
+            label: const Text('Recibir solicitud'),
+          ),
+          OutlinedButton.icon(
+            onPressed: _busy ? null
+                : () => _openPatientOrders(_patientDemoLoaded!['email'] as String),
+            icon: const Icon(Icons.assignment_outlined, size: 18),
+            label: const Text('Ver órdenes'),
+          ),
+        ]),
+        if (!_demoProfileComplete)
+          const Text('Completa y guarda la ficha antes de recibir una solicitud.',
+            style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario)),
       ],
     ]),
     icon: Icons.badge_outlined,
+  );
+
+  Widget _demoPatientView() => LayoutBuilder(
+    builder: (context, constraints) {
+      final wide = constraints.maxWidth >= 1100;
+      if (wide) {
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(flex: 7, child: _patientDirectory()),
+          const SizedBox(width: 16),
+          SizedBox(width: 430, child: _demoPatientForm()),
+        ]);
+      }
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Visibility(
+          visible: !_mobilePatientDetail,
+          maintainState: true,
+          child: _patientDirectory(),
+        ),
+        if (_mobilePatientDetail) _demoPatientForm(compact: true),
+      ]);
+    },
   );
 
   Widget _bodyForSection() => switch (_section) {
