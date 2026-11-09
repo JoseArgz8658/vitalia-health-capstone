@@ -1,6 +1,6 @@
 const request=require('supertest');
 const {createApp}=require('../dist/app');
-const {createSilMainService}=require('../dist/sil/main-service');
+const {createSilMainService,SilMainAccessDenied}=require('../dist/sil/main-service');
 
 const token='b'.repeat(64);
 const bearer={Authorization:'Bearer '+token};
@@ -14,6 +14,8 @@ function demo(role='operador_laboratorio',authenticated=true){
   const service={
     laboratoriesFor:jest.fn().mockResolvedValue({laboratories:[]}),
     createLaboratory:jest.fn().mockResolvedValue({laboratory:{id:lab}}),
+    setReviewPermission:jest.fn().mockResolvedValue({membership:{canReviewReports:true}}),
+    reportForReview:jest.fn().mockResolvedValue({fileName:'revision.pdf',bytes:Buffer.from('%PDF-1.4')}),
     grantStaff:jest.fn().mockResolvedValue({membership:{labId:lab}}),
     associatePatient:jest.fn().mockResolvedValue({patientId:patient,linked:true}),
     createOrder:jest.fn().mockResolvedValue({order:{id:order}}),
@@ -70,8 +72,10 @@ test('solo administrador habilita un laboratorio o personal',async()=>{
     .set(bearer).send({displayName:'Laboratorio privado'})).status).toBe(201);
   expect(service.createLaboratory).toHaveBeenCalledWith('Laboratorio privado',operator);
   expect((await request(application).post('/api/sil/main/labs/'+lab+'/staff')
-    .set(bearer).send({accountId:patient,kind:'validator'})).status).toBe(201);
-  expect(service.grantStaff).toHaveBeenCalledWith(lab,patient,'validator',operator);
+    .set(bearer).send({accountId:patient})).status).toBe(201);
+  expect(service.grantStaff).toHaveBeenCalledWith(lab,patient,operator);
+  expect((await request(application).post('/api/sil/main/labs/'+lab+'/staff')
+    .set(bearer).send({accountId:patient,kind:'validator'})).status).toBe(400);
 });
 test('orden principal exige paciente y prestaciones válidas',async()=>{
   const {application,service}=demo();
@@ -85,16 +89,37 @@ test('orden principal exige paciente y prestaciones válidas',async()=>{
   ])expect((await request(application).post('/api/sil/main/labs/'+lab+'/orders')
     .set(bearer).send(body)).status).toBe(400);
 });
-test('solo validador profesional puede publicar informe',async()=>{
-  const {application,service}=demo('operador_laboratorio');
-  expect((await request(application).post(
-    '/api/sil/main/labs/'+lab+'/orders/'+order+'/report/publish')
-    .set(bearer).send({professionalReviewConfirmed:true})).status).toBe(403);
-  expect(service.publishReport).not.toHaveBeenCalled();
-  const clinician=demo('profesional');
-  expect((await request(clinician.application).post(
-    '/api/sil/main/labs/'+lab+'/orders/'+order+'/report/publish')
-    .set(bearer).send({professionalReviewConfirmed:true})).status).toBe(201);
+test('solo administración puede conceder o retirar el permiso por laboratorio',async()=>{
+  const path='/api/sil/main/labs/'+lab+'/staff/review-permission';
+  const admin=demo('administrador');
+  const staff=demo();
+  for(const enabled of [true,false]){
+    const body={accountId:patient,enabled};
+    expect((await request(admin.application).post(path).set(bearer).send(body)).status).toBe(200);
+    expect(admin.service.setReviewPermission).toHaveBeenLastCalledWith(lab,patient,operator,enabled);
+    expect((await request(staff.application).post(path).set(bearer).send(body)).status).toBe(403);
+  }
+  expect(staff.service.setReviewPermission).not.toHaveBeenCalled();
+});
+
+test('revisión y publicación requieren sesión de operador y permiso del servicio',async()=>{
+  const prefix='/api/sil/main/labs/'+lab+'/orders/'+order+'/report';
+  const body={operatorReviewConfirmed:true};
+  for(const role of ['profesional','administrador','paciente']){
+    const other=demo(role);
+    expect((await request(other.application).get(prefix+'/file').set(bearer)).status).toBe(403);
+    expect((await request(other.application).post(prefix+'/publish').set(bearer).send(body)).status).toBe(403);
+    expect(other.service.publishReport).not.toHaveBeenCalled();
+  }
+  const {application,service}=demo();
+  expect((await request(application).get(prefix+'/file').set(bearer)).status).toBe(200);
+  expect(service.reportForReview).toHaveBeenCalledWith(lab,order,operator);
+  expect((await request(application).post(prefix+'/publish').set(bearer)
+    .send({operatorReviewConfirmed:false})).status).toBe(400);
+  expect((await request(application).post(prefix+'/publish').set(bearer).send(body)).status).toBe(201);
+  expect(service.publishReport).toHaveBeenCalledWith(lab,order,operator);
+  service.publishReport.mockRejectedValueOnce(new SilMainAccessDenied());
+  expect((await request(application).post(prefix+'/publish').set(bearer).send(body)).status).toBe(403);
 });
 test('informes del paciente pertenecen a su cuenta y no aceptan id externo',async()=>{
   const {application,service}=demo('paciente');

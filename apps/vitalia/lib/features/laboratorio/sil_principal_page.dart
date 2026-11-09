@@ -46,7 +46,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   bool _confirmedMatch = false;
   bool _reviewConfirmed = false;
   bool _reviewPdfDownloaded = false;
-  String _staffKind = 'operator';
   String? _labId;
   String? _requestOrderId;
   XFile? _medicalRequestFile;
@@ -72,7 +71,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
 
   bool get _admin => widget.role=='administrador';
   bool get _operator => widget.role=='operador_laboratorio';
-  bool get _validator => widget.role=='profesional';
+  bool get _canReview => _operator && _labs.any(
+    (lab)=>lab['id']==_labId && lab['canReviewReports']==true,
+  );
+  bool _isReviewable(Map<String,dynamic> order) =>
+    order['status']=='report_attached' && order['uploadedByAnotherOperator']==true;
 
   @override
   void initState(){
@@ -141,7 +144,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     setState((){
       _orders=orders;
       if(!orders.any((v)=>v['id']==_uploadOrderId))_uploadOrderId=null;
-      if(!orders.any((v)=>v['id']==_reviewOrderId))_reviewOrderId=null;
+      if(!orders.any((v)=>v['id']==_reviewOrderId && _isReviewable(v))){
+        _reviewOrderId=null;
+        _reviewPdfDownloaded=false;
+        _reviewConfirmed=false;
+      }
     });
   }
 
@@ -246,9 +253,17 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       throw const AuthFailure('Selecciona laboratorio y escribe el UUID de la cuenta.');
     await widget.api.silMainRequest('/labs/$lab/staff',body:{
       'accountId':accountId,
-      'kind':_staffKind,
     });
-    _staffAccount.clear();
+  }
+
+  Future<void> _setReviewPermission(bool enabled) async {
+    final lab=_labId,accountId=_requireUuid(_staffAccount.text);
+    if(lab==null||accountId==null){
+      throw const AuthFailure('Selecciona laboratorio y escribe el UUID del operador.');
+    }
+    await widget.api.silMainRequest('/labs/$lab/staff/review-permission',body:{
+      'accountId':accountId,'enabled':enabled,
+    });
   }
 
   Future<void> _linkPatient() async {
@@ -373,11 +388,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     final lab=_labId,orderId=_reviewOrderId;
     if(lab==null||orderId==null||
        !_reviewPdfDownloaded||!_reviewConfirmed){
-      throw const AuthFailure('Selecciona el informe y confirma la revisión profesional.');
+      throw const AuthFailure('Selecciona el informe y confirma la revisión del informe.');
     }
     await widget.api.silMainRequest(
       '/labs/$lab/orders/$orderId/report/publish',
-      body:{'professionalReviewConfirmed':true},
+      body:{'operatorReviewConfirmed':true},
     );
     if(mounted)setState((){
       _reviewOrderId=null;
@@ -497,9 +512,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               ),
             ),
         OutlinedButton.icon(
-          onPressed:_busy?null:()=>_execute(_loadOrders,showNotice:false),
+          onPressed:_busy?null:()=>_execute(_loadLabs,showNotice:false),
           icon:const Icon(Icons.refresh),
-          label:const Text('Actualizar órdenes'),
+          label:const Text('Actualizar estación'),
         ),
       ],
     );
@@ -529,26 +544,22 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           _action('Crear invitación',Icons.person_add_alt_1,_inviteOperator),
         ]),
       if(_labId!=null)
-        _section('Asignar personal autorizado',
-          'La cuenta debe tener rol autorizado. Para validar resultados, '
-          'el profesional necesita acreditación verificada.',
+        _section('Acceso y permiso de revisión',
+          'Asigna un operador existente al laboratorio. Concede el permiso de '
+          'revisión solo tras verificar su capacitación para este flujo.',
           Icons.admin_panel_settings_outlined,[
-          _field(_staffAccount,'UUID de la cuenta de usuario'),
-          DropdownButtonFormField<String>(
-            value:_staffKind,
-            decoration:const InputDecoration(
-              border:OutlineInputBorder(),labelText:'Tipo de acceso',
+          _field(_staffAccount,'UUID de la cuenta del operador'),
+          Wrap(spacing:8,runSpacing:8,children:[
+            _action('Asignar operador',Icons.person_add_alt_1,_grantStaff),
+            OutlinedButton(
+              onPressed:_busy?null:()=>_execute(()=>_setReviewPermission(true)),
+              child:const Text('Autorizar revisión'),
             ),
-            items:const [
-              DropdownMenuItem(value:'operator',child:Text('Operador de laboratorio')),
-              DropdownMenuItem(value:'validator',child:Text('Profesional validador')),
-            ],
-            onChanged:_busy?null:(v){
-              if(v!=null)setState(()=>_staffKind=v);
-            },
-          ),
-          const SizedBox(height:12),
-          _action('Asignar acceso',Icons.verified_user_outlined,_grantStaff),
+            OutlinedButton(
+              onPressed:_busy?null:()=>_execute(()=>_setReviewPermission(false)),
+              child:const Text('Retirar permiso'),
+            ),
+          ]),
         ]),
     ]);
   }
@@ -636,7 +647,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       ]),
       _section('Adjuntar informe autorizado',
         'Solo se reciben PDF ya validados externamente. '
-        'Publicar requiere una segunda revisión profesional.',
+        'Publicar requiere la revisión de otro operador autorizado.',
         Icons.upload_file_outlined,[
         DropdownButtonFormField<String>(
           value:_uploadOrderId,
@@ -682,10 +693,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ]);
   }
 
-  Widget _validatorPanel(){
+  Widget _reviewPanel(){
     return _section('Validación y publicación',
-      'Solo un profesional acreditado puede publicar; no puede '
-      'ser quien adjuntó el PDF.',
+      'Revisa informes adjuntados por otro operador antes de publicarlos.',
       Icons.fact_check_outlined,[
       DropdownButtonFormField<String>(
         value:_reviewOrderId,
@@ -694,7 +704,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           border:OutlineInputBorder(),labelText:'Informe pendiente de revisión',
         ),
         items:[
-          for(final order in _orders.where((v)=>v['status']=='report_attached'))
+          for(final order in _orders.where(_isReviewable))
             DropdownMenuItem<String>(
               value:order['id'] as String,
               child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
@@ -724,20 +734,23 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       CheckboxListTile(
         contentPadding:EdgeInsets.zero,
         controlAffinity:ListTileControlAffinity.leading,
-        title:const Text('Confirmo revisión profesional y autorización externa'),
+        title:const Text('Confirmo que revisé el PDF y su autorización externa'),
         value:_reviewConfirmed,
         onChanged:_busy||!_reviewPdfDownloaded
             ?null
             :(v)=>setState(()=>_reviewConfirmed=v??false),
       ),
-      _action('Publicar informe',Icons.verified_outlined,_publishReport),
+      FilledButton.icon(
+        onPressed:_busy||!_reviewConfirmed?null:()=>_execute(_publishReport),
+        icon:const Icon(Icons.verified_outlined),
+        label:const Text('Publicar informe'),
+      ),
     ]);
   }
 
   @override
   Widget build(BuildContext context){
-    final roleName=_admin?'Administración'
-      :_operator?'Laboratorio':'Validación profesional';
+    final roleName=_admin?'Administración':'Laboratorio';
     return Scaffold(
       appBar:AppBar(
         title:const Text('Vitalia Health · SIL principal'),
@@ -816,7 +829,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                     final controls=Column(children:[
                       if(_admin)_adminPanel(),
                       if(_operator&&_labId!=null)_operatorPanel(),
-                      if(_validator&&_labId!=null)_validatorPanel(),
+                      if(_canReview)_reviewPanel(),
                     ]);
                     final orders=_labId==null
                       ?const SizedBox.shrink()

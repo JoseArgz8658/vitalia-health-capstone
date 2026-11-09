@@ -203,7 +203,7 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
             notice: _accessNotice,
           )
         : _mainSil &&
-            <String>['administrador','operador_laboratorio','profesional']
+            <String>['administrador','operador_laboratorio']
               .contains(_user!['role'])
         ? SilPrincipalPage(
             key: ValueKey(_user!['id']),
@@ -217,21 +217,6 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
                       builder: (_) => AdministracionLaboratorioPage(
                         email: _user!['email'] as String,
                         onLogout: _logout,
-                      ),
-                    ),
-                  )
-              : _user!['role'] == 'profesional'
-              ? () => _navigator.currentState?.push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => AsignacionesPage(
-                        auth: _api,
-                        email: _user!['email'] as String,
-                        role: 'profesional',
-                        onExpired: _expired,
-                        onLogout: _logout,
-                        sessionBusy: _busy,
-                        notice: _message,
-                        onProfile: _openProfile,
                       ),
                     ),
                   )

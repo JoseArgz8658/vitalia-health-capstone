@@ -74,7 +74,7 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     next();
   };
   const staff=(req:express.Request,res:express.Response,next:express.NextFunction)=>{
-    if(!['administrador','operador_laboratorio','profesional'].includes(
+    if(!['administrador','operador_laboratorio'].includes(
       res.locals.account.role)){
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
     }
@@ -112,14 +112,22 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
   router.post('/labs/:labId/staff',administrator,labPath,async(req,res)=>{
     const data=z.object({
       accountId:uuid,
-      kind:z.enum(['operator','validator']),
     }).strict().safeParse(req.body);
     if(!data.success){
       res.status(400).json({error:{code:'INVALID_STAFF'}});return;
     }
     res.status(201).json(await main.grantStaff(
-      req.params.labId as string,data.data.accountId,data.data.kind,
+      req.params.labId as string,data.data.accountId,
       res.locals.account.id));
+  });
+
+  router.post('/labs/:labId/staff/review-permission',administrator,labPath,async(req,res)=>{
+    const data=z.object({accountId:uuid,enabled:z.boolean()}).strict().safeParse(req.body);
+    if(!data.success){
+      res.status(400).json({error:{code:'INVALID_STAFF'}});return;
+    }
+    res.json(await main.setReviewPermission(
+      req.params.labId as string,data.data.accountId,res.locals.account.id,data.data.enabled));
   });
 
   router.post('/labs/:labId/patients',staff,labPath,async(req,res)=>{
@@ -207,12 +215,12 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       if(!uuid.safeParse(req.params.orderId).success){
         res.status(404).json({error:{code:'NOT_FOUND'}});return;
       }
-      if(!['profesional','operador_laboratorio'].includes(res.locals.account.role)){
+      if(res.locals.account.role!=='operador_laboratorio'){
         res.status(403).json({error:{code:'FORBIDDEN'}});return;
       }
       const file=await main.downloadMedicalRequest(
         req.params.labId as string,req.params.orderId as string,
-        res.locals.account.id,res.locals.account.role);
+        res.locals.account.id);
       res.set('Cache-Control','private, no-store');
       res.set('X-Content-Type-Options','nosniff');
       res.set('Content-Type','application/pdf');
@@ -260,7 +268,7 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
 
   router.get('/labs/:labId/orders/:orderId/report/file',
     staff,labPath,async(req,res)=>{
-      if(res.locals.account.role!=='profesional'){
+      if(res.locals.account.role!=='operador_laboratorio'){
         res.status(403).json({error:{code:'FORBIDDEN'}});return;
       }
       if(!uuid.safeParse(req.params.orderId).success){
@@ -280,14 +288,14 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
 
   router.post('/labs/:labId/orders/:orderId/report/publish',staff,labPath,
     async(req,res)=>{
-      if(res.locals.account.role!=='profesional'){
+      if(res.locals.account.role!=='operador_laboratorio'){
         res.status(403).json({error:{code:'FORBIDDEN'}});return;
       }
       if(!uuid.safeParse(req.params.orderId).success){
         res.status(404).json({error:{code:'NOT_FOUND'}});return;
       }
       const data=z.object({
-        professionalReviewConfirmed:z.literal(true),
+        operatorReviewConfirmed:z.literal(true),
       }).strict().safeParse(req.body);
       if(!data.success){
         res.status(400).json({error:{code:'INVALID_PUBLICATION'}});return;

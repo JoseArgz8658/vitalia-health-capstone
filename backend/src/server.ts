@@ -91,9 +91,11 @@ async function main(): Promise<void> {
            AND to_regclass('public.vitalia_sil_main_orders') IS NOT NULL
            AND to_regclass('public.vitalia_sil_main_reports') IS NOT NULL
            AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
-             WHERE version='038_sil_main_postanalytical') AS ready`);
+             WHERE version='038_sil_main_postanalytical')
+           AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
+             WHERE version='039_sil_main_operator_review') AS ready`);
       if(mainSchema.rows[0]?.ready!==true) {
-        throw new Error('SIL principal solicitado sin esquema 038: activación bloqueada.');
+        throw new Error('SIL principal solicitado sin esquema 039: activación bloqueada.');
       }
     }
     const storageConfig = readStorageConfig(process.env);

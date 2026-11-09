@@ -8,7 +8,8 @@ import {silMainRehearsedPlan} from './sil-migration-policy';
 
 const old012='012_preliminary_assistant';
 const newer012='012_profiles_locations';
-const finalName='038_sil_main_postanalytical';
+const foundation='038_sil_main_postanalytical';
+const finalName='039_sil_main_operator_review';
 const sha=(sql:string)=>createHash('sha256')
   .update(sql.replace(/\r\n/g,'\n')).digest('hex');
 
@@ -43,12 +44,11 @@ async function main(){
   }
   const directory=resolve(__dirname,'../../database/migrations');
   const files=(await readdir(directory)).filter(file=>/^\d{3}_[a-z_]+\.sql$/.test(file));
-  const plan=silMainRehearsedPlan(files);
-  if(!files.includes(finalName+'.sql'))throw new Error('Falta esquema 038 principal.');
+  const plan=[...silMainRehearsedPlan(files),foundation+'.sql',finalName+'.sql'];
+  if(!plan.every(file=>files.includes(file)))throw new Error('Faltan migraciones del SIL principal.');
   const allFiles=[
     ...files.filter(file=>/^0(?:0[1-9]|1[01])_/.test(file)),
     ...plan,
-    finalName+'.sql',
   ];
   const code=new Map<string,string>();
   for(const file of allFiles) {
@@ -99,7 +99,7 @@ async function main(){
       console.info('BASE: vitalia. Sólo lectura.');
       console.info('Historial original 012: verificado.');
       console.info('Migraciones registradas: '+history.rows.length);
-      console.info('Plan permitido: 012_profiles_locations, 013–032, 038.');
+      console.info('Plan permitido: 012_profiles_locations, 013–032, 038–039.');
       console.info('Excluidas: 033–037 DEMO.');
       console.info('No se escribió ninguna tabla.');
       await client.query('COMMIT');
@@ -108,7 +108,7 @@ async function main(){
 
     const already=ledger.has(finalName);
     if(already){
-      for(const version of [...plan.map(name=>name.slice(0,-4)),finalName]){
+      for(const version of plan.map(name=>name.slice(0,-4))){
         if(ledger.get(version)!==sha(code.get(version)!)){
           throw new Error('Migración aplicada con huella inesperada: '+version);
         }
@@ -150,7 +150,7 @@ async function main(){
     await client.query("SET LOCAL lock_timeout = '5s'");
     // Cada una se ejecuta dentro de la MISMA transacción PostgreSQL;
     // no permitir estados parcialmente actualizados en Vitalia principal.
-    for(const file of [...plan,finalName+'.sql']){
+    for(const file of plan){
       const version=file.slice(0,-4);
       const sql=code.get(version)!;
       await client.query(sql);
@@ -192,13 +192,14 @@ async function main(){
       throw new Error('Sesiones originales alteradas.');
     const verified=await client.query<{ok:boolean}>(
       `SELECT
-        (SELECT count(*)=34 FROM public.vitalia_schema_migrations)
+        (SELECT count(*)=35 FROM public.vitalia_schema_migrations)
         AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
           WHERE version='012_preliminary_assistant')
         AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
           WHERE version='012_profiles_locations')
         AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
-          WHERE version='038_sil_main_postanalytical')
+          WHERE version=$1)
+        AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations WHERE version=$2)
         AND NOT EXISTS (
           (SELECT id,role_code FROM public.vitalia_accounts
            EXCEPT ALL SELECT account_id,role_code FROM public.vitalia_account_roles)
@@ -207,12 +208,12 @@ async function main(){
            EXCEPT ALL SELECT id,role_code FROM public.vitalia_accounts)
         )
         AND to_regclass('public.vitalia_sil_main_reports') IS NOT NULL
-        AS ok`);
+        AS ok`,[foundation,finalName]);
     if(verified.rows[0]?.ok!==true)throw new Error('Estado final inválido.');
     await client.query('COMMIT');
     console.info(rehearse
-      ?'SIL PRINCIPAL 012–032 + 038 ENSAYADO EN COPIA AISLADA. Migraciones en copia: 34.'
-      :'SIL principal migrado 012–032 + 038; DEMO 033–037 omitida.');
+      ?'SIL PRINCIPAL 012–032 + 038–039 ENSAYADO EN COPIA AISLADA. Migraciones en copia: 35.'
+      :'SIL principal migrado 012–032 + 038–039; DEMO 033–037 omitida.');
     console.info('Historial, cuentas y sesiones originales preservados.');
   }catch(error){
     try{await client.query('ROLLBACK');}catch{broken=true;}

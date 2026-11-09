@@ -18,7 +18,7 @@ export function createSilMainService(db:Pool) {
   const mainEducation=createSilPatientEducation(db,undefined,mainOverview,'main');
   async function audit(tx:Pick<PoolClient,'query'>,labId:string,actorId:string,
     action:'laboratory_created'|'operator_invited'|'operator_activated'|
-      'staff_granted'|'patient_identity_linked'|
+      'staff_granted'|'operator_review_permission_changed'|'patient_identity_linked'|
       'order_created'|'medical_request_received'|'medical_request_downloaded'|
       'report_attached'|'report_review_accessed'|'report_published'|'report_downloaded',
     orderId:string|null=null,details:Record<string,unknown>={}) {
@@ -28,7 +28,8 @@ export function createSilMainService(db:Pool) {
        VALUES($1,$2,$3,$4,$5,$6::jsonb)`,
       [randomUUID(),labId,orderId,actorId,action,JSON.stringify(details)]);
   }
-  async function operator(labId:string,accountId:string,query:Queryable=db){
+  async function operator(labId:string,accountId:string,query:Queryable=db,
+    requireReview=false){
     const check=await query.query(
       `SELECT 1 FROM public.vitalia_sil_main_staff s
        JOIN public.vitalia_sil_main_laboratories l ON l.id=s.lab_id AND l.active
@@ -36,21 +37,9 @@ export function createSilMainService(db:Pool) {
          ON r.account_id=s.account_id
          AND r.role_code='operador_laboratorio' AND r.active
        WHERE s.lab_id=$1 AND s.account_id=$2
-         AND s.kind='operator' AND s.active`,[labId,accountId]);
-    if(!check.rows.length)throw new SilMainAccessDenied();
-  }
-  async function validator(labId:string,accountId:string,query:Queryable=db){
-    const check=await query.query(
-      `SELECT 1 FROM public.vitalia_sil_main_staff s
-       JOIN public.vitalia_sil_main_laboratories l ON l.id=s.lab_id AND l.active
-       JOIN public.vitalia_account_roles r
-         ON r.account_id=s.account_id AND r.role_code='profesional' AND r.active
-       JOIN public.vitalia_people p ON p.account_id=s.account_id
-       JOIN public.vitalia_professional_profiles pr
-         ON pr.person_id=p.id AND pr.verification_status='verified'
-         AND pr.registration_reference IS NOT NULL
-       WHERE s.lab_id=$1 AND s.account_id=$2
-         AND s.kind='validator' AND s.active`,[labId,accountId]);
+         AND s.kind='operator' AND s.active
+         AND (NOT $3::boolean OR s.can_review_reports)
+       FOR SHARE OF s,l,r`,[labId,accountId,requireReview]);
     if(!check.rows.length)throw new SilMainAccessDenied();
   }
   async function transaction<T>(operation:(tx:PoolClient)=>Promise<T>):Promise<T>{
@@ -76,10 +65,10 @@ export function createSilMainService(db:Pool) {
           `SELECT id,display_name AS "displayName",active
            FROM public.vitalia_sil_main_laboratories ORDER BY display_name`)
         :await db.query(
-          `SELECT l.id,l.display_name AS "displayName",l.active,s.kind
+          `SELECT l.id,l.display_name AS "displayName",l.active,s.can_review_reports AS "canReviewReports"
            FROM public.vitalia_sil_main_laboratories l
            JOIN public.vitalia_sil_main_staff s ON s.lab_id=l.id
-           WHERE s.account_id=$1 AND s.active AND l.active
+           WHERE s.account_id=$1 AND s.kind='operator' AND s.active AND l.active
            ORDER BY l.display_name`,[accountId]);
       return {laboratories:res.rows};
     },
@@ -172,34 +161,44 @@ export function createSilMainService(db:Pool) {
       });
     },
 
-    async grantStaff(labId:string,accountId:string,kind:'operator'|'validator',adminId:string){
+    async grantStaff(labId:string,accountId:string,adminId:string){
       return transaction(async tx=>{
         const lab=await tx.query(
           'SELECT 1 FROM public.vitalia_sil_main_laboratories WHERE id=$1 AND active FOR UPDATE',
           [labId]);
         if(!lab.rows.length)throw new SilMainNotFound();
-        // Un profesional validador debe estar acreditado por el sistema original.
-        const role=kind==='operator'?'operador_laboratorio':'profesional';
-        const check=kind==='operator'
-          ?await tx.query(
-            `SELECT 1 FROM public.vitalia_account_roles
-             WHERE account_id=$1 AND role_code=$2 AND active`,[accountId,role])
-          :await tx.query(
-            `SELECT 1 FROM public.vitalia_account_roles r
-             JOIN public.vitalia_people p ON p.account_id=r.account_id
-             JOIN public.vitalia_professional_profiles pr ON pr.person_id=p.id
-             WHERE r.account_id=$1 AND r.role_code=$2 AND r.active
-               AND pr.verification_status='verified'
-               AND pr.registration_reference IS NOT NULL`,[accountId,role]);
+        const check=await tx.query(
+          `SELECT 1 FROM public.vitalia_account_roles
+           WHERE account_id=$1 AND role_code='operador_laboratorio' AND active`,
+          [accountId]);
         if(!check.rows.length)throw new SilMainAccessDenied();
         const created=await tx.query(
           `INSERT INTO public.vitalia_sil_main_staff
-           (lab_id,account_id,kind,granted_by) VALUES($1,$2,$3,$4)
+           (lab_id,account_id,kind,granted_by) VALUES($1,$2,'operator',$3)
            ON CONFLICT(lab_id,account_id) DO NOTHING RETURNING lab_id`,
-          [labId,accountId,kind,adminId]);
+          [labId,accountId,adminId]);
         if(!created.rows.length)throw new SilMainConflict();
-        await audit(tx,labId,adminId,'staff_granted',null,{kind});
-        return {membership:{labId,accountId,kind,active:true}};
+        await audit(tx,labId,adminId,'staff_granted',null,{accountId,kind:'operator'});
+        return {membership:{labId,accountId,kind:'operator',active:true,canReviewReports:false}};
+      });
+    },
+
+    async setReviewPermission(labId:string,accountId:string,adminId:string,enabled:boolean){
+      return transaction(async tx=>{
+        const lab=await tx.query(
+          'SELECT 1 FROM public.vitalia_sil_main_laboratories WHERE id=$1 AND active FOR UPDATE',
+          [labId]);
+        if(!lab.rows.length)throw new SilMainNotFound();
+        await operator(labId,accountId,tx);
+        const changed=await tx.query(
+          `UPDATE public.vitalia_sil_main_staff SET can_review_reports=$3
+           WHERE lab_id=$1 AND account_id=$2 AND can_review_reports<>$3
+           RETURNING account_id`,[labId,accountId,enabled]);
+        if(changed.rows.length){
+          await audit(tx,labId,adminId,'operator_review_permission_changed',null,
+            {accountId,enabled});
+        }
+        return {membership:{labId,accountId,canReviewReports:enabled}};
       });
     },
 
@@ -253,17 +252,19 @@ export function createSilMainService(db:Pool) {
 
     async listOrders(labId:string,accountId:string,role:string,
       limit:number,offset:number){
-      if(role==='profesional')await validator(labId,accountId);
-      else if(role!=='administrador')await operator(labId,accountId);
+      if(role!=='administrador')await operator(labId,accountId);
       const results=await db.query(
         `SELECT o.id,o.order_number AS "orderNumber",o.status,
            o.patient_id AS "patientId",o.created_at AS "createdAt",
+           EXISTS(SELECT 1 FROM public.vitalia_sil_main_reports r
+             WHERE r.order_id=o.id AND r.lab_id=o.lab_id
+               AND r.attached_by<>$4) AS "uploadedByAnotherOperator",
            ARRAY(SELECT e.exam_code FROM public.vitalia_sil_main_order_exams e
              WHERE e.order_id=o.id ORDER BY e.exam_code) AS "examCodes"
          FROM public.vitalia_sil_main_orders o
          JOIN public.vitalia_sil_main_laboratories l ON l.id=o.lab_id AND l.active
          WHERE o.lab_id=$1 ORDER BY o.created_at DESC,o.id LIMIT $2 OFFSET $3`,
-        [labId,limit,offset]);
+        [labId,limit,offset,accountId]);
       return {orders:results.rows};
     },
 
@@ -304,9 +305,8 @@ export function createSilMainService(db:Pool) {
       });
     },
 
-    async downloadMedicalRequest(labId:string,orderId:string,actorId:string,role:string){
-      if(role==='profesional')await validator(labId,actorId);
-      else await operator(labId,actorId);
+    async downloadMedicalRequest(labId:string,orderId:string,actorId:string){
+      await operator(labId,actorId);
       const file=await db.query<{
         id:string;fileName:string;bytes:Buffer;sha256:string
       }>(
@@ -365,32 +365,36 @@ export function createSilMainService(db:Pool) {
       });
     },
 
-    async reportForReview(labId:string,orderId:string,validatorId:string){
-      await validator(labId,validatorId);
-      const rows=await db.query<{
-        id:string;fileName:string;data:Buffer;sha256:string
-      }>(
-        `SELECT r.id,r.file_name AS "fileName",r.pdf_data AS data,
-                r.pdf_sha256 AS sha256
-         FROM public.vitalia_sil_main_reports r
-         JOIN public.vitalia_sil_main_orders o
-           ON o.id=r.order_id AND o.lab_id=r.lab_id
-         WHERE r.order_id=$1 AND r.lab_id=$2
-           AND o.status='report_attached' AND r.published_at IS NULL`,
-        [orderId,labId]);
-      if(!rows.rows.length)throw new SilMainNotFound();
-      const item=rows.rows[0];
-      if(item.data.length>2*1024*1024 ||
-         createHash('sha256').update(item.data).digest('hex')!==item.sha256)
-        throw new SilMainConflict();
-      await audit(db,labId,validatorId,'report_review_accessed',
-        orderId,{reportId:item.id});
-      return {fileName:item.fileName,bytes:item.data};
+    async reportForReview(labId:string,orderId:string,operatorId:string){
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx,true);
+        const rows=await tx.query<{
+          id:string;fileName:string;data:Buffer;sha256:string
+        }>(
+          `SELECT r.id,r.file_name AS "fileName",r.pdf_data AS data,
+                  r.pdf_sha256 AS sha256
+           FROM public.vitalia_sil_main_reports r
+           JOIN public.vitalia_sil_main_orders o
+             ON o.id=r.order_id AND o.lab_id=r.lab_id
+           WHERE r.order_id=$1 AND r.lab_id=$2
+             AND o.status='report_attached' AND r.published_at IS NULL
+             AND r.attached_by<>$3
+           FOR SHARE OF r`,
+          [orderId,labId,operatorId]);
+        if(!rows.rows.length)throw new SilMainNotFound();
+        const item=rows.rows[0];
+        if(item.data.length>2*1024*1024 ||
+           createHash('sha256').update(item.data).digest('hex')!==item.sha256)
+          throw new SilMainConflict();
+        await audit(tx,labId,operatorId,'report_review_accessed',
+          orderId,{reportId:item.id});
+        return {fileName:item.fileName,bytes:item.data};
+      });
     },
 
-    async publishReport(labId:string,orderId:string,validatorId:string){
+    async publishReport(labId:string,orderId:string,operatorId:string){
       return transaction(async tx=>{
-        await validator(labId,validatorId,tx);
+        await operator(labId,operatorId,tx,true);
         const report=await tx.query<{id:string}>(
           `UPDATE public.vitalia_sil_main_reports r
            SET published_at=CURRENT_TIMESTAMP,published_by=$3
@@ -399,14 +403,20 @@ export function createSilMainService(db:Pool) {
              AND o.lab_id=$2 AND o.status='report_attached'
              AND r.published_at IS NULL AND r.patient_match_confirmed
              AND r.attached_by<>$3
-           RETURNING r.id`,[orderId,labId,validatorId]);
+             AND EXISTS (
+               SELECT 1 FROM public.vitalia_sil_main_audit a
+               WHERE a.lab_id=$2 AND a.order_id=$1 AND a.actor_id=$3
+                 AND a.action='report_review_accessed'
+                 AND a.details->>'reportId'=r.id::text
+             )
+           RETURNING r.id`,[orderId,labId,operatorId]);
         if(!report.rows.length)throw new SilMainConflict();
         await tx.query(
           `UPDATE public.vitalia_sil_main_orders
            SET status='report_published'
            WHERE id=$1 AND lab_id=$2 AND status='report_attached'`,
           [orderId,labId]);
-        await audit(tx,labId,validatorId,'report_published',orderId,
+        await audit(tx,labId,operatorId,'report_published',orderId,
           {reportId:report.rows[0].id});
         return {publication:{orderId,reportId:report.rows[0].id,
           status:'report_published'}};
