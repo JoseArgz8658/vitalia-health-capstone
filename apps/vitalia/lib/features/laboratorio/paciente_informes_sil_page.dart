@@ -757,28 +757,31 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     }
   }
 
-  Widget _accountMenu() => PopupMenuButton<String>(
+  Widget _accountMenu({bool includeProfileAndRefresh = true}) =>
+      PopupMenuButton<String>(
         tooltip: 'Mi cuenta',
         icon: const Icon(Icons.manage_accounts_outlined),
         onSelected: _accountAction,
-        itemBuilder: (context) => const [
-          PopupMenuItem(
-            value: 'profile',
-            child: ListTile(
-              dense: true,
-              leading: Icon(Icons.person_outline),
-              title: Text('Mi perfil'),
+        itemBuilder: (context) => [
+          if (includeProfileAndRefresh) ...[
+            const PopupMenuItem(
+              value: 'profile',
+              child: ListTile(
+                dense: true,
+                leading: Icon(Icons.person_outline),
+                title: Text('Mi perfil'),
+              ),
             ),
-          ),
-          PopupMenuItem(
-            value: 'refresh',
-            child: ListTile(
-              dense: true,
-              leading: Icon(Icons.refresh),
-              title: Text('Actualizar informes'),
+            const PopupMenuItem(
+              value: 'refresh',
+              child: ListTile(
+                dense: true,
+                leading: Icon(Icons.refresh),
+                title: Text('Actualizar informes'),
+              ),
             ),
-          ),
-          PopupMenuItem(
+          ],
+          const PopupMenuItem(
             value: 'recovery',
             child: ListTile(
               dense: true,
@@ -877,7 +880,10 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     final theme = Theme.of(context);
     final width = MediaQuery.sizeOf(context).width;
     final narrow = width < 600;
-    final fullAccountActions = width >= 1120;
+    // El AppBar tiene menos espacio útil que el ancho total de pantalla.
+    // Evitamos mostrar todas las etiquetas en escritorios intermedios.
+    final fullAccountActions = width >= 1580;
+    final mediumAccountActions = width >= 1050 && !fullAccountActions;
     final query = _filter.text.trim().toLowerCase();
     final visibleReports = _reports
         .where((report) =>
@@ -903,7 +909,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               narrow ? 'Vitalia' : 'Vitalia Health',
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
-            if (width >= 780) ...[
+            if (width >= 1580) ...[
               const SizedBox(width: 15),
               Container(width: 1, height: 24, color: ColoresVitalia.borde),
               const SizedBox(width: 15),
@@ -917,7 +923,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
           ],
         ),
         actions: [
-          if (fullAccountActions) ...[
+          if (fullAccountActions || mediumAccountActions) ...[
             TextButton.icon(
               onPressed: _openProfile,
               icon: const Icon(Icons.person_outline),
@@ -928,13 +934,17 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               icon: const Icon(Icons.refresh),
               label: const Text('Actualizar informes'),
             ),
+          ],
+          if (fullAccountActions)
             TextButton.icon(
               onPressed: _openRecovery,
               icon: const Icon(Icons.key_outlined),
               label: const Text('Configurar recuperación'),
+            )
+          else
+            _accountMenu(
+              includeProfileAndRefresh: !mediumAccountActions,
             ),
-          ] else
-            _accountMenu(),
           if (fullAccountActions)
             TextButton.icon(
               onPressed: widget.onLogout,
