@@ -98,11 +98,11 @@ class _ActivarPortalSilPageState extends State<ActivarPortalSilPage>{
     }finally{if(mounted)setState(()=>_busy=false);}
   }
   void _nextCodes(){
-    final valid=RegExp(r'^[A-Za-z0-9_-]{24}$');
+    final valid=RegExp(r'^[A-Za-z0-9_-]{12}$');
     if(!valid.hasMatch(_emailCode.text.trim())||
        !valid.hasMatch(_handoffCode.text.trim())){
       setState(()=>_error='Debes ingresar ambos códigos '
-        'de 24 caracteres de sus respectivos canales.');
+        'de 12 caracteres de sus respectivos canales.');
       return;
     }
     setState((){_step=2;_error=null;_mailCode=null;});
@@ -204,7 +204,7 @@ class _ActivarPortalSilPageState extends State<ActivarPortalSilPage>{
       'En este prototipo el correo se simula de manera local.'),
     const SizedBox(height:11),
     TextField(controller:_emailCode,enabled:!_busy,
-      maxLength:24,autocorrect:false,enableSuggestions:false,
+      maxLength:12,autocorrect:false,enableSuggestions:false,
       decoration:const InputDecoration(
         labelText:'Código recibido por correo',
         counterText:'',prefixIcon:Icon(Icons.mail_outline))),
@@ -226,7 +226,7 @@ class _ActivarPortalSilPageState extends State<ActivarPortalSilPage>{
       'tras la comprobación presencial de identidad.'),
     const SizedBox(height:11),
     TextField(controller:_handoffCode,enabled:!_busy,
-      maxLength:24,autocorrect:false,enableSuggestions:false,
+      maxLength:12,autocorrect:false,enableSuggestions:false,
       decoration:const InputDecoration(
         labelText:'Clave de entrega presencial',
         counterText:'',prefixIcon:Icon(Icons.verified_user_outlined))),
