@@ -5,6 +5,8 @@ import '../../core/tema_vitalia.dart';
 /// Centro de orientación de la DEMO SIL. No inventa canales reales de
 /// contacto ni afirma que la plataforma entregue atención clínica.
 abstract final class PortalAyudaSil {
+  static const _mainSil =
+      bool.fromEnvironment('VITALIA_SIL_MAIN_MODE',defaultValue:false);
   static Future<void> _dialog(
     BuildContext context, {
     required String title,
@@ -205,11 +207,15 @@ abstract final class PortalAyudaSil {
             color: ColoresVitalia.azulSuave,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Text(
-            'DEMO ACADÉMICA: aún no hay teléfono, dirección, correo '
-            'institucional ni mensajería de soporte habilitados. '
-            'Vitalia no envía solicitudes de contacto desde esta pantalla.',
-            style: TextStyle(
+          child: Text(
+            _mainSil
+                ? 'INTEGRACIÓN EN REVISIÓN: los canales de contacto '
+                  'deben ser registrados y verificados por cada laboratorio. '
+                  'Vitalia no envía mensajes desde esta pantalla.'
+                : 'DEMO ACADÉMICA: aún no hay teléfono, dirección, correo '
+                  'institucional ni mensajería de soporte habilitados. '
+                  'Vitalia no envía solicitudes de contacto desde esta pantalla.',
+            style: const TextStyle(
               fontSize: 12,
               height: 1.5,
               color: ColoresVitalia.azulActivo,
@@ -227,7 +233,7 @@ abstract final class PortalAyudaSil {
             'entender qué información puedes consultar.',
         icon: Icons.help_outline,
         children: [
-          for (final (question, answer) in const [
+          for (final (question, answer) in [
             (
               '¿Qué informes puedo consultar?',
               'Únicamente los documentos que el laboratorio haya '
@@ -254,14 +260,15 @@ abstract final class PortalAyudaSil {
                   'cuando coinciden el analito, la unidad, el examen '
                   'y el laboratorio. Esto no equivale a un diagnóstico.',
             ),
-            (
-              '¿Cómo recupero mi cuenta?',
-              'Ingresa a «Configurar recuperación» desde «Mi cuenta» '
-                  'cuando tengas acceso. Guarda la clave de respaldo '
-                  'por separado: es de un solo uso. Si tienes problemas '
-                  'de acceso, sigue el procedimiento habilitado '
-                  'en la pantalla de inicio de sesión.',
-            ),
+            if (!_mainSil)
+              (
+                '¿Cómo recupero mi cuenta?',
+                'Ingresa a «Configurar recuperación» desde «Mi cuenta» '
+                    'cuando tengas acceso. Guarda la clave de respaldo '
+                    'por separado: es de un solo uso. Si tienes problemas '
+                    'de acceso, sigue el procedimiento habilitado '
+                    'en la pantalla de inicio de sesión.',
+              ),
             (
               '¿Qué hago si mis datos están incorrectos?',
               'No modifiques información médica por tu cuenta. '
@@ -328,9 +335,13 @@ abstract final class PortalAyudaSil {
                 'de las tareas internas del laboratorio.',
           ),
           _body(
-            'Esta versión utiliza cuentas y documentos ficticios. '
-            'No es un prestador de salud, no toma muestras ni emite '
-            'diagnósticos clínicos.',
+            _mainSil
+                ? 'Esta integración aún está bajo validación técnica '
+                  'y de seguridad. No es un prestador de salud ni '
+                  'emite diagnósticos clínicos.'
+                : 'Esta versión utiliza cuentas y documentos ficticios. '
+                  'No es un prestador de salud, no toma muestras ni emite '
+                  'diagnósticos clínicos.',
           ),
         ],
       );
@@ -338,7 +349,9 @@ abstract final class PortalAyudaSil {
   static Future<void> privacidad(BuildContext context) => _dialog(
         context,
         title: 'Privacidad y uso responsable',
-        subtitle: 'Qué significa usar la demostración del portal.',
+        subtitle: _mainSil
+            ? 'Cómo se protege el acceso en esta integración.'
+            : 'Qué significa usar la demostración del portal.',
         icon: Icons.shield_outlined,
         children: [
           _highlight(
@@ -360,10 +373,15 @@ abstract final class PortalAyudaSil {
                 'diagnosticar ni ajustar tratamientos.',
           ),
           _body(
-            'Este entorno contiene datos inventados para demostración. '
-            'Antes de trabajar con información real, Vitalia requerirá '
-            'controles de seguridad, procedimientos del laboratorio '
-            'y documentación legal formal revisada.',
+            _mainSil
+                ? 'El sistema está en proceso de integración. '
+                  'Antes de trabajar con información clínica real deben '
+                  'validarse controles de seguridad, procedimientos '
+                  'del laboratorio y documentación legal.'
+                : 'Este entorno contiene datos inventados para demostración. '
+                  'Antes de trabajar con información real, Vitalia requerirá '
+                  'controles de seguridad, procedimientos del laboratorio '
+                  'y documentación legal formal revisada.',
           ),
         ],
       );
@@ -521,7 +539,9 @@ class PortalAyudaFooterSil extends StatelessWidget {
                   ),
                   SizedBox(height: 10),
                   Text(
-                    'Proyecto académico · SIL postanalítico · DEMO',
+                    PortalAyudaSil._mainSil
+                        ? 'Proyecto académico · SIL postanalítico · Integración'
+                        : 'Proyecto académico · SIL postanalítico · DEMO',
                     style: TextStyle(
                       color: Color(0xFFAFCAD5),
                       fontSize: 11,
