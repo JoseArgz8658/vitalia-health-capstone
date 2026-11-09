@@ -12,6 +12,30 @@ import {
 
 const uuid=z.uuid();
 const examCode=z.string().regex(/^[a-z0-9_]{3,40}$/);
+const pdfFileName=z.string().trim().min(5).max(120).regex(/[.]pdf$/i)
+  .refine(value=>!/[\/\\\x00-\x1f]/.test(value));
+const medicalRequest=z.object({
+  fileName:pdfFileName,
+  prescriberName:z.string().trim().min(3).max(150),
+  documentReference:z.string().trim().min(6).max(150),
+  requestDate:z.iso.date(),
+  patientIdentityConfirmed:z.literal(true),
+  humanReviewConfirmed:z.literal(true),
+});
+function medicalRequestHeaders(req:express.Request){
+  try {
+    return {
+      fileName:decodeURIComponent(req.get('x-request-filename')??''),
+      prescriberName:decodeURIComponent(req.get('x-request-prescriber')??''),
+      documentReference:decodeURIComponent(req.get('x-request-reference')??''),
+      requestDate:req.get('x-request-date'),
+      patientIdentityConfirmed:req.get('x-request-identity-confirmed')==='true',
+      humanReviewConfirmed:req.get('x-request-reviewed')==='true',
+    };
+  } catch {
+    return undefined;
+  }
+}
 const laboratoryId=uuid;
 const labPath=async(req:express.Request,res:express.Response,next:express.NextFunction)=>{
   if(!laboratoryId.safeParse(req.params.labId).success){
@@ -186,6 +210,41 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       data.data.examCodes,res.locals.account.id));
   });
 
+  router.post('/labs/:labId/medical-requests/preview',staff,labPath,
+    express.raw({type:'application/pdf',limit:'2mb'}),async(req,res)=>{
+      if(res.locals.account.role!=='operador_laboratorio'){
+        res.status(403).json({error:{code:'FORBIDDEN'}});return;
+      }
+      const file=pdfFileName.safeParse(medicalRequestHeaders(req)?.fileName);
+      if(!file.success||!Buffer.isBuffer(req.body)){
+        res.status(400).json({error:{code:'INVALID_MEDICAL_REQUEST'}});return;
+      }
+      res.json(await main.previewMedicalRequest(
+        req.params.labId as string,res.locals.account.id,file.data,req.body));
+    });
+
+  router.post('/labs/:labId/medical-requests',staff,labPath,
+    express.raw({type:'application/pdf',limit:'2mb'}),async(req,res)=>{
+      if(res.locals.account.role!=='operador_laboratorio'){
+        res.status(403).json({error:{code:'FORBIDDEN'}});return;
+      }
+      const data=medicalRequest.extend({
+        patientId:uuid,
+        examCodes:z.array(examCode).min(1).max(6)
+          .refine(items=>new Set(items).size===items.length),
+      }).safeParse({
+        ...medicalRequestHeaders(req),
+        patientId:req.get('x-request-patient-id'),
+        examCodes:req.get('x-request-exam-codes')?.split(','),
+      });
+      if(!data.success||!Buffer.isBuffer(req.body)){
+        res.status(400).json({error:{code:'INVALID_MEDICAL_REQUEST'}});return;
+      }
+      const {patientId,examCodes,...request}=data.data;
+      res.status(201).json(await main.createOrderFromMedicalRequest(
+        req.params.labId as string,patientId,examCodes,res.locals.account.id,request,req.body));
+    });
+
   router.post('/labs/:labId/orders/:orderId/medical-request',staff,labPath,
     express.raw({type:'application/pdf',limit:'2mb'}),async(req,res)=>{
       if(res.locals.account.role!=='operador_laboratorio'){
@@ -194,28 +253,7 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       if(!uuid.safeParse(req.params.orderId).success||!Buffer.isBuffer(req.body)){
         res.status(400).json({error:{code:'INVALID_MEDICAL_REQUEST'}});return;
       }
-      let input:Record<string,unknown>;
-      try{
-        input={
-          fileName:decodeURIComponent(req.get('x-request-filename')??''),
-          prescriberName:decodeURIComponent(req.get('x-request-prescriber')??''),
-          documentReference:decodeURIComponent(req.get('x-request-reference')??''),
-          requestDate:req.get('x-request-date'),
-          patientIdentityConfirmed:req.get('x-request-identity-confirmed')==='true',
-          humanReviewConfirmed:req.get('x-request-reviewed')==='true',
-        };
-      }catch{
-        res.status(400).json({error:{code:'INVALID_MEDICAL_REQUEST'}});return;
-      }
-      const data=z.object({
-        fileName:z.string().trim().min(5).max(120).regex(/[.]pdf$/i)
-          .refine(v=>!/[\/\\\x00-\x1f]/.test(v)),
-        prescriberName:z.string().trim().min(3).max(150),
-        documentReference:z.string().trim().min(6).max(150),
-        requestDate:z.iso.date(),
-        patientIdentityConfirmed:z.literal(true),
-        humanReviewConfirmed:z.literal(true),
-      }).strict().safeParse(input);
+      const data=medicalRequest.safeParse(medicalRequestHeaders(req));
       if(!data.success){
         res.status(400).json({error:{code:'INVALID_MEDICAL_REQUEST'}});return;
       }

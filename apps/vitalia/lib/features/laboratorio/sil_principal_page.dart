@@ -42,6 +42,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _patientAccount = TextEditingController();
   final _evidence = TextEditingController();
   final _orderPatient = TextEditingController();
+  final _requestPatient = TextEditingController();
+  final _requestExams = <String>{};
+  bool _attachToExistingOrder = false;
+  String? _requestPreviewNotice;
   final _requestPrescriber = TextEditingController();
   final _requestReference = TextEditingController();
   final _requestDate = TextEditingController();
@@ -97,7 +101,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   void dispose(){
     for(final ctrl in [
       _name,_inviteEmail,_staffAccount,_patientSearch,_patientAccount,_evidence,_orderPatient,
-      _requestPrescriber,_requestReference,_requestDate,
+      _requestPatient,_requestPrescriber,_requestReference,_requestDate,
       _reportProfessional,_reportReference,_reportDate,
     ]){ctrl.dispose();}
     super.dispose();
@@ -170,13 +174,16 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _morePatients = false;
     _orders = [];
     for (final controller in [
-      _patientAccount, _evidence, _orderPatient, _requestPrescriber,
+      _patientAccount, _evidence, _orderPatient, _requestPatient, _requestPrescriber,
       _requestReference, _requestDate, _reportProfessional, _reportReference, _reportDate,
     ]) {
       controller.clear();
     }
     _verifiedPatient = false;
     _requestOrderId = null;
+    _attachToExistingOrder = false;
+    _requestExams.clear();
+    _requestPreviewNotice = null;
     _medicalRequestFile = null;
     _requestIdentityChecked = false;
     _requestHumanChecked = false;
@@ -336,35 +343,74 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     final file=await openFile(acceptedTypeGroups:const [
       XTypeGroup(label:'Solicitud PDF',extensions:['pdf'],mimeTypes:['application/pdf']),
     ]);
-    if(file!=null&&mounted)setState(()=>_medicalRequestFile=file);
+    if (file == null || !mounted) return;
+    setState(() {
+      _medicalRequestFile = file;
+      _requestReference.clear();
+      _requestPrescriber.clear();
+      _requestDate.clear();
+      _requestExams.clear();
+      _requestPreviewNotice = null;
+      _requestIdentityChecked = false;
+      _requestHumanChecked = false;
+    });
+  }
+
+  Future<void> _previewMedicalRequest() async {
+    final lab = _labId;
+    final file = _medicalRequestFile;
+    if (lab == null || file == null) throw const AuthFailure('Selecciona el PDF de la solicitud.');
+    final preview = await widget.api.silMainPreviewMedicalRequest(
+      labId: lab, fileName: file.name, bytes: await file.readAsBytes(),
+    );
+    if (!mounted) return;
+    setState(() {
+      _requestReference.text = preview['suggestedDocumentReference'] as String? ?? '';
+      _requestPrescriber.text = preview['suggestedPrescriberName'] as String? ?? '';
+      _requestDate.text = preview['suggestedRequestDate'] as String? ?? '';
+      _requestExams
+        ..clear()
+        ..addAll((preview['suggestedExams'] as List? ?? [])
+            .map((entry) => entry['code'] as String)
+            .where((code) => _catalog.any((entry) => entry.$1 == code)).take(6));
+      _requestPreviewNotice = preview['state'] == 'text_ready'
+          ? 'Revisa las sugerencias con el PDF original y confirma la identidad.'
+          : 'No se pudo leer texto del PDF. Contrasta el original e ingresa los datos manualmente.';
+      _requestIdentityChecked = false;
+      _requestHumanChecked = false;
+    });
   }
 
   Future<void> _attachMedicalRequest() async {
-    final lab=_labId,orderId=_requestOrderId,file=_medicalRequestFile;
-    if(lab==null||orderId==null||file==null||
-       !_requestIdentityChecked||!_requestHumanChecked){
-      throw const AuthFailure('Selecciona orden, PDF y confirma la revisión e identidad.');
+    final lab = _labId;
+    final file = _medicalRequestFile;
+    final orderId = _attachToExistingOrder ? _requestOrderId : null;
+    final patientId = _attachToExistingOrder ? null : _requireUuid(_requestPatient.text);
+    if (lab == null || file == null ||
+        (_attachToExistingOrder ? orderId == null : patientId == null || _requestExams.isEmpty) ||
+        !_requestIdentityChecked || !_requestHumanChecked) {
+      throw const AuthFailure('Completa la orden o el paciente y las prestaciones. Confirma la identidad y la revisión del PDF.');
     }
     await widget.api.silMainAttachMedicalRequest(
-      labId:lab,
-      orderId:orderId,
-      fileName:file.name,
-      bytes:await file.readAsBytes(),
-      prescriberName:_requestPrescriber.text,
-      documentReference:_requestReference.text,
-      requestDate:_requestDate.text.trim(),
+      labId: lab, orderId: orderId, patientId: patientId, examCodes: _requestExams.toList(),
+      fileName: file.name, bytes: await file.readAsBytes(),
+      prescriberName: _requestPrescriber.text,
+      documentReference: _requestReference.text,
+      requestDate: _requestDate.text.trim(),
     );
-    if(mounted){
-      setState((){
-        _medicalRequestFile=null;
-        _requestOrderId=null;
-        _requestIdentityChecked=false;
-        _requestHumanChecked=false;
-        _requestPrescriber.clear();
-        _requestReference.clear();
-        _requestDate.clear();
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _medicalRequestFile = null;
+      _requestOrderId = null;
+      _requestPatient.clear();
+      _requestExams.clear();
+      _requestPreviewNotice = null;
+      _requestIdentityChecked = false;
+      _requestHumanChecked = false;
+      _requestPrescriber.clear();
+      _requestReference.clear();
+      _requestDate.clear();
+    });
     await _loadOrders();
   }
 
@@ -481,13 +527,14 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   }
 
   Widget _field(TextEditingController ctrl,String label,{
-    String? hint,int lines=1,String? identifier
+    String? hint,int lines=1,String? identifier,ValueChanged<String>? onChanged
   })=>Padding(
     padding:const EdgeInsets.only(bottom:11),
     child:Semantics(
       identifier:identifier,
       child:TextField(
         controller:ctrl,
+        onChanged:onChanged,
         maxLines:lines,
         enabled:!_busy,
         decoration:InputDecoration(
@@ -651,24 +698,43 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       ]);
 
   Widget _requestIntake() => _section('Recibir solicitud médica',
-        'Vincula una solicitud ya emitida a una orden existente. '
-        'Los datos se registran tras revisar el PDF original.',
+        'Lee la solicitud para preparar una orden nueva o adjúntala a una orden existente.',
         Icons.note_add_outlined,[
-        DropdownButtonFormField<String>(
-          value:_requestOrderId,
-          isExpanded:true,
-          decoration:const InputDecoration(
-            border:OutlineInputBorder(),labelText:'Orden del paciente',
-          ),
-          items:[
-            for(final order in _orders.where((v)=>v['status']=='registered'))
-              DropdownMenuItem<String>(
-                value:order['id'] as String,
-                child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
-              ),
-          ],
-          onChanged:_busy?null:(v)=>setState(()=>_requestOrderId=v),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Vincular a una orden existente'),
+          value: _attachToExistingOrder,
+          onChanged: _busy ? null : (value) => setState(() {
+            _attachToExistingOrder = value;
+            _requestIdentityChecked = false;
+            _requestHumanChecked = false;
+          }),
         ),
+        if (_attachToExistingOrder)
+          DropdownButtonFormField<String>(
+            value:_requestOrderId,
+            isExpanded:true,
+            decoration:const InputDecoration(
+              border:OutlineInputBorder(),labelText:'Orden del paciente',
+            ),
+            items:[
+              for(final order in _orders.where((v)=>v['status']=='registered'))
+                DropdownMenuItem<String>(
+                  value:order['id'] as String,
+                  child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
+                ),
+            ],
+            onChanged: _busy ? null : (value) => setState(() {
+              _requestOrderId = value;
+              _requestIdentityChecked = false;
+              _requestHumanChecked = false;
+            }),
+          )
+        else
+          _field(_requestPatient, 'UUID del paciente vinculado', onChanged: (_) => setState(() {
+            _requestIdentityChecked = false;
+            _requestHumanChecked = false;
+          })),
         const SizedBox(height:10),
         OutlinedButton.icon(
           onPressed:_busy?null:_pickMedicalRequest,
@@ -676,6 +742,30 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           label:Text(_medicalRequestFile?.name??'Seleccionar solicitud PDF'),
         ),
         const SizedBox(height:10),
+        OutlinedButton.icon(
+          onPressed: _busy || _medicalRequestFile == null ? null :
+            () => _execute(_previewMedicalRequest, showNotice: false),
+          icon: const Icon(Icons.document_scanner_outlined),
+          label: const Text('Leer PDF y sugerir datos'),
+        ),
+        if (_requestPreviewNotice != null) Text(_requestPreviewNotice!),
+        if (!_attachToExistingOrder) ...[
+          const Text('Prestaciones solicitadas'),
+          Wrap(spacing: 8, children: [
+            for (final (code,label) in _catalog)
+              FilterChip(
+                label: Text(label),
+                selected: _requestExams.contains(code),
+                onSelected: _busy ? null : (selected) => setState(() {
+                  if (selected) {
+                    _requestExams.add(code);
+                  } else {
+                    _requestExams.remove(code);
+                  }
+                }),
+              ),
+          ]),
+        ],
         _field(_requestReference,'Referencia de solicitud'),
         _field(_requestPrescriber,'Profesional solicitante'),
         _field(_requestDate,'Fecha de solicitud (AAAA-MM-DD)'),
@@ -683,6 +773,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           contentPadding:EdgeInsets.zero,
           controlAffinity:ListTileControlAffinity.leading,
           title:const Text('Identidad del paciente contrastada'),
+          subtitle:const Text('Comprueba que la solicitud corresponde al paciente vinculado.'),
           value:_requestIdentityChecked,
           onChanged:_busy?null:(v)=>setState(()=>_requestIdentityChecked=v??false),
         ),
@@ -693,7 +784,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           value:_requestHumanChecked,
           onChanged:_busy?null:(v)=>setState(()=>_requestHumanChecked=v??false),
         ),
-        _action('Registrar solicitud',Icons.post_add_outlined,_attachMedicalRequest),
+        _action(_attachToExistingOrder ? 'Registrar solicitud' : 'Crear orden con solicitud',
+          Icons.post_add_outlined,_attachMedicalRequest),
       ]);
 
   Widget _reportUpload() => _section('Adjuntar informe autorizado',
@@ -855,13 +947,24 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           contentPadding: EdgeInsets.zero,
           title: Text(_patientName(patient)),
           subtitle: Text(patient['email'] as String),
-          trailing: IconButton(
-            tooltip: 'Crear orden para este paciente',
-            onPressed: _busy ? null : () {
-              _orderPatient.text = patient['id'] as String;
-              _openSection(_StationSection.orders);
+          trailing: PopupMenuButton<_StationSection>(
+            tooltip: 'Acciones del paciente',
+            enabled: !_busy,
+            onSelected: (section) {
+              if (section == _StationSection.requests) {
+                _requestPatient.text = patient['id'] as String;
+                _attachToExistingOrder = false;
+                _requestIdentityChecked = false;
+                _requestHumanChecked = false;
+              } else {
+                _orderPatient.text = patient['id'] as String;
+              }
+              _openSection(section);
             },
-            icon: const Icon(Icons.note_add_outlined),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: _StationSection.requests, child: Text('Recibir solicitud')),
+              PopupMenuItem(value: _StationSection.orders, child: Text('Crear orden manual')),
+            ],
           ),
         ),
       if (_patientOffset > 0 || _morePatients)

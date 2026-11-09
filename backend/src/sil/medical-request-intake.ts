@@ -31,6 +31,30 @@ function suggestReferralDetails(text:string) {
   };
 }
 
+const normalize=(value:string)=>value.normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+
+function suggestRequestExams(text:string,catalog:{code:string;name:string}[]){
+  const normalized=normalize(text);
+  return catalog.filter(item=>{
+      const candidate=normalize(item.name);
+      const hints=item.code==='glicemia'?['glicemia','glucosa','glucemia']:
+        item.code==='hba1c'?['hba1c','hemoglobina glicosilada','hemoglobina glucosilada']:
+        [candidate];
+      return hints.some(h=>normalized.includes(normalize(h)));
+    }).map(item=>({code:item.code,name:item.name}));
+}
+
+export function suggestMedicalRequestFields(text:string,catalog:{code:string;name:string}[]){
+  const fields=text.replace(/\r?\n/g,'|');
+  return {
+    suggestedExams:suggestRequestExams(text,catalog),
+    suggestedDocumentReference:suggestRequestReference(fields),
+    ...suggestReferralDetails(fields),
+  };
+}
+
 type IntakeIdentity={
   identifier:string;
   givenNames:string;
@@ -67,9 +91,6 @@ export function createSilMedicalRequestIntake(
 ){
   const read=options.read??readPdfText;
   const receipts=new Map<string,IntakeReceipt>();
-  const normalize=(value:string)=>value.normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g,'')
-    .toLowerCase().replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
   const matchesName=(text:string,name:string)=>{
     const full=normalize(name);
     return Boolean(full)&&(' '+text+' ').includes(' '+full+' ');
@@ -147,13 +168,7 @@ export function createSilMedicalRequestIntake(
       'Los nombres o apellidos del paciente no coinciden literalmente con la ficha DEMO.');
     if(!birthDateMatches)warnings.push(
       'La fecha de nacimiento no se encuentra en el documento con el formato registrado.');
-    const selected=catalog.rows.filter(item=>{
-      const candidate=normalize(item.name);
-      const hints=item.code==='glicemia'?['glicemia','glucosa','glucemia']:
-        item.code==='hba1c'?['hba1c','hemoglobina glicosilada','hemoglobina glucosilada']:
-        [candidate];
-      return hints.some(h=>normalized.includes(normalize(h)));
-    }).map(item=>({code:item.code,name:item.name}));
+    const selected=suggestRequestExams(source,catalog.rows);
     if(!selected.length)warnings.push(
       'No se detectaron prestaciones del catálogo. El operador debe seleccionarlas desde la orden original.');
     // Ningún PDF, ni siquiera uno con datos coincidentes, se considera aprobado.

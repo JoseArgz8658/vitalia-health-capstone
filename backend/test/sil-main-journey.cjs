@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const {createHash, randomUUID} = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const {readFileSync, readdirSync, writeFileSync} = require('node:fs');
-const {resolve} = require('node:path');
+const {dirname,resolve} = require('node:path');
 const {createInterface} = require('node:readline/promises');
 const express = require('express');
 const {Pool} = require('pg');
@@ -18,8 +18,9 @@ const origin = 'http://127.0.0.1:3119';
 const password = 'SoloPrueba-2026!';
 const pdf = syntheticPdf();
 
-function syntheticPdf() {
-  const stream = 'BT /F1 18 Tf 50 740 Td (Vitalia - informe ficticio) Tj ET';
+function syntheticPdf(lines=['Vitalia - informe ficticio']) {
+  const stream = 'BT /F1 18 Tf 50 740 Td '+
+    lines.map(line=>'('+line+') Tj').join(' 0 -28 Td ')+' ET';
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
@@ -370,10 +371,42 @@ async function main() {
     const otherDirectory=await call('reviewer','GET',otherLab+'/patients',200);
     assert.deepEqual((await otherDirectory.json()).patients,[]);
     await call('uploader','GET',otherLab+'/patients',403);
-    const created=await call('uploader','POST',base+'/orders',201,{json:{
-      patientId:ids.patient,examCodes:['glicemia'],
+    const requestPdf=syntheticPdf([
+      'Referencia: SOL-1002','Profesional solicitante: Persona Ficticia',
+      'Fecha de solicitud: 2024-01-01','Glicemia',
+    ]);
+    const intake=base+'/medical-requests';
+    const requestFile={bytes:requestPdf,headers:{
+      'Content-Type':'application/pdf','x-request-filename':'solicitud.pdf',
+    }};
+    await call('uploader','POST',otherLab+'/medical-requests/preview',403,requestFile);
+    const preview=await (await call('uploader','POST',intake+'/preview',200,requestFile)).json();
+    assert.equal(preview.state,'text_ready');
+    assert.equal(preview.suggestedDocumentReference,'SOL-1002');
+    assert.equal(preview.suggestedPrescriberName,'Persona Ficticia');
+    assert.equal(preview.suggestedRequestDate,'2024-01-01');
+    assert.ok(preview.suggestedExams.some(exam=>exam.code==='glicemia'));
+    assert.equal((await (await call('uploader','GET',base+'/orders',200)).json()).orders.length,0);
+    const confirmation={bytes:requestPdf,headers:{
+      ...requestFile.headers,
+      'x-request-patient-id':ids.patient,'x-request-exam-codes':'glicemia',
+      'x-request-reference':'SOL-1002','x-request-prescriber':'Persona Ficticia',
+      'x-request-date':'2024-01-01','x-request-identity-confirmed':'true',
+      'x-request-reviewed':'true',
+    }};
+    await call('uploader','POST',intake,400,{...confirmation,headers:{
+      ...confirmation.headers,'x-request-reviewed':'false',
     }});
+    await call('uploader','POST',intake,404,{...confirmation,headers:{
+      ...confirmation.headers,'x-request-patient-id':ids.other,
+    }});
+    const created=await call('uploader','POST',intake,201,confirmation);
     const orderId=(await created.json()).order.id;
+    await call('uploader','POST',intake,409,confirmation);
+    assert.equal((await (await call('uploader','GET',base+'/orders',200)).json()).orders.length,1);
+    const original=await call('uploader','GET',base+'/orders/'+orderId+'/medical-request/file',200);
+    assert.deepEqual(Buffer.from(await original.arrayBuffer()),requestPdf);
+    console.log('API: lectura, confirmación y registro atómico de solicitud verificados.');
     const path=base+'/orders/'+orderId+'/report';
     const attached=await call('uploader','POST',path,201,{bytes:pdf,headers:{
       'Content-Type':'application/pdf','X-Report-Filename':'informe-sintetico.pdf',
@@ -427,6 +460,12 @@ async function main() {
       const {order:ready}=await browserOrder.json();
       if(manual){
         writeFileSync(fixture,pdf,{flag:'wx'});
+        const newRequest=resolve(dirname(fixture),'solicitud-ficticia.pdf');
+        writeFileSync(newRequest,syntheticPdf([
+          'Referencia: SOL-1003','Profesional solicitante: Persona Ficticia',
+          'Fecha de solicitud: 2024-01-01','Glicemia',
+        ]),{flag:'wx'});
+        console.log('PDF para crear una orden desde Recibir solicitud: '+newRequest);
         console.log('\nSIL temporal listo en http://localhost:5173/#/laboratorio');
         console.log('Orden disponible: VH-'+String(ready.orderNumber).padStart(6,'0'));
         console.log('Adjunta el PDF con '+credentials.uploader.email+'.');

@@ -215,28 +215,67 @@ class AuthApi {
     catch(_){throw const AuthFailure('No fue posible conectar con Vitalia.');}
   }
 
-  /// Recibe una solicitud médica ya emitida, vinculada a una orden de
-  /// paciente verificado; no realiza procesamiento clínico.
+  Future<Map<String,dynamic>> silMainPreviewMedicalRequest({
+    required String labId,
+    required String fileName,
+    required Uint8List bytes,
+  }) => _silMainMedicalRequest(
+    labId: labId, path: 'medical-requests/preview', fileName: fileName, bytes: bytes,
+  );
+
   Future<Map<String,dynamic>> silMainAttachMedicalRequest({
     required String labId,
-    required String orderId,
+    String? orderId,
+    String? patientId,
+    List<String> examCodes = const [],
     required String fileName,
     required Uint8List bytes,
     required String documentReference,
     required String prescriberName,
     required String requestDate,
+  }) {
+    final id=RegExp(r'^[a-f0-9-]{36}$');
+    if((orderId != null ? !id.hasMatch(orderId)
+          : patientId == null || !id.hasMatch(patientId) || examCodes.isEmpty) ||
+       documentReference.trim().length<6||prescriberName.trim().length<3||
+       !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(requestDate)){
+      throw const AuthFailure('Revisa el PDF y los datos de la solicitud.');
+    }
+    return _silMainMedicalRequest(
+      labId:labId,
+      path:orderId == null ? 'medical-requests' : 'orders/$orderId/medical-request',
+      fileName:fileName,
+      bytes:bytes,
+      headers:{
+        'x-request-prescriber':Uri.encodeComponent(prescriberName.trim()),
+        'x-request-reference':Uri.encodeComponent(documentReference.trim()),
+        'x-request-date':requestDate,
+        'x-request-identity-confirmed':'true',
+        'x-request-reviewed':'true',
+        if (orderId == null) ...{
+          'x-request-patient-id':patientId!,
+          'x-request-exam-codes':examCodes.join(','),
+        },
+      },
+    );
+  }
+
+  Future<Map<String,dynamic>> _silMainMedicalRequest({
+    required String labId,
+    required String path,
+    required String fileName,
+    required Uint8List bytes,
+    Map<String,String> headers = const {},
   }) async {
     if(!_silMainMode){
       throw const AuthFailure('El SIL principal no está habilitado.');
     }
     final id=RegExp(r'^[a-f0-9-]{36}$');
-    if(!id.hasMatch(labId)||!id.hasMatch(orderId)||
+    if(!id.hasMatch(labId)||
        !fileName.toLowerCase().endsWith('.pdf')||
        fileName.length<5||fileName.length>120||
        bytes.length<8||bytes.length>2*1024*1024||
-       bytes[0]!=37||bytes[1]!=80||bytes[2]!=68||bytes[3]!=70||
-       documentReference.trim().length<6||prescriberName.trim().length<3||
-       !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(requestDate)){
+       bytes[0]!=37||bytes[1]!=80||bytes[2]!=68||bytes[3]!=70){
       throw const AuthFailure('Revisa el PDF y los datos de la solicitud.');
     }
     final token=_token;
@@ -246,16 +285,12 @@ class AuthApi {
     }
     try{
       final response=await _client.post(
-        _base.resolve('/api/sil/main/labs/$labId/orders/$orderId/medical-request'),
+        _base.resolve('/api/sil/main/labs/$labId/$path'),
         headers:{
           'Authorization':'Bearer $token',
           'Content-Type':'application/pdf',
           'x-request-filename':Uri.encodeComponent(fileName),
-          'x-request-prescriber':Uri.encodeComponent(prescriberName.trim()),
-          'x-request-reference':Uri.encodeComponent(documentReference.trim()),
-          'x-request-date':requestDate,
-          'x-request-identity-confirmed':'true',
-          'x-request-reviewed':'true',
+          ...headers,
         },
         body:bytes,
       ).timeout(const Duration(seconds:40));
@@ -267,8 +302,8 @@ class AuthApi {
         throw AuthFailure(switch(response.statusCode){
           400=>'El PDF o los datos de la solicitud son inválidos.',
           403=>'No tienes permiso para recibir esta solicitud.',
-          404=>'La orden no pertenece al laboratorio seleccionado.',
-          409=>'La solicitud ya fue recibida o el estado de la orden cambió.',
+          404=>'El paciente o la orden no pertenece al laboratorio seleccionado.',
+          409=>'La solicitud está en uso, ya fue recibida o la orden cambió.',
           413=>'El PDF supera los 2 MiB.',
           _=>'No se pudo recibir la solicitud.',
         },response.statusCode);

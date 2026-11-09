@@ -45,6 +45,13 @@ export const localWebCors: RequestHandler = (req, res, next) => {
       'x-request-filename','x-request-prescriber','x-request-reference',
       'x-request-date','x-request-identity-confirmed','x-request-reviewed',
     );
+    const mainIntake = main &&
+      /^\/api\/sil\/main\/labs\/[a-f0-9-]{36}\/medical-requests(\/preview)?$/.test(req.path);
+    if (mainIntake) allowed.push(
+      'x-request-filename','x-request-prescriber','x-request-reference',
+      'x-request-date','x-request-identity-confirmed','x-request-reviewed',
+      'x-request-patient-id','x-request-exam-codes',
+    );
     if (!['GET', 'POST'].includes(method ?? '') ||
         headers.some(h => !allowed.includes(h))) {
       res.status(403).end(); return;

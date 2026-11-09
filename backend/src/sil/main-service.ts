@@ -1,6 +1,8 @@
 import {randomUUID,createHash,randomBytes} from 'node:crypto';
 import {hashPassword} from '../auth/password';
 import {type Pool,type PoolClient} from 'pg';
+import {readPdfText} from '../pdf/reader';
+import {suggestMedicalRequestFields} from './medical-request-intake';
 import {identifyDocument} from '../documents/file-validation';
 import {createSilPatientReportOverview} from './patient-report-overview';
 import {createSilPatientEducation} from './patient-education';
@@ -8,6 +10,20 @@ import {createSilPatientEducation} from './patient-education';
 export class SilMainAccessDenied extends Error {}
 export class SilMainNotFound extends Error {}
 export class SilMainConflict extends Error {}
+
+type MedicalRequestInput={
+  fileName:string;prescriberName:string;documentReference:string;
+  requestDate:string;patientIdentityConfirmed:true;humanReviewConfirmed:true;
+};
+
+function checkMedicalRequest(input:MedicalRequestInput,bytes:Buffer){
+  identifyDocument(bytes,'application/pdf',input.fileName);
+  const date=new Date(input.requestDate+'T00:00:00Z');
+  if(bytes.length<8||bytes.length>2*1024*1024||
+     !input.patientIdentityConfirmed||!input.humanReviewConfirmed||
+     !Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==input.requestDate||
+     date.getTime()>Date.now())throw new SilMainConflict();
+}
 
 type Queryable=Pick<Pool,'query'>;
 
@@ -54,6 +70,50 @@ export function createSilMainService(db:Pool) {
       try{await tx.query('ROLLBACK');}catch{failed=true;}
       throw error;
     }finally{tx.release(failed);}
+  }
+
+  let readingRequest=false;
+
+  async function insertOrder(tx:PoolClient,labId:string,patientId:string,examCodes:string[],operatorId:string){
+    const patient=await tx.query(
+      `SELECT 1 FROM public.vitalia_sil_main_patients
+       WHERE lab_id=$1 AND patient_id=$2 AND active FOR SHARE`,[labId,patientId]);
+    if(!patient.rows.length)throw new SilMainNotFound();
+    const codes=await tx.query(
+      `SELECT code FROM public.vitalia_sil_exam_catalog
+       WHERE active AND code=ANY($1::text[])`,[examCodes]);
+    if(codes.rows.length!==examCodes.length || new Set(examCodes).size!==examCodes.length)
+      throw new SilMainConflict();
+    const id=randomUUID();
+    const inserted=await tx.query(
+      `INSERT INTO public.vitalia_sil_main_orders
+       (id,lab_id,patient_id,created_by) VALUES($1,$2,$3,$4)
+       RETURNING id,order_number AS "orderNumber",status`,
+      [id,labId,patientId,operatorId]);
+    for(const code of examCodes){
+      await tx.query(
+        `INSERT INTO public.vitalia_sil_main_order_exams(order_id,exam_code)
+         VALUES($1,$2)`,[id,code]);
+    }
+    await audit(tx,labId,operatorId,'order_created',id,{exams:examCodes.length});
+    return {order:{...inserted.rows[0],id,labId,patientId,examCodes}};
+  }
+
+  async function insertMedicalRequest(tx:PoolClient,labId:string,orderId:string,patientId:string,
+    operatorId:string,input:MedicalRequestInput,bytes:Buffer){
+    const id=randomUUID();
+    const saved=await tx.query(
+      `INSERT INTO public.vitalia_sil_main_medical_requests(
+        id,order_id,lab_id,patient_id,document_reference,
+        prescriber_name,request_date,file_name,pdf_data,pdf_sha256,
+        patient_identity_confirmed,human_review_confirmed,received_by
+      ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,true,$11)
+      ON CONFLICT DO NOTHING RETURNING id`,
+      [id,orderId,labId,patientId,input.documentReference,input.prescriberName,
+        input.requestDate,input.fileName,bytes,createHash('sha256').update(bytes).digest('hex'),operatorId]);
+    if(!saved.rows.length)throw new SilMainConflict();
+    await audit(tx,labId,operatorId,'medical_request_received',orderId,{requestId:id});
+    return {request:{id,orderId,status:'received'}};
   }
 
   return {
@@ -225,28 +285,7 @@ export function createSilMainService(db:Pool) {
     async createOrder(labId:string,patientId:string,examCodes:string[],operatorId:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
-        const patient=await tx.query(
-          `SELECT 1 FROM public.vitalia_sil_main_patients
-           WHERE lab_id=$1 AND patient_id=$2 AND active`,[labId,patientId]);
-        if(!patient.rows.length)throw new SilMainNotFound();
-        const codes=await tx.query(
-          `SELECT code FROM public.vitalia_sil_exam_catalog
-           WHERE active AND code=ANY($1::text[])`,[examCodes]);
-        if(codes.rows.length!==examCodes.length || new Set(examCodes).size!==examCodes.length)
-          throw new SilMainConflict();
-        const id=randomUUID();
-        const inserted=await tx.query(
-          `INSERT INTO public.vitalia_sil_main_orders
-           (id,lab_id,patient_id,created_by) VALUES($1,$2,$3,$4)
-           RETURNING id,order_number AS "orderNumber",status`,
-          [id,labId,patientId,operatorId]);
-        for(const code of examCodes){
-          await tx.query(
-            `INSERT INTO public.vitalia_sil_main_order_exams(order_id,exam_code)
-             VALUES($1,$2)`,[id,code]);
-        }
-        await audit(tx,labId,operatorId,'order_created',id,{exams:examCodes.length});
-        return {order:{...inserted.rows[0],labId,patientId,examCodes}};
+        return insertOrder(tx,labId,patientId,examCodes,operatorId);
       });
     },
 
@@ -284,18 +323,39 @@ export function createSilMainService(db:Pool) {
       return {orders:results.rows};
     },
 
-    async attachMedicalRequest(labId:string,orderId:string,operatorId:string,
-      input:{fileName:string;prescriberName:string;documentReference:string;
-        requestDate:string;patientIdentityConfirmed:true;humanReviewConfirmed:true},
-      bytes:Buffer){
-      identifyDocument(bytes,'application/pdf',input.fileName);
-      if(bytes.length<8||bytes.length>2*1024*1024||
-        !input.patientIdentityConfirmed||!input.humanReviewConfirmed)
-        throw new SilMainConflict();
-      const requestedDate=new Date(input.requestDate+'T00:00:00Z');
-      if(!Number.isFinite(requestedDate.getTime())||requestedDate.getTime()>Date.now()){
-        throw new SilMainConflict();
+    async previewMedicalRequest(labId:string,operatorId:string,fileName:string,bytes:Buffer){
+      await operator(labId,operatorId);
+      identifyDocument(bytes,'application/pdf',fileName);
+      if(bytes.length<8||bytes.length>2*1024*1024)throw new SilMainConflict();
+      if(readingRequest)throw new SilMainConflict();
+      readingRequest=true;
+      try {
+        const reading=await readPdfText(bytes);
+        const catalog=await db.query<{code:string;name:string}>(
+          'SELECT code,name FROM public.vitalia_sil_exam_catalog WHERE active ORDER BY name');
+        return {
+          state:reading.status,
+          ...suggestMedicalRequestFields(reading.text??'',catalog.rows),
+        };
+      } finally {
+        readingRequest=false;
       }
+    },
+
+    async createOrderFromMedicalRequest(labId:string,patientId:string,examCodes:string[],
+      operatorId:string,input:MedicalRequestInput,bytes:Buffer){
+      checkMedicalRequest(input,bytes);
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx);
+        const {order}=await insertOrder(tx,labId,patientId,examCodes,operatorId);
+        const {request}=await insertMedicalRequest(tx,labId,order.id,patientId,operatorId,input,bytes);
+        return {order,request};
+      });
+    },
+
+    async attachMedicalRequest(labId:string,orderId:string,operatorId:string,
+      input:MedicalRequestInput,bytes:Buffer){
+      checkMedicalRequest(input,bytes);
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
         const order=await tx.query<{patientId:string;status:string}>(
@@ -304,20 +364,7 @@ export function createSilMainService(db:Pool) {
            WHERE id=$1 AND lab_id=$2 FOR UPDATE`,[orderId,labId]);
         if(!order.rows.length)throw new SilMainNotFound();
         if(order.rows[0].status!=='registered')throw new SilMainConflict();
-        const id=randomUUID();
-        await tx.query(
-          `INSERT INTO public.vitalia_sil_main_medical_requests(
-            id,order_id,lab_id,patient_id,document_reference,
-            prescriber_name,request_date,file_name,pdf_data,pdf_sha256,
-            patient_identity_confirmed,human_review_confirmed,received_by
-          )VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,true,$11)`,
-          [id,orderId,labId,order.rows[0].patientId,
-            input.documentReference,input.prescriberName,input.requestDate,
-            input.fileName,bytes,createHash('sha256').update(bytes).digest('hex'),
-            operatorId]);
-        await audit(tx,labId,operatorId,'medical_request_received',orderId,
-          {requestId:id});
-        return {request:{id,orderId,status:'received'}};
+        return insertMedicalRequest(tx,labId,orderId,order.rows[0].patientId,operatorId,input,bytes);
       });
     },
 

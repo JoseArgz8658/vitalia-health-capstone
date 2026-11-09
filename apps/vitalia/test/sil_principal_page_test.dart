@@ -115,6 +115,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Directorio de pacientes'), findsOneWidget);
       expect(find.text('Ana Prueba'), findsOneWidget);
+      final requests = find.widgetWithText(TextButton, 'Recibir solicitud');
+      await tester.ensureVisible(requests);
+      await tester.tap(requests);
+      await tester.pumpAndSettle();
+      expect(find.text('Leer PDF y sugerir datos'), findsOneWidget);
+      expect(find.text('Crear orden con solicitud'), findsOneWidget);
+      final linkOrder = find.widgetWithText(SwitchListTile, 'Vincular a una orden existente');
+      await tester.ensureVisible(linkOrder);
+      await tester.tap(linkOrder);
+      await tester.pumpAndSettle();
+      expect(find.text('Registrar solicitud'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
