@@ -744,47 +744,65 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         children: [
           Card(
             child: Padding(
-              padding: const EdgeInsets.all(19),
+              padding: const EdgeInsets.all(21),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(11),
                     decoration: BoxDecoration(
                       color: ColoresVitalia.verdeSuave,
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(
-                      Icons.insights_outlined,
+                    child: Icon(
+                      _reports.length >= 2
+                          ? Icons.compare_arrows_outlined
+                          : Icons.menu_book_outlined,
                       color: ColoresVitalia.verde,
-                      size: 23,
+                      size: 24,
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   Text(
-                    'Entiende tus resultados',
+                    _reports.length >= 2
+                        ? 'Compara tus informes'
+                        : 'Una lectura con más claridad',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(height: 7),
-                  const Text(
-                    'Consulta las cifras extraídas de tus PDF y, si tienes '
-                    'varios informes comparables, revisa sus diferencias '
-                    'sin perder el documento original.',
-                    style: TextStyle(
+                  const SizedBox(height: 9),
+                  Text(
+                    _reports.length >= 2
+                        ? 'Selecciona hasta cuatro documentos publicados. '
+                            'Comparamos cifras solo cuando el examen, '
+                            'analito, unidad y laboratorio coinciden.'
+                        : 'Tu informe puede incluir cifras y términos '
+                            'difíciles. Conoce cómo revisarlo, qué '
+                            'significan las unidades y cuándo consultar '
+                            'al laboratorio.',
+                    style: const TextStyle(
                       color: ColoresVitalia.textoSecundario,
-                      height: 1.45,
+                      height: 1.5,
                     ),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed:
-                          _reports.isEmpty ? null : () => _openOverview(),
-                      icon: const Icon(Icons.insights_outlined),
-                      label: const Text('Resumen de informes'),
+                      onPressed: _reports.length >= 2
+                          ? () => _openOverview()
+                          : () => PortalAyudaSil.preguntasFrecuentes(context),
+                      icon: Icon(
+                        _reports.length >= 2
+                            ? Icons.compare_arrows_outlined
+                            : Icons.help_outline,
+                      ),
+                      label: Text(
+                        _reports.length >= 2
+                            ? 'Comparar informes'
+                            : 'Cómo leer mis resultados',
+                      ),
                     ),
                   ),
                 ],
@@ -1002,15 +1020,13 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             title: firstName.isEmpty
                 ? 'Hola, bienvenido a Vitalia'
                 : 'Hola, $firstName',
-            subtitle: 'Tu sesión está asociada a ${widget.email}. '
-                'Revisa tus informes publicados, consulta los resultados '
-                'y encuentra explicaciones claras en un mismo lugar.',
+            subtitle: 'Tus informes publicados, sus documentos originales '
+                'y una guía sencilla para comprenderlos. '
+                'Toda tu información de laboratorio en un espacio privado.',
             icon: Icons.favorite_outline,
             compact: MediaQuery.sizeOf(context).width < 600,
             action: FilledButton.icon(
-              onPressed: _reports.isEmpty
-                  ? null
-                  : () => _openOverview(),
+              onPressed: _scrollToReports,
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: ColoresVitalia.azulActivo,
@@ -1018,11 +1034,23 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 disabledForegroundColor: ColoresVitalia.azulActivo,
               ),
               icon: const Icon(Icons.analytics_outlined),
-              label: const Text('Explorar mis resultados'),
+              label: const Text('Ir a mis informes'),
             ),
           );
         },
       );
+
+  void _scrollToReports() {
+    final destination = _reportsAnchor.currentContext;
+    if (destination != null) {
+      Scrollable.ensureVisible(
+        destination,
+        duration: const Duration(milliseconds: 360),
+        curve: Curves.easeOutCubic,
+        alignment: 0.07,
+      );
+    }
+  }
 
   Widget _dashboardIndicators() => LayoutBuilder(
         builder: (context, constraints) {
@@ -1042,7 +1070,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               label: 'Informes disponibles',
               value: _loading ? '…' : '${_reports.length}',
               detail: 'Documentos publicados para tu cuenta.',
-              onTap: _reports.isEmpty ? null : () => _openOverview(),
+              onTap: _scrollToReports,
             ),
             PortalIndicadorSil(
               icon: Icons.event_available_outlined,
@@ -1053,10 +1081,12 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             ),
             PortalIndicadorSil(
               icon: Icons.query_stats_outlined,
-              label: 'Consulta conjunta',
-              value: 'Hasta 4',
-              detail: 'Compara mediciones cuando sean compatibles.',
-              onTap: _reports.isEmpty ? null : () => _openOverview(),
+              label: 'Comparación',
+              value: _reports.length >= 2 ? 'Hasta 4' : 'Desde 2',
+              detail: _reports.length >= 2
+                  ? 'Compara mediciones cuando sean compatibles.'
+                  : 'Disponible cuando tengas al menos dos informes.',
+              onTap: _reports.length >= 2 ? () => _openOverview() : null,
             ),
           ];
           return Wrap(
@@ -1180,10 +1210,13 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                   const SizedBox(height: 15),
                   LayoutBuilder(
                     builder: (context, constraints) {
-                      final reports = _reportList(
-                        theme,
-                        query,
-                        visibleReports,
+                      final reports = KeyedSubtree(
+                        key: _reportsAnchor,
+                        child: _reportList(
+                          theme,
+                          query,
+                          visibleReports,
+                        ),
                       );
                       final tools = _portalTools(theme);
                       if (constraints.maxWidth >= 850) {
@@ -1206,10 +1239,17 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                       );
                     },
                   ),
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 43),
+                  PortalAyudaFooterSil(
+                    reports: _reports,
+                    onProfile: _openProfile,
+                    onRecovery: _openRecovery,
+                    onReports: _scrollToReports,
+                  ),
+                  const SizedBox(height: 18),
                   Text(
-                    'Vitalia Health · Entorno de demostración con '
-                    'informes y cuentas ficticias.',
+                    'Vitalia Health · Proyecto académico · '
+                    'Entorno con datos ficticios.',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall,
                   ),
