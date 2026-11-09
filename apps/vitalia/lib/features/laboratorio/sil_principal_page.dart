@@ -35,6 +35,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _patientAccount = TextEditingController();
   final _evidence = TextEditingController();
   final _orderPatient = TextEditingController();
+  final _requestPrescriber = TextEditingController();
+  final _requestReference = TextEditingController();
+  final _requestDate = TextEditingController();
   final _reportProfessional = TextEditingController();
   final _reportReference = TextEditingController();
   final _reportDate = TextEditingController();
@@ -44,6 +47,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   bool _reviewConfirmed = false;
   String _staffKind = 'operator';
   String? _labId;
+  String? _requestOrderId;
+  XFile? _medicalRequestFile;
+  bool _requestIdentityChecked=false;
+  bool _requestHumanChecked=false;
   String? _uploadOrderId;
   String? _reviewOrderId;
   XFile? _pdf;
@@ -78,6 +85,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   void dispose(){
     for(final ctrl in [
       _name,_inviteEmail,_staffAccount,_patientAccount,_evidence,_orderPatient,
+      _requestPrescriber,_requestReference,_requestDate,
       _reportProfessional,_reportReference,_reportDate,
     ]){ctrl.dispose();}
     super.dispose();
@@ -141,6 +149,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     setState((){
       _labId=value;
       _orders=[];
+      _requestOrderId=null;
       _uploadOrderId=null;
       _reviewOrderId=null;
       _notice=null;
@@ -274,6 +283,42 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ]);
     if(selection==null||!mounted)return;
     setState(()=>_pdf=selection);
+  }
+
+  Future<void> _pickMedicalRequest() async {
+    final file=await openFile(acceptedTypeGroups:const [
+      XTypeGroup(label:'Solicitud PDF',extensions:['pdf'],mimeTypes:['application/pdf']),
+    ]);
+    if(file!=null&&mounted)setState(()=>_medicalRequestFile=file);
+  }
+
+  Future<void> _attachMedicalRequest() async {
+    final lab=_labId,orderId=_requestOrderId,file=_medicalRequestFile;
+    if(lab==null||orderId==null||file==null||
+       !_requestIdentityChecked||!_requestHumanChecked){
+      throw const AuthFailure('Selecciona orden, PDF y confirma la revisión e identidad.');
+    }
+    await widget.api.silMainAttachMedicalRequest(
+      labId:lab,
+      orderId:orderId,
+      fileName:file.name,
+      bytes:await file.readAsBytes(),
+      prescriberName:_requestPrescriber.text,
+      documentReference:_requestReference.text,
+      requestDate:_requestDate.text.trim(),
+    );
+    if(mounted){
+      setState((){
+        _medicalRequestFile=null;
+        _requestOrderId=null;
+        _requestIdentityChecked=false;
+        _requestHumanChecked=false;
+        _requestPrescriber.clear();
+        _requestReference.clear();
+        _requestDate.clear();
+      });
+    }
+    await _loadOrders();
   }
 
   Future<void> _attachReport() async {
@@ -524,6 +569,51 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         ]),
         const SizedBox(height:12),
         _action('Registrar orden',Icons.add_circle_outline,_createOrder),
+      ]),
+      _section('Recibir solicitud médica',
+        'Vincula una solicitud ya emitida a una orden existente. '
+        'Los datos se registran tras revisar el PDF original.',
+        Icons.note_add_outlined,[
+        DropdownButtonFormField<String>(
+          value:_requestOrderId,
+          isExpanded:true,
+          decoration:const InputDecoration(
+            border:OutlineInputBorder(),labelText:'Orden del paciente',
+          ),
+          items:[
+            for(final order in _orders.where((v)=>v['status']=='registered'))
+              DropdownMenuItem<String>(
+                value:order['id'] as String,
+                child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged:_busy?null:(v)=>setState(()=>_requestOrderId=v),
+        ),
+        const SizedBox(height:10),
+        OutlinedButton.icon(
+          onPressed:_busy?null:_pickMedicalRequest,
+          icon:const Icon(Icons.picture_as_pdf_outlined),
+          label:Text(_medicalRequestFile?.name??'Seleccionar solicitud PDF'),
+        ),
+        const SizedBox(height:10),
+        _field(_requestReference,'Referencia de solicitud'),
+        _field(_requestPrescriber,'Profesional solicitante'),
+        _field(_requestDate,'Fecha de solicitud (AAAA-MM-DD)'),
+        CheckboxListTile(
+          contentPadding:EdgeInsets.zero,
+          controlAffinity:ListTileControlAffinity.leading,
+          title:const Text('Identidad del paciente contrastada'),
+          value:_requestIdentityChecked,
+          onChanged:_busy?null:(v)=>setState(()=>_requestIdentityChecked=v??false),
+        ),
+        CheckboxListTile(
+          contentPadding:EdgeInsets.zero,
+          controlAffinity:ListTileControlAffinity.leading,
+          title:const Text('Revisé el contenido del PDF original'),
+          value:_requestHumanChecked,
+          onChanged:_busy?null:(v)=>setState(()=>_requestHumanChecked=v??false),
+        ),
+        _action('Registrar solicitud',Icons.post_add_outlined,_attachMedicalRequest),
       ]),
       _section('Adjuntar informe autorizado',
         'Solo se reciben PDF ya validados externamente. '
