@@ -182,18 +182,27 @@ class DirectorioPacientesSilState extends State<DirectorioPacientesSil> {
           icon: const Icon(Icons.badge_outlined, size: 17),
           label: const Text('Ficha'),
         ),
-        TextButton.icon(
-          onPressed: _complete(patient)
-              ? () => widget.onPrepareRequest(email) : null,
-          icon: const Icon(Icons.note_add_outlined, size: 17),
-          label: const Text('Solicitud'),
-          // Sin ficha completa no se ofrece asociar un PDF.
+        Tooltip(
+          message: _complete(patient)
+              ? 'Recibir solicitud médica del paciente'
+              : 'Primero completa la ficha de identidad DEMO',
+          child: TextButton.icon(
+            onPressed: _complete(patient)
+                ? () => widget.onPrepareRequest(email) : null,
+            icon: const Icon(Icons.note_add_outlined, size: 17),
+            label: const Text('Solicitud'),
+          ),
         ),
-        TextButton.icon(
-          onPressed: _orderCount(patient) > 0
-              ? () => widget.onViewOrders(email) : null,
-          icon: const Icon(Icons.assignment_outlined, size: 17),
-          label: const Text('Órdenes'),
+        Tooltip(
+          message: _orderCount(patient) > 0
+              ? 'Ver las órdenes de esta cuenta'
+              : 'Esta cuenta todavía no tiene órdenes',
+          child: TextButton.icon(
+            onPressed: _orderCount(patient) > 0
+                ? () => widget.onViewOrders(email) : null,
+            icon: const Icon(Icons.assignment_outlined, size: 17),
+            label: const Text('Órdenes'),
+          ),
         ),
       ],
     );
@@ -236,6 +245,11 @@ class DirectorioPacientesSilState extends State<DirectorioPacientesSil> {
             Text('Última: ${patient['lastOrderNumber']}',
                 style: Theme.of(context).textTheme.bodySmall),
         ]),
+        if (!_complete(patient)) ...[
+          const SizedBox(height: 5),
+          const Text('Completa la ficha antes de asociar una solicitud.',
+            style: TextStyle(fontSize: 12, color: Color(0xFF87602B))),
+        ],
         const SizedBox(height: 5),
         _actions(patient),
       ]),
