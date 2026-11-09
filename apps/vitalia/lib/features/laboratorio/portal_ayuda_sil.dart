@@ -521,7 +521,7 @@ class PortalAyudaFooterSil extends StatelessWidget {
                   if (onReports != null)
                     ('Mis informes', onReports!),
                   if (onProfile != null)
-                    ('Mi perfil', onProfile!),
+                    ('Consultar mi ficha', onProfile!),
                   if (onRecovery != null)
                     ('Recuperación de acceso', onRecovery!),
                   (
