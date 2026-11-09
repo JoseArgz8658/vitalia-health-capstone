@@ -3,6 +3,8 @@ import {z} from 'zod';
 import {type AuthServices} from '../auth/router';
 import {isSessionToken} from '../auth/sessions';
 import {DocumentInputError} from '../documents/file-validation';
+import {SilEducationNotFound,SilEducationBusy,SilEducationUnavailable}
+  from './patient-education';
 import {
   SilMainAccessDenied,SilMainNotFound,SilMainConflict,type SilMainServices
 } from './main-service';
@@ -185,6 +187,29 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
         res.locals.account.id));
     });
 
+  router.post('/patient/reports/overview',patient,async(req,res)=>{
+    const data=z.object({
+      reportIds:z.array(uuid).min(1).max(4)
+        .refine(items=>new Set(items).size===items.length),
+    }).strict().safeParse(req.body);
+    if(!data.success){
+      res.status(400).json({error:{code:'INVALID_REPORT_SELECTION'}});return;
+    }
+    res.json(await main.getPatientReportOverview(
+      res.locals.account.id,data.data.reportIds));
+  });
+  router.post('/patient/reports/:id/chat',patient,async(req,res)=>{
+    const data=z.object({
+      question:z.string().trim().min(3).max(400),
+      simple:z.boolean().optional(),
+    }).strict().safeParse(req.body);
+    if(!uuid.safeParse(req.params.id).success || !data.success){
+      res.status(400).json({error:{code:'INVALID_QUESTION'}});return;
+    }
+    res.json({response:await main.askPatientReport(
+      res.locals.account.id,req.params.id as string,
+      data.data.question,data.data.simple)});
+  });
   router.get('/patient/profile',patient,async(_req,res)=>{
     res.json(await main.patientProfile(res.locals.account.id));
   });
@@ -207,6 +232,15 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
   });
 
   const errors:ErrorRequestHandler=(error,_req,res,next)=>{
+    if(error instanceof SilEducationNotFound){
+      res.status(404).json({error:{code:'NOT_FOUND'}});return;
+    }
+    if(error instanceof SilEducationBusy){
+      res.status(429).json({error:{code:'ASSISTANT_RATE_LIMIT'}});return;
+    }
+    if(error instanceof SilEducationUnavailable){
+      res.status(503).json({error:{code:'ASSISTANT_UNAVAILABLE'}});return;
+    }
     if(error instanceof SilMainAccessDenied){
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
     }
