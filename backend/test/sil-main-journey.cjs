@@ -364,7 +364,7 @@ async function main() {
     await call('uploader','POST',base+'/patients',201,{json:{
       patientId:ids.patient,identityEvidenceReference:'verificacion-ficticia',identityVerified:true,
     }});
-    const directory=await call('uploader','GET',base+'/patients?search=PATIENT&limit=1',200);
+    const directory=await call('uploader','GET',base+'/patients?search='+encodeURIComponent(credentials.patient.email.toUpperCase())+'&limit=1',200);
     const linked=await directory.json();
     assert.deepEqual(linked.patients.map(patient=>patient.id),[ids.patient]);
     assert.equal(linked.hasMore,false);
