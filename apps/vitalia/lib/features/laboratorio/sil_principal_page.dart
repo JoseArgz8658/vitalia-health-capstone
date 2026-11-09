@@ -35,6 +35,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _name = TextEditingController();
   final _inviteEmail = TextEditingController();
   final _staffAccount = TextEditingController();
+  List<Map<String,dynamic>> _labStaff = [];
   final _invitedPatientEmail = TextEditingController();
   final _patientSearch = TextEditingController();
   List<Map<String,dynamic>> _patients = [];
@@ -159,6 +160,21 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       if (selected != _labId) _resetLab(selected);
     });
     await _loadOrders();
+    if(_admin && _labId!=null) await _loadStaff();
+  }
+
+  // Lista de operadores que ya tienen acceso al laboratorio actual.
+  // Nunca incluye contraseñas ni códigos de invitación.
+  Future<void> _loadStaff() async {
+    final lab=_labId;
+    if(!_admin || lab==null){
+      if(mounted)setState(()=>_labStaff=[]);
+      return;
+    }
+    final result=await widget.api.silMainRequest('/labs/$lab/staff');
+    if(!mounted || _labId!=lab)return;
+    setState(()=>_labStaff=(result['staff'] as List? ?? [])
+      .map((value)=>Map<String,dynamic>.from(value as Map)).toList());
   }
 
   Future<void> _loadOrders() async {
@@ -248,6 +264,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
 
   void _resetLab(String? value) {
     _labId = value;
+    _labStaff = [];
+    _staffAccount.clear();
     _activeSection = _StationSection.dashboard;
     _patients = [];
     _patientSearch.clear();
@@ -289,7 +307,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   void _selectLab(String? value) {
     if (value == _labId || _busy) return;
     setState(() => _resetLab(value));
-    _execute(_loadOrders, showNotice: false);
+    _execute(() async {
+      await _loadOrders();
+      if(_admin)await _loadStaff();
+    },showNotice:false);
   }
 
   String? _requireUuid(String value) {
@@ -378,16 +399,19 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     await widget.api.silMainRequest('/labs/$lab/staff',body:{
       'accountId':accountId,
     });
+    _staffAccount.clear();
+    await _loadStaff();
   }
 
-  Future<void> _setReviewPermission(bool enabled) async {
-    final lab=_labId,accountId=_requireUuid(_staffAccount.text);
+  Future<void> _setReviewPermission(String rawAccountId,bool enabled) async {
+    final lab=_labId,accountId=_requireUuid(rawAccountId);
     if(lab==null||accountId==null){
       throw const AuthFailure('Selecciona laboratorio y escribe el UUID del operador.');
     }
     await widget.api.silMainRequest('/labs/$lab/staff/review-permission',body:{
       'accountId':accountId,'enabled':enabled,
     });
+    await _loadStaff();
   }
 
   Future<void> _invitePatient() async {
@@ -838,22 +862,71 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           _action('Crear invitación',Icons.person_add_alt_1,_inviteOperator),
         ]),
       if(_labId!=null)
-        _section('Acceso y permiso de revisión',
-          'Asigna un operador existente al laboratorio. Concede el permiso de '
-          'revisión solo tras verificar su capacitación para este flujo.',
+        _section('Operadores y permisos de revisión',
+          'Cada operador autorizado aparece aquí después de activar su invitación. '
+          'La revisión requiere un permiso explícito del administrador.',
           Icons.admin_panel_settings_outlined,[
-          _field(_staffAccount,'UUID de la cuenta del operador'),
-          Wrap(spacing:8,runSpacing:8,children:[
-            _action('Asignar operador',Icons.person_add_alt_1,_grantStaff),
-            OutlinedButton(
-              onPressed:_busy?null:()=>_execute(()=>_setReviewPermission(true)),
-              child:const Text('Autorizar revisión'),
+          OutlinedButton.icon(
+            onPressed:_busy?null:()=>_execute(_loadStaff,showNotice:false),
+            icon:const Icon(Icons.refresh),
+            label:const Text('Actualizar operadores'),
+          ),
+          const SizedBox(height:10),
+          if(_labStaff.isEmpty)
+            const Padding(
+              padding:EdgeInsets.symmetric(vertical:12),
+              child:Text('Todavía no hay operadores vinculados a este laboratorio. '
+                'Crea una invitación y pide al destinatario que active su acceso.'),
             ),
-            OutlinedButton(
-              onPressed:_busy?null:()=>_execute(()=>_setReviewPermission(false)),
-              child:const Text('Retirar permiso'),
+          for(final member in _labStaff)
+            Card(
+              child:Padding(
+                padding:const EdgeInsets.all(14),
+                child:Column(
+                  crossAxisAlignment:CrossAxisAlignment.stretch,
+                  children:[
+                    Text(member['email'] as String,
+                      overflow:TextOverflow.ellipsis,
+                      style:const TextStyle(fontWeight:FontWeight.w700)),
+                    const SizedBox(height:6),
+                    Text(member['active']==true
+                      ?member['canReviewReports']==true
+                        ?'Operador activo · revisión autorizada'
+                        :'Operador activo · sin permiso de revisión'
+                      :'Operador desactivado',
+                      style:const TextStyle(fontSize:12)),
+                    const SizedBox(height:8),
+                    Align(
+                      alignment:Alignment.centerRight,
+                      child:OutlinedButton.icon(
+                        onPressed:_busy||member['active']!=true?null
+                          :()=>_execute(()=>_setReviewPermission(
+                            member['accountId'] as String,
+                            member['canReviewReports']!=true,
+                          )),
+                        icon:Icon(member['canReviewReports']==true
+                          ?Icons.remove_moderator_outlined
+                          :Icons.verified_user_outlined),
+                        label:Text(member['canReviewReports']==true
+                          ?'Retirar permiso de revisión'
+                          :'Autorizar revisión'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ]),
+          const SizedBox(height:12),
+          ExpansionTile(
+            tilePadding:EdgeInsets.zero,
+            title:const Text('Vincular una cuenta operadora existente'),
+            subtitle:const Text('Solo cuentas ya activas con rol de operador'),
+            children:[
+              _field(_staffAccount,'UUID de una cuenta operadora existente'),
+              const SizedBox(height:8),
+              _action('Vincular al laboratorio',Icons.person_add_alt_1,_grantStaff),
+            ],
+          ),
         ]),
     ]);
   }
