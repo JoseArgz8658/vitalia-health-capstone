@@ -115,15 +115,12 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(find.text('Por revisar · 1'), findsOneWidget);
-    await tester.tap(find.byTooltip('Plegar menú'));
+    expect(find.byType(NavigationRail), findsNothing);
+    expect(find.text('Revisión (1)'), findsOneWidget);
+    await tester.tap(find.text('Revisión (1)'));
     await tester.pumpAndSettle();
-    expect(tester.widget<NavigationRail>(find.byType(NavigationRail)).extended,
-        isFalse);
-    await tester.tap(find.byTooltip('Abrir bandeja por revisar'));
-    await tester.pumpAndSettle();
+    expect(find.text('Bandeja de revisión de resultados'), findsOneWidget);
     expect(api.calls.last.queryParameters['status'], 'results_recorded');
-    await tester.tap(find.byTooltip('Expandir menú'));
-    await tester.pumpAndSettle();
     await tester.tap(find.text('Revisar resultados'));
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(find.text('Revisión interna')).dx,
@@ -139,6 +136,26 @@ void main() {
     expect(
         find.text('Revisión interna aprobada para VH-000013.'), findsOneWidget);
     expect(find.text('No hay órdenes en esta vista.'), findsOneWidget);
+  });
+
+  testWidgets('navegación móvil incluye bandeja de revisión', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 840);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = _OperatorApi()
+      ..canReview = true
+      ..status = 'results_recorded';
+    await tester.pumpWidget(MaterialApp(
+      home: OperadorLaboratorioPage(api: api, onExpired: () {}),
+    ));
+    await tester.pumpAndSettle();
+    final nav = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    expect(nav.destinations, hasLength(5));
+    await tester.tap(find.text('Revisión'));
+    await tester.pumpAndSettle();
+    expect(find.text('Bandeja de revisión de resultados'), findsOneWidget);
+    expect(api.calls.last.queryParameters['status'], 'results_recorded');
   });
 
   testWidgets('recibe un tubo sin etiqueta y muestra el código asignado', (
@@ -218,8 +235,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
-    expect(rail.destinations, hasLength(4));
+    expect(find.byType(NavigationRail), findsNothing);
+    expect(find.text('Recibir solicitud'), findsOneWidget);
+    expect(find.text('Pacientes DEMO'), findsOneWidget);
     final orders = find.text('Ver todas las órdenes');
     await tester.ensureVisible(orders);
     await tester.tap(orders);
