@@ -57,7 +57,12 @@ export function createApp(auth?: AuthServices, register?: PatientRegistrar, docu
   if (auth && silMain && process.env.VITALIA_SIL_MAIN_MODE==='YES') {
     app.use('/api/sil/main', createSilMainRouter(auth, silMain));
   }
-  if (auth && sil) app.use('/api/sil', createSilRouter(auth, sil));
+  // En modo principal se bloquean por completo las rutas antiguas del SIL
+  // sin aislamiento por laboratorio. El prefijo /api/sil/main es el único
+  // autorizado a exponer recursos del nuevo esquema.
+  if (auth && sil && process.env.VITALIA_SIL_MAIN_MODE!=='YES') {
+    app.use('/api/sil', createSilRouter(auth, sil));
+  }
   if (auth && careHistory) app.use('/api/documents', createCareHistoryRouter(auth, careHistory));
   if (auth && careInbox) app.use('/api/care-inbox', createCareInboxRouter(auth, careInbox));
   if (auth && careUpload) app.use('/api/care', createCareUploadRouter(auth, careUpload));
