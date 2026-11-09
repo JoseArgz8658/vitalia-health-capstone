@@ -51,6 +51,47 @@ class _ActivarPortalSilPageState extends State<ActivarPortalSilPage>{
           'Solicita uno al operador.');
       }else{
         setState(()=>_mailCode=code);
+        await showDialog<void>(
+          context:context,
+          builder:(dialogContext)=>AlertDialog(
+            title:const Row(children:[
+              Icon(Icons.mark_email_read_outlined,color:ColoresVitalia.azul),
+              SizedBox(width:9),
+              Expanded(child:Text('Correo de activación DEMO')),
+            ]),
+            content:ConstrainedBox(
+              constraints:const BoxConstraints(maxWidth:480),
+              child:Column(mainAxisSize:MainAxisSize.min,
+                crossAxisAlignment:CrossAxisAlignment.start,children:[
+                  Text('${response['subject']??'Invitación de Vitalia'}',
+                    style:const TextStyle(fontWeight:FontWeight.bold)),
+                  const Divider(height:20),
+                  Text('${response['guidance']??''}'),
+                  const SizedBox(height:14),
+                  Container(width:double.infinity,padding:const EdgeInsets.all(14),
+                    decoration:BoxDecoration(
+                      color:ColoresVitalia.azulSuave,
+                      borderRadius:BorderRadius.circular(12)),
+                    child:Column(children:[
+                      const Text('TU CÓDIGO DE CORREO',
+                        style:TextStyle(fontSize:11,letterSpacing:1)),
+                      const SizedBox(height:6),
+                      SelectableText(code,
+                        style:const TextStyle(fontWeight:FontWeight.w700,fontSize:19)),
+                    ])),
+                  const SizedBox(height:10),
+                  const Text('Buzón local simulado: no se envió ningún email real.',
+                    style:TextStyle(fontSize:12,
+                      color:ColoresVitalia.textoSecundario)),
+                ]),
+            ),
+            actions:[
+              FilledButton(
+                onPressed:()=>Navigator.pop(dialogContext),
+                child:const Text('Entendido')),
+            ],
+          ),
+        );
       }
     }on AuthFailure catch(e){
       if(mounted)setState(()=>_error=e.message);
