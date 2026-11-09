@@ -164,7 +164,8 @@ CREATE TABLE public.vitalia_sil_main_audit (
     'laboratory_created','operator_invited','operator_activated',
     'staff_granted','patient_identity_linked','order_created',
     'medical_request_received','medical_request_downloaded',
-    'report_attached','report_published','report_downloaded')),
+    'report_attached','report_review_accessed',
+    'report_published','report_downloaded')),
  details jsonb NOT NULL DEFAULT '{}'::jsonb
     CHECK(jsonb_typeof(details)='object'),
  created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
