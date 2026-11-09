@@ -198,10 +198,10 @@ async function operatorJourney(browser, order, base) {
     ]){
       const input=id(key).locator('input[data-semantics-role="text-field"]');
       await reach(page,input,key);
-      const box=await input.boundingBox();
-      await page.mouse.click(box.x+box.width/2,box.y+box.height/2);
-      const focused=page.locator('input:focus');
-      await focused.fill(value,{timeout:7000});
+      await input.focus();
+      const focused=input.and(page.locator(':focus'));
+      await focused.waitFor({timeout:7000});
+      await focused.pressSequentially(value,{delay:18});
       assert.equal(await focused.inputValue(),value,key);
     }
     await click(button('Elegir fecha de autorización'),'Elegir fecha de autorización');
