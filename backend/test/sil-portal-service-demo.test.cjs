@@ -64,6 +64,8 @@ test('el operador no recibe el token de correo y el buzón simulado es separado'
  expect(activated).toEqual({activated:true,loginRequired:true});
  expect(fixture.calls.some(q=>q.sql.includes(
    'DELETE FROM public.vitalia_sessions WHERE account_id=$1'))).toBe(true);
+ expect(fixture.calls.some(q=>q.sql.includes('SET active=true')
+    &&q.sql.includes("role_code='paciente'"))).toBe(true);
  expect(fixture.calls.some(q=>q.args.includes('portal_activated'))).toBe(true);
  expect(service.demoMailbox(email)).not.toHaveProperty('emailCode');
 });
@@ -94,4 +96,22 @@ test('límite de reenvíos evita generar una cuarta invitación',async()=>{
  expect(fixture.calls.some(q=>
   q.sql.includes('INSERT INTO public.vitalia_sil_portal_invitations_demo')))
   .toBe(false);
+});
+
+test('alta DEMO crea ficha sin habilitar rol web ni compartir contraseñas',async()=>{
+ const fixture=dbMock();
+ const service=createSilPortalActivationDemo(fixture.db);
+ const result=await service.provision({
+   email:'paciente-alta-demo@example.invalid',
+   givenNames:'Paciente',familyNames:'Inventado',
+   birthDate:'1991-02-03',sexForReference:'not_specified',
+ },operatorId);
+ expect(result.portalStatus).toBe('pending');
+ expect(result.patient.syntheticIdentifier).toMatch(/^DEMO-[A-F0-9]{12}$/);
+ expect(result).not.toHaveProperty('password');
+ expect(fixture.calls.some(q=>
+   q.sql.includes('SET active=false')&&q.sql.includes("role_code='paciente'")))
+   .toBe(true);
+ expect(fixture.calls.some(q=>q.args.includes('patient_provisioned'))).toBe(true);
+ expect(fixture.calls.some(q=>q.sql.includes('COMMIT'))).toBe(true);
 });
