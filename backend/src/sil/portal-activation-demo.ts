@@ -7,14 +7,14 @@ export class PortalDemoNotFound extends Error {}
 export class PortalDemoInvalidCode extends Error {}
 
 const mailbox=new Map<string,{code:string;createdAt:number;expiresAt:number}>();
-const tokenPattern=/^[A-Za-z0-9_-]{24}$/;
+const tokenPattern=/^[A-Za-z0-9_-]{12}$/;
 const demoEmailPattern=/^[a-z0-9.!#$%&'*+\/?^_`{|}~-]+@example\.invalid$/;
 const sha=(value:string)=>createHash('sha256').update(value,'utf8').digest('hex');
 const secureMatch=(a:string,b:string)=>{
   if(!tokenPattern.test(a)||!/^[a-f0-9]{64}$/.test(b))return false;
   return timingSafeEqual(Buffer.from(sha(a),'hex'),Buffer.from(b,'hex'));
 };
-const newCode=()=>randomBytes(18).toString('base64url');
+const newCode=()=>randomBytes(9).toString('base64url');
 const genericCodeFailure='La invitación no está disponible o los códigos no coinciden.';
 function safeEmail(email:string){
   const clean=email.toLowerCase().trim();
