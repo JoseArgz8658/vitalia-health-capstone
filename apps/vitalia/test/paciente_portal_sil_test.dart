@@ -200,6 +200,8 @@ void main() {
           api: api, email: _email, onExpired: () {}, onLogout: () {}),
     ));
     await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Mi cuenta'));
+    await tester.pumpAndSettle();
     await _tap(tester, 'Mi perfil');
     expect(find.text('Nombre: Paciente De prueba'), findsOneWidget);
     await _tap(tester, 'Cerrar');
@@ -223,6 +225,8 @@ void main() {
     await _tap(tester, 'Preguntar al asistente');
     expect(
         find.text('Es un intervalo que orienta la lectura.'), findsOneWidget);
+    await tester.tap(find.byTooltip('Mi cuenta'));
+    await tester.pumpAndSettle();
     await _tap(tester, 'Configurar recuperación');
     await _type(
         tester, find.widgetWithText(TextField, 'Contraseña actual'), _password);
@@ -231,6 +235,34 @@ void main() {
     await _tap(tester, 'Ya guardé la clave');
     expect(find.text(_key), findsNothing);
     expect(api.calls, ['profile', 'chat', 'generate']);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('portal de escritorio aprovecha ancho y muestra nombre real de ficha',
+      (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1366, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final api = _PatientApi();
+    await tester.pumpWidget(MaterialApp(
+      theme: temaVitalia(),
+      home: PacienteInformesSilPage(
+        api: api,
+        email: _email,
+        onExpired: () {},
+        onLogout: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Hola, Paciente'), findsOneWidget);
+    expect(find.text('Informes disponibles'), findsOneWidget);
+    expect(find.text('Última publicación'), findsOneWidget);
+    expect(find.text('Consulta conjunta'), findsOneWidget);
+    expect(find.text('Mi perfil'), findsOneWidget);
+    expect(find.text('Actualizar informes'), findsOneWidget);
+    expect(find.text('Configurar recuperación'), findsOneWidget);
+    expect(find.text('Ver resultados'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
