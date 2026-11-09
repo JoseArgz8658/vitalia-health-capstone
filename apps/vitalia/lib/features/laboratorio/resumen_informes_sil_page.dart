@@ -93,13 +93,39 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
       (source[key] as List?)?.whereType<Map>().toList() ?? [];
 
   Widget _panel(String title, List<Widget> children) => Card(
+        margin: const EdgeInsets.only(bottom: 12),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(19),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(title, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: ColoresVitalia.azulSuave,
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: const Icon(
+                      Icons.fact_check_outlined,
+                      color: ColoresVitalia.azul,
+                      size: 19,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: ColoresVitalia.texto,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
               ...children,
             ],
           ),
@@ -155,7 +181,26 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
                   'Texto detectado en la solicitud ${report['reference'] ?? ''}'
                       .trim()),
               const SizedBox(height: 6),
-              SelectableText('«$observation»'),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: ColoresVitalia.fondoAzul,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: ColoresVitalia.borde),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.format_quote_outlined,
+                      color: ColoresVitalia.azul,
+                      size: 19,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(child: SelectableText('«$observation»')),
+                  ],
+                ),
+              ),
               if (report['observationExplanation']
                   case final String explanation) ...[
                 const SizedBox(height: 8),
@@ -173,16 +218,59 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
                   'No se reconocieron cifras con su unidad. Consulta el PDF original.'),
             for (final item in _items(report, 'measurements'))
               Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                        '${item['analyte']} · ${_number(item['value'] as num)} ${item['unit']}',
-                        style: const TextStyle(fontWeight: FontWeight.w700)),
-                    if (item['explanation'] case final String explanation)
-                      Text(explanation),
-                  ],
+                padding: const EdgeInsets.only(bottom: 11),
+                child: Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: ColoresVitalia.fondoAzul,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: ColoresVitalia.bordeTenue),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: ColoresVitalia.verdeSuave,
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: const Icon(
+                          Icons.biotech_outlined,
+                          color: ColoresVitalia.verde,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 11),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${item['analyte']} · ${_number(item['value'] as num)} ${item['unit']}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: ColoresVitalia.texto,
+                                fontSize: 15,
+                              ),
+                            ),
+                            if (item['explanation']
+                                case final String explanation) ...[
+                              const SizedBox(height: 5),
+                              Text(
+                                explanation,
+                                style: const TextStyle(
+                                  color: ColoresVitalia.textoSecundario,
+                                  height: 1.45,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
           ],
