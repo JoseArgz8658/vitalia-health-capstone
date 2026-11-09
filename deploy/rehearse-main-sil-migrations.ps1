@@ -65,7 +65,7 @@ if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) {
 }
 
 if ($IncludeMainFoundation -and $UseBackendMigrator) {
-  throw 'Elige solo una modalidad de ensayo. UseBackendMigrator ya incluye 038 y 039.'
+  throw 'Elige solo una modalidad de ensayo. UseBackendMigrator ya incluye 038 a 040.'
 }
 
 try {
@@ -236,7 +236,7 @@ if ($approved) {
   Write-Host 'Bases existentes: sin cambios.'
   Write-Host 'Migraciones DEMO 033-037: no aplicadas.'
   if ($UseBackendMigrator) {
-    Write-Host 'SIL principal 038-039: esquema e historial verificados.'
+    Write-Host 'SIL principal 038-040: esquema e historial verificados.'
   } elseif ($IncludeMainFoundation) {
     Write-Host 'SIL principal 038: esquema y ledger verificados.'
   }

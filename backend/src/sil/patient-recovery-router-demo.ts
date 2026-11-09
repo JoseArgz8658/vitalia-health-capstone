@@ -6,14 +6,14 @@ import {isSessionToken} from '../auth/sessions';
 import {SilRecoveryBusy,SilRecoveryRejected,type SilPatientRecoveryDemo} from './patient-recovery-demo';
 
 export function createSilPatientRecoveryRouterDemo(
-  auth:Pick<AuthServices,'find'>,recovery:SilPatientRecoveryDemo,
+  auth:Pick<AuthServices,'find'>,recovery:SilPatientRecoveryDemo, mode:'demo'|'main'='demo',
 ){
   const router=Router();
   const allowGenerate=createLoginAttemptLimiter();
   const allowRecover=createLoginAttemptLimiter();
   router.use((_req,res,next)=>{
     res.set('Cache-Control','no-store');
-    if(process.env.VITALIA_SIL_DEMO!=='YES'){
+    if(mode==='demo' && process.env.VITALIA_SIL_DEMO!=='YES'){
       res.status(404).json({error:{code:'NOT_FOUND'}});return;
     }
     next();
@@ -37,7 +37,7 @@ export function createSilPatientRecoveryRouterDemo(
     }
     const data=z.object({
       email:z.string().trim().toLowerCase().pipe(z.email().max(254))
-        .refine(value=>value.endsWith('@example.invalid')),
+        .refine(value=>mode==='main'||value.endsWith('@example.invalid')),
       recoveryKey:z.string().regex(/^[A-Za-z0-9_-]{43}$/),
       password:z.string().refine(value=>[...value].length>=12 && Buffer.byteLength(value,'utf8')<=1024),
     }).strict().safeParse(req.body);

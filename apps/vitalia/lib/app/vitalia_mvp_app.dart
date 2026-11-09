@@ -145,6 +145,12 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
           builder:(_) => ActivarOperadorSilPage(api:_api),
         );
       }
+      if (settings.name == '/activar-portal' && _mainSil) {
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => ActivarOperadorSilPage(api: _api, patient: true),
+        );
+      }
       if (settings.name == '/activar-portal' &&
           const bool.fromEnvironment('VITALIA_SIL_DEMO_MODE'))
         return MaterialPageRoute<void>(

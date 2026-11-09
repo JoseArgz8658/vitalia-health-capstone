@@ -3,6 +3,7 @@ import {z} from 'zod';
 import {type AuthServices} from '../auth/router';
 import {isSessionToken} from '../auth/sessions';
 import {createLoginAttemptLimiter} from '../auth/login-limit';
+import {createSilPatientRecoveryRouterDemo} from './patient-recovery-router-demo';
 import {DocumentInputError} from '../documents/file-validation';
 import {SilEducationNotFound,SilEducationBusy,SilEducationUnavailable}
   from './patient-education';
@@ -72,6 +73,21 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     res.status(201).json(await main.activateOperator(
       data.data.email,data.data.code,data.data.password));
   });
+  const allowPatientActivation=createLoginAttemptLimiter();
+  router.post('/patients/activate',async(req,res)=>{
+    res.set('Cache-Control','no-store');
+    if(!allowPatientActivation(req.ip??req.socket.remoteAddress??'local')){
+      res.status(429).json({error:{code:'RATE_LIMITED'}});return;
+    }
+    const data=z.object({
+      email:z.string().trim().toLowerCase().pipe(z.email().max(254)),
+      code:z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+      password:z.string().refine(v=>[...v].length>=12&&Buffer.byteLength(v,'utf8')<=1024),
+    }).strict().safeParse(req.body);
+    if(!data.success){res.status(400).json({error:{code:'INVALID_INVITATION'}});return;}
+    res.status(201).json(await main.activatePatient(data.data.email,data.data.code,data.data.password));
+  });
+  router.use('/patient/recovery',createSilPatientRecoveryRouterDemo(auth,main.patientRecovery,'main'));
   router.use(async(req,res,next)=>{
     res.set('Cache-Control','private, no-store');
     const tokenParts=req.get('Authorization')?.split(' ');
@@ -193,6 +209,61 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     res.json(await main.listOrders(
       req.params.labId as string,res.locals.account.id,res.locals.account.role,
       data.data.limit,data.data.offset));
+  });
+
+  const allowPatientInvite=createLoginAttemptLimiter();
+  router.post('/labs/:labId/patient-invitations',staff,labPath,async(req,res)=>{
+    if(res.locals.account.role!=='operador_laboratorio'){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    if(!allowPatientInvite(res.locals.account.id)){
+      res.status(429).json({error:{code:'RATE_LIMITED'}});return;
+    }
+    const data=z.object({
+      email:z.string().trim().toLowerCase().pipe(z.email().max(254)),
+      identityReference:z.string().trim().min(6).max(150),
+      identityConfirmed:z.literal(true),
+    }).strict().safeParse(req.body);
+    if(!data.success){res.status(400).json({error:{code:'INVALID_INVITATION'}});return;}
+    res.status(201).json(await main.invitePatient(req.params.labId as string,res.locals.account.id,
+      data.data.email,data.data.identityReference));
+  });
+
+  const clinicalPath='/labs/:labId/orders/:orderId/clinical';
+  const clinicalOperator=(req:express.Request,res:express.Response,next:express.NextFunction)=>{
+    if(res.locals.account.role!=='operador_laboratorio'){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    if(!uuid.safeParse(req.params.orderId).success){
+      res.status(404).json({error:{code:'NOT_FOUND'}});return;
+    }
+    next();
+  };
+  router.get(clinicalPath,staff,labPath,clinicalOperator,async(req,res)=>{
+    res.json(await main.clinicalDetails(req.params.labId as string,req.params.orderId as string,res.locals.account.id));
+  });
+  router.post(clinicalPath+'/samples',staff,labPath,clinicalOperator,async(req,res)=>{
+    const data=z.object({containerCode:examCode}).strict().safeParse(req.body);
+    if(!data.success){res.status(400).json({error:{code:'INVALID_SAMPLE'}});return;}
+    res.status(201).json(await main.receiveSample(req.params.labId as string,
+      req.params.orderId as string,res.locals.account.id,data.data.containerCode));
+  });
+  router.post(clinicalPath+'/results',staff,labPath,clinicalOperator,async(req,res)=>{
+    const data=z.object({values:z.array(z.object({
+      examCode,analyte:z.string().trim().min(1).max(100),numericValue:z.number().min(-1e9).max(1e9),
+    }).strict()).min(1).max(100)}).strict().safeParse(req.body);
+    if(!data.success){res.status(400).json({error:{code:'INVALID_RESULTS'}});return;}
+    res.status(201).json(await main.recordAnalytes(req.params.labId as string,
+      req.params.orderId as string,res.locals.account.id,data.data.values));
+  });
+  router.post(clinicalPath+'/review',staff,labPath,clinicalOperator,async(req,res)=>{
+    const data=z.discriminatedUnion('decision',[
+      z.object({decision:z.literal('approved')}).strict(),
+      z.object({decision:z.literal('returned'),reason:z.string().trim().min(5).max(300)}).strict(),
+    ]).safeParse(req.body);
+    if(!data.success){res.status(400).json({error:{code:'INVALID_REVIEW'}});return;}
+    res.json(await main.reviewAnalytes(req.params.labId as string,req.params.orderId as string,
+      res.locals.account.id,data.data.decision,'reason' in data.data?data.data.reason:undefined));
   });
 
   router.post('/labs/:labId/orders',staff,labPath,async(req,res)=>{

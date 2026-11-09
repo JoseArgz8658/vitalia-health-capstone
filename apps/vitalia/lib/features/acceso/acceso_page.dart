@@ -5,6 +5,8 @@ import 'recuperar_portal_sil_page.dart';
 import 'registro_page.dart';
 import '../perfil/contrasena_profesional_page.dart';
 
+const _silMainMode = bool.fromEnvironment('VITALIA_SIL_MAIN_MODE');
+
 class AccesoPage extends StatefulWidget {
   const AccesoPage({
     super.key,
@@ -296,7 +298,7 @@ class _AccesoPageState extends State<AccesoPage> {
                                       child: const Text(
                                           'Crear cuenta de paciente'),
                                     ),
-                                    if (silPatientDemo)
+                                    if (silPatientDemo || _silMainMode)
                                       TextButton(
                                         onPressed: _busy || widget.api == null
                                             ? null
@@ -310,7 +312,7 @@ class _AccesoPageState extends State<AccesoPage> {
                                       ),
                                   ],
                                 ),
-                                if (silPatientDemo)
+                                if (silPatientDemo || _silMainMode)
                                   OutlinedButton.icon(
                                     onPressed: _busy || widget.api == null
                                         ? null
@@ -332,7 +334,7 @@ class _AccesoPageState extends State<AccesoPage> {
                                   label: const Text(
                                       'Acceso del personal de laboratorio'),
                                 ),
-                              if (!silPatientDemo)
+                              if (!silPatientDemo && !_silMainMode)
                                 TextButton(
                                   onPressed: () => showDialog<void>(
                                     context: context,

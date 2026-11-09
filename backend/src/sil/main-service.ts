@@ -1,6 +1,7 @@
 import {randomUUID,createHash,randomBytes} from 'node:crypto';
 import {hashPassword} from '../auth/password';
 import {type Pool,type PoolClient} from 'pg';
+import {createSilPatientRecoveryDemo} from './patient-recovery-demo';
 import {readPdfText} from '../pdf/reader';
 import {suggestMedicalRequestFields} from './medical-request-intake';
 import {identifyDocument} from '../documents/file-validation';
@@ -36,7 +37,9 @@ export function createSilMainService(db:Pool) {
     action:'laboratory_created'|'operator_invited'|'operator_activated'|
       'staff_granted'|'operator_review_permission_changed'|'patient_identity_linked'|
       'order_created'|'medical_request_received'|'medical_request_downloaded'|
-      'report_attached'|'report_review_accessed'|'report_published'|'report_downloaded',
+      'report_attached'|'report_review_accessed'|'report_published'|'report_downloaded'|
+      'sample_received'|'results_recorded'|'results_approved'|'results_returned'|
+      'patient_invited'|'patient_activated',
     orderId:string|null=null,details:Record<string,unknown>={}) {
     await tx.query(
       `INSERT INTO public.vitalia_sil_main_audit
@@ -116,7 +119,33 @@ export function createSilMainService(db:Pool) {
     return {request:{id,orderId,status:'received'}};
   }
 
+  async function clinicalOrder(tx:PoolClient,labId:string,orderId:string){
+    const order=await tx.query<{status:string}>(
+      'SELECT status FROM public.vitalia_sil_main_orders WHERE id=$1 AND lab_id=$2 FOR UPDATE',
+      [orderId,labId]);
+    if(!order.rows.length)throw new SilMainNotFound();
+    return order.rows[0].status;
+  }
+  async function containersFor(tx:PoolClient,orderId:string){
+    return (await tx.query<{code:string;label:string;barcode:string|null}>(
+      `SELECT DISTINCT c.code,c.label,s.barcode
+       FROM public.vitalia_sil_main_order_exams e
+       JOIN public.vitalia_sil_exam_containers m ON m.exam_code=e.exam_code
+       JOIN public.vitalia_sil_containers c ON c.code=m.container_code
+       LEFT JOIN public.vitalia_sil_main_samples s
+         ON s.order_id=e.order_id AND s.container_code=c.code
+       WHERE e.order_id=$1 ORDER BY c.code`,[orderId])).rows;
+  }
+  async function analytesFor(tx:PoolClient,orderId:string){
+    return (await tx.query<{examCode:string;analyte:string;unit:string}>(
+      `SELECT e.exam_code AS "examCode",a.analyte,a.unit
+       FROM public.vitalia_sil_main_order_exams e
+       JOIN public.vitalia_sil_exam_analytes a ON a.exam_code=e.exam_code
+       WHERE e.order_id=$1 ORDER BY e.exam_code,a.analyte`,[orderId])).rows;
+  }
+
   return {
+    patientRecovery:createSilPatientRecoveryDemo(db,'main'),
     getPatientReportOverview:mainOverview,
     askPatientReport:mainEducation.ask,
     async laboratoriesFor(accountId:string,role:string){
@@ -323,6 +352,127 @@ export function createSilMainService(db:Pool) {
       return {orders:results.rows};
     },
 
+    async clinicalDetails(labId:string,orderId:string,operatorId:string){
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx);
+        const status=await clinicalOrder(tx,labId,orderId);
+        const containers=await containersFor(tx,orderId);
+        const analytes=await analytesFor(tx,orderId);
+        const result=await tx.query(
+          'SELECT status,values_json AS values FROM public.vitalia_sil_main_result_sets WHERE order_id=$1',
+          [orderId]);
+        return {status,containers,analytes,results:result.rows[0]??null};
+      });
+    },
+
+    async receiveSample(labId:string,orderId:string,operatorId:string,code:string){
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx);
+        if(await clinicalOrder(tx,labId,orderId)!=='registered')throw new SilMainConflict();
+        const container=(await containersFor(tx,orderId)).find(item=>item.code===code);
+        if(!container||container.barcode)throw new SilMainConflict();
+        const barcode='LAB-'+randomUUID().toUpperCase();
+        await tx.query(
+          `INSERT INTO public.vitalia_sil_main_samples
+           (order_id,lab_id,container_code,barcode,received_by) VALUES($1,$2,$3,$4,$5)`,
+          [orderId,labId,code,barcode,operatorId]);
+        await audit(tx,labId,operatorId,'sample_received',orderId,{containerCode:code});
+        return {barcode};
+      });
+    },
+
+    async recordAnalytes(labId:string,orderId:string,operatorId:string,
+      values:{examCode:string;analyte:string;numericValue:number}[]){
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx);
+        if(await clinicalOrder(tx,labId,orderId)!=='registered')throw new SilMainConflict();
+        const containers=await containersFor(tx,orderId);
+        if(!containers.length||containers.some(item=>!item.barcode))throw new SilMainConflict();
+        const expected=await analytesFor(tx,orderId);
+        const provided=new Map(values.map(row=>[row.examCode+'|'+row.analyte,row.numericValue]));
+        if(!expected.length||provided.size!==values.length||expected.length!==values.length||
+          expected.some(row=>!provided.has(row.examCode+'|'+row.analyte)))throw new SilMainConflict();
+        const previous=await tx.query<{status:string;values:unknown}>(
+          'SELECT status,values_json AS values FROM public.vitalia_sil_main_result_sets WHERE order_id=$1',[orderId]);
+        if(previous.rows.length&&previous.rows[0].status!=='returned')throw new SilMainConflict();
+        const payload=expected.map(row=>({...row,numericValue:provided.get(row.examCode+'|'+row.analyte)}));
+        await tx.query(
+          `INSERT INTO public.vitalia_sil_main_result_sets(order_id,lab_id,status,values_json)
+           VALUES($1,$2,'pending',$3::jsonb) ON CONFLICT(order_id) DO UPDATE
+           SET status='pending',values_json=EXCLUDED.values_json`,[orderId,labId,JSON.stringify(payload)]);
+        await audit(tx,labId,operatorId,'results_recorded',orderId,{
+          count:payload.length,...(previous.rows.length?{previous:previous.rows[0].values}:{}),
+        });
+        return {status:'pending'};
+      });
+    },
+
+    async reviewAnalytes(labId:string,orderId:string,operatorId:string,
+      decision:'approved'|'returned',reason?:string){
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx,true);
+        if(await clinicalOrder(tx,labId,orderId)!=='registered')throw new SilMainConflict();
+        const result=await tx.query(
+          `UPDATE public.vitalia_sil_main_result_sets SET status=$2
+           WHERE order_id=$1 AND status='pending' RETURNING order_id`,[orderId,decision]);
+        if(!result.rows.length)throw new SilMainConflict();
+        await audit(tx,labId,operatorId,decision==='approved'?'results_approved':'results_returned',
+          orderId,reason?{reason}:{});
+        return {status:decision};
+      });
+    },
+
+    async invitePatient(labId:string,operatorId:string,email:string,identityReference:string){
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx);
+        await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))',
+          ['sil-patient-invite:'+labId+':'+email]);
+        const account=await tx.query('SELECT 1 FROM public.vitalia_accounts WHERE email=$1',[email]);
+        if(account.rows.length)throw new SilMainConflict();
+        await tx.query(
+          `UPDATE public.vitalia_sil_main_patient_invites SET expires_at=CURRENT_TIMESTAMP
+           WHERE lab_id=$1 AND email=$2 AND used_at IS NULL AND expires_at>CURRENT_TIMESTAMP`,
+          [labId,email]);
+        const code=randomBytes(32).toString('base64url');
+        const id=randomUUID();
+        const invite=await tx.query<{expiresAt:Date}>(
+          `INSERT INTO public.vitalia_sil_main_patient_invites
+           (id,lab_id,issued_by,email,token_hash,identity_reference,expires_at)
+           VALUES($1,$2,$3,$4,$5,$6,CURRENT_TIMESTAMP+INTERVAL '24 hours')
+           RETURNING expires_at AS "expiresAt"`,
+          [id,labId,operatorId,email,createHash('sha256').update(code).digest('hex'),identityReference]);
+        await audit(tx,labId,operatorId,'patient_invited',null,{inviteId:id});
+        return {email,code,expiresAt:invite.rows[0].expiresAt};
+      });
+    },
+
+    async activatePatient(email:string,code:string,password:string){
+      return transaction(async tx=>{
+        const data=await tx.query<{id:string;labId:string;issuedBy:string;reference:string}>(
+          `SELECT id,lab_id AS "labId",issued_by AS "issuedBy",identity_reference AS reference
+           FROM public.vitalia_sil_main_patient_invites
+           WHERE email=$1 AND token_hash=$2 AND used_at IS NULL
+           AND expires_at>CURRENT_TIMESTAMP FOR UPDATE`,
+          [email,createHash('sha256').update(code).digest('hex')]);
+        const invite=data.rows[0];
+        if(!invite)throw new SilMainAccessDenied();
+        await operator(invite.labId,invite.issuedBy,tx);
+        const id=randomUUID();
+        const created=await tx.query(
+          `INSERT INTO public.vitalia_accounts(id,email,role_code,password_hash)
+           VALUES($1,$2,'paciente',$3) ON CONFLICT(email) DO NOTHING RETURNING id`,
+          [id,email,await hashPassword(password)]);
+        if(!created.rows.length)throw new SilMainAccessDenied();
+        await tx.query(
+          `INSERT INTO public.vitalia_sil_main_patients
+           (lab_id,patient_id,verified_by,identity_evidence_reference) VALUES($1,$2,$3,$4)`,
+          [invite.labId,id,invite.issuedBy,invite.reference]);
+        await tx.query('UPDATE public.vitalia_sil_main_patient_invites SET used_at=CURRENT_TIMESTAMP WHERE id=$1',[invite.id]);
+        await audit(tx,invite.labId,id,'patient_activated',null,{inviteId:invite.id});
+        return {activated:true};
+      });
+    },
+
     async previewMedicalRequest(labId:string,operatorId:string,fileName:string,bytes:Buffer){
       await operator(labId,operatorId);
       identifyDocument(bytes,'application/pdf',fileName);
@@ -408,6 +558,12 @@ export function createSilMainService(db:Pool) {
           [orderId,labId]);
         if(!row.rows.length)throw new SilMainNotFound();
         if(row.rows[0].status!=='registered')throw new SilMainConflict();
+        const internal=await tx.query<{blocked:boolean}>(
+          `SELECT (EXISTS(SELECT 1 FROM public.vitalia_sil_main_samples WHERE order_id=$1)
+              OR EXISTS(SELECT 1 FROM public.vitalia_sil_main_result_sets WHERE order_id=$1))
+            AND NOT EXISTS(SELECT 1 FROM public.vitalia_sil_main_result_sets
+              WHERE order_id=$1 AND status='approved') AS blocked`,[orderId]);
+        if(internal.rows[0].blocked)throw new SilMainConflict();
         const id=randomUUID();
         await tx.query(
           `INSERT INTO public.vitalia_sil_main_reports

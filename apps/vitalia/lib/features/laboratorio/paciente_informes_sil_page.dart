@@ -969,7 +969,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         if (!_loading) _refresh();
         break;
       case 'recovery':
-        if (!_mainSil) _openRecovery();
+        _openRecovery();
         break;
       case 'logout':
         widget.onLogout();
@@ -1029,8 +1029,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               ),
             ),
           ],
-          if (!_mainSil)
-            const PopupMenuItem(
+          const PopupMenuItem(
               value: 'recovery',
               child: ListTile(
                 dense: true,
@@ -1273,8 +1272,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             ),
           ],
           if (fullAccountActions) ...[
-            if (!_mainSil)
-              TextButton.icon(
+            TextButton.icon(
                 onPressed: _openRecovery,
                 icon: const Icon(Icons.key_outlined, size: 18),
                 label: const Text('Recuperación'),
@@ -1362,7 +1360,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                   PortalAyudaFooterSil(
                     reports: _reports,
                     onProfile: _openProfile,
-                    onRecovery: _mainSil ? null : _openRecovery,
+                    onRecovery: _openRecovery,
                     onReports: _scrollToReports,
                   ),
                   const SizedBox(height: 18),

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
 import 'portal_visual_sil.dart';
+import 'sil_main_clinical_panel.dart';
 
 /// Estación de trabajo integrada a Vitalia original.
 /// Sin simuladores ni entidades ficticias de laboratorio.
@@ -28,12 +29,13 @@ class SilPrincipalPage extends StatefulWidget {
   State<SilPrincipalPage> createState() => _SilPrincipalPageState();
 }
 
-enum _StationSection { dashboard, orders, requests, patients, review }
+enum _StationSection { dashboard, orders, requests, patients, clinical, review }
 
 class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _name = TextEditingController();
   final _inviteEmail = TextEditingController();
   final _staffAccount = TextEditingController();
+  final _invitedPatientEmail = TextEditingController();
   final _patientSearch = TextEditingController();
   List<Map<String,dynamic>> _patients = [];
   int _patientOffset = 0;
@@ -100,7 +102,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   @override
   void dispose(){
     for(final ctrl in [
-      _name,_inviteEmail,_staffAccount,_patientSearch,_patientAccount,_evidence,_orderPatient,
+      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_patientAccount,_evidence,_orderPatient,
       _requestPatient,_requestPrescriber,_requestReference,_requestDate,
       _reportProfessional,_reportReference,_reportDate,
     ]){ctrl.dispose();}
@@ -174,7 +176,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _morePatients = false;
     _orders = [];
     for (final controller in [
-      _patientAccount, _evidence, _orderPatient, _requestPatient, _requestPrescriber,
+      _patientAccount, _invitedPatientEmail, _evidence, _orderPatient, _requestPatient, _requestPrescriber,
       _requestReference, _requestDate, _reportProfessional, _reportReference, _reportDate,
     ]) {
       controller.clear();
@@ -298,6 +300,36 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     await widget.api.silMainRequest('/labs/$lab/staff/review-permission',body:{
       'accountId':accountId,'enabled':enabled,
     });
+  }
+
+  Future<void> _invitePatient() async {
+    final lab = _labId;
+    final email = _invitedPatientEmail.text.trim().toLowerCase();
+    final reference = _evidence.text.trim();
+    if (lab == null || !email.contains('@') || reference.length < 6 || !_verifiedPatient) {
+      throw const AuthFailure('Verifica la identidad e ingresa el correo y la referencia.');
+    }
+    final invite = await widget.api.silMainRequest('/labs/$lab/patient-invitations', body: {
+      'email': email, 'identityReference': reference, 'identityConfirmed': true,
+    });
+    if (!mounted) return;
+    setState(() {
+      _verifiedPatient = false;
+      _evidence.clear();
+      _invitedPatientEmail.clear();
+    });
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Invitación de paciente'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Entrega el código a $email por un canal verificado. Vence en 24 horas.'),
+          const SizedBox(height: 12),
+          SelectableText(invite['code'] as String),
+        ]),
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar'))],
+      ),
+    );
   }
 
   Future<void> _linkPatient() async {
@@ -676,6 +708,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           controlAffinity:ListTileControlAffinity.leading,
         ),
         _action('Vincular paciente',Icons.verified_outlined,_linkPatient),
+        const Divider(),
+        _field(_invitedPatientEmail, 'Correo de un paciente nuevo'),
+        _action('Emitir código de activación', Icons.person_add_alt_1_outlined, _invitePatient),
       ]);
 
   Widget _newOrder() => _section('Crear orden postanalítica',
@@ -990,6 +1025,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       (_StationSection.orders, Icons.assignment_outlined, 'Órdenes'),
       (_StationSection.requests, Icons.note_add_outlined, 'Recibir solicitud'),
       (_StationSection.patients, Icons.badge_outlined, 'Pacientes'),
+      (_StationSection.clinical, Icons.science_outlined, 'Muestras y resultados'),
       if (_canReview)
         (_StationSection.review, Icons.fact_check_outlined, 'Revisión interna ($pending)'),
     ];
@@ -1064,6 +1100,15 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         }),
       _StationSection.requests => _requestIntake(),
       _StationSection.patients => Column(children: [_patientDirectory(), _patientLink()]),
+      _StationSection.clinical => _section(
+        'Muestras y resultados', 'Registra la recepción y revisa los analitos de la orden.',
+        Icons.science_outlined, [
+          SilMainClinicalPanel(
+            key: ValueKey(_labId), api: widget.api, labId: _labId!, orders: _orders,
+            canReview: _canReview, onExpired: widget.onExpired,
+          ),
+        ],
+      ),
       _StationSection.review => _canReview ? _reviewPanel() : _dashboard(),
     };
   }

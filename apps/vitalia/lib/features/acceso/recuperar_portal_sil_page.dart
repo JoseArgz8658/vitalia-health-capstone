@@ -109,7 +109,7 @@ class _RecuperarPortalSilPageState extends State<RecuperarPortalSilPage> {
                             decoration: const InputDecoration(
                                 labelText: 'Correo ficticio'),
                             validator: (value) =>
-                                validatePatientEmail(value, demo: true),
+                                validatePatientEmail(value, demo: !const bool.fromEnvironment('VITALIA_SIL_MAIN_MODE')),
                           ),
                           const SizedBox(height: 12),
                           TextFormField(

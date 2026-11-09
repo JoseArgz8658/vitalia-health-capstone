@@ -4,8 +4,9 @@ import '../../core/tema_vitalia.dart';
 
 /// Activación del operador principal por código externo de un solo uso.
 class ActivarOperadorSilPage extends StatefulWidget {
-  const ActivarOperadorSilPage({super.key,required this.api});
+  const ActivarOperadorSilPage({super.key,required this.api,this.patient=false});
   final AuthApi api;
+  final bool patient;
 
   @override
   State<ActivarOperadorSilPage> createState()=>_ActivarOperadorSilPageState();
@@ -40,7 +41,7 @@ class _ActivarOperadorSilPageState extends State<ActivarOperadorSilPage>{
     try{
       await widget.api.silMainActivateOperator(
         email:_email.text.trim(),code:_code.text.trim(),
-        password:_password.text,
+        password:_password.text,patient:widget.patient,
       );
       if(mounted)setState(()=>_activated=true);
     }on AuthFailure catch(error){
@@ -56,7 +57,7 @@ class _ActivarOperadorSilPageState extends State<ActivarOperadorSilPage>{
   Widget build(BuildContext context){
     return Scaffold(
       appBar:AppBar(
-        title:const Text('Vitalia Health · Acceso al laboratorio'),
+        title:Text(widget.patient ? 'Vitalia Health · Pacientes' : 'Vitalia Health · Acceso al laboratorio'),
         leading:IconButton(
           tooltip:'Volver',
           icon:const Icon(Icons.arrow_back),
@@ -79,7 +80,7 @@ class _ActivarOperadorSilPageState extends State<ActivarOperadorSilPage>{
                         color:ColoresVitalia.azul,size:46),
                       const SizedBox(height:15),
                       Text(
-                        _activated?'Acceso activado':'Activar acceso de operador',
+                        _activated ? 'Acceso activado' : widget.patient ? 'Activar acceso de paciente' : 'Activar acceso de operador',
                         textAlign:TextAlign.center,
                         style:Theme.of(context).textTheme.headlineSmall?.copyWith(
                           fontWeight:FontWeight.w800,
@@ -88,10 +89,10 @@ class _ActivarOperadorSilPageState extends State<ActivarOperadorSilPage>{
                       const SizedBox(height:9),
                       Text(
                         _activated
-                          ?'Ya puedes entrar desde el acceso de laboratorio '
+                          ?'Ya puedes iniciar sesión '
                            'con tu correo y la contraseña configurada.'
                           :'Ingresa el correo y el código personal que '
-                           'recibiste por un canal oficial del administrador. '
+                           'recibiste por un canal oficial del laboratorio. '
                            'El código solo puede utilizarse una vez.',
                         textAlign:TextAlign.center,
                         style:const TextStyle(

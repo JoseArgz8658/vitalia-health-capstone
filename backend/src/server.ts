@@ -93,9 +93,9 @@ async function main(): Promise<void> {
            AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
              WHERE version='038_sil_main_postanalytical')
            AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
-             WHERE version='039_sil_main_operator_review') AS ready`);
+             WHERE version='040_sil_main_clinical_access') AS ready`);
       if(mainSchema.rows[0]?.ready!==true) {
-        throw new Error('SIL principal solicitado sin esquema 039: activación bloqueada.');
+        throw new Error('SIL principal solicitado sin esquema 040: activación bloqueada.');
       }
     }
     const storageConfig = readStorageConfig(process.env);
@@ -103,11 +103,11 @@ async function main(): Promise<void> {
     await checkPrivateBucket(storage, storageConfig);
     const careUpload = createCareUploadService(documentDatabase(database));
     const documents = createDocumentService(documentDatabase(database), s3DocumentStorage(storage, storageConfig), careUpload);
-    const authenticate = await createCredentialAuthenticator(database);
+    const authenticate = await createCredentialAuthenticator(database,{guardPatientSession:process.env.VITALIA_SIL_MAIN_MODE==='YES'});
     const register = createPatientRegistrar(database);
     server = createApp({
       authenticate,
-      issue: (id,mode) => issueSession(database, id,mode),
+      issue: (id,mode,hash) => issueSession(database, id,mode,hash),
       find: token => findSessionAccount(database, token),
       revoke: token => revokeSession(database, token),
     }, register, documents, createProcessingService(database), createAssignmentService(documentDatabase(database)), createProfessionalService(documentDatabase(database), s3DocumentStorage(storage, storageConfig)), createReviewService(documentDatabase(database)), createExplanationService(documentDatabase(database), createExplanationGenerator()), createExamAssistantService(documentDatabase(database), createExamAssistant()), createProfileService(documentDatabase(database)), createInstitutionService(documentDatabase(database)), createOnboardingService(documentDatabase(database)), createTeamService(documentDatabase(database)), createCredentialVerificationService(documentDatabase(database)), createCareCatalogService(database), careUpload, createCareInboxService(documentDatabase(database), s3DocumentStorage(storage, storageConfig)), createCareHistoryService(documentDatabase(database)), createSilService(database), createSilMainService(database)).listen(config.PORT, config.HOST);

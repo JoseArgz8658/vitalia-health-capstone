@@ -115,6 +115,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Directorio de pacientes'), findsOneWidget);
       expect(find.text('Ana Prueba'), findsOneWidget);
+      expect(find.text('Emitir código de activación'), findsOneWidget);
       final requests = find.widgetWithText(TextButton, 'Recibir solicitud');
       await tester.ensureVisible(requests);
       await tester.tap(requests);
@@ -126,6 +127,11 @@ void main() {
       await tester.tap(linkOrder);
       await tester.pumpAndSettle();
       expect(find.text('Registrar solicitud'), findsOneWidget);
+      final clinicalTab = find.widgetWithText(TextButton, 'Muestras y resultados');
+      await tester.ensureVisible(clinicalTab);
+      await tester.tap(clinicalTab);
+      await tester.pumpAndSettle();
+      expect(_field('Orden para muestras y resultados'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }

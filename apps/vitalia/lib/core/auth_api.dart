@@ -133,7 +133,7 @@ class AuthApi {
     }
     final candidate=Uri.tryParse(path);
     final allowed=RegExp(
-      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/report/publish)?|staff(?:/review-permission)?|patients|operator-invitations))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
+      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review))?))?|staff(?:/review-permission)?|patients|patient-invitations|operator-invitations))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
     );
     final queries=candidate?.queryParametersAll ?? <String,List<String>>{};
     final isOrders=candidate?.path.endsWith('/orders') ?? false;
@@ -189,6 +189,7 @@ class AuthApi {
     required String email,
     required String code,
     required String password,
+    bool patient = false,
   }) async {
     if(!_silMainMode)throw const AuthFailure('El SIL principal no está activo.');
     final address=email.trim().toLowerCase();
@@ -197,7 +198,7 @@ class AuthApi {
     }
     try{
       final response=await _client.post(
-        _base.resolve('/api/sil/main/operators/activate'),
+        _base.resolve(patient ? '/api/sil/main/patients/activate' : '/api/sil/main/operators/activate'),
         headers:{'Content-Type':'application/json'},
         body:jsonEncode({'email':address,'code':code,'password':password}),
       ).timeout(const Duration(seconds:30));
@@ -1805,7 +1806,7 @@ class AuthApi {
     }
     try {
       final response = await _client.post(
-        _base.resolve('/api/sil/portal/recovery/$action'),
+        _base.resolve(_silMainMode ? '/api/sil/main/patient/recovery/$action' : '/api/sil/portal/recovery/$action'),
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',

@@ -331,8 +331,8 @@ async function main() {
     const host=express();
     const web=process.env.VITALIA_JOURNEY_WEB;
     host.use(createApp({
-      authenticate:await createCredentialAuthenticator(db),
-      issue:(id,mode)=>issueSession(db,id,mode),
+      authenticate:await createCredentialAuthenticator(db,{guardPatientSession:process.env.VITALIA_SIL_MAIN_MODE==='YES'}),
+      issue:(id,mode,hash)=>issueSession(db,id,mode,hash),
       find:token=>findSessionAccount(db,token),
       revoke:token=>revokeSession(db,token),
     },...Array(18).fill(undefined),createSilMainService(db)));
@@ -407,6 +407,27 @@ async function main() {
     const original=await call('uploader','GET',base+'/orders/'+orderId+'/medical-request/file',200);
     assert.deepEqual(Buffer.from(await original.arrayBuffer()),requestPdf);
     console.log('API: lectura, confirmación y registro atómico de solicitud verificados.');
+    const clinical=base+'/orders/'+orderId+'/clinical';
+    const sample=code=>({json:{containerCode:code}});
+    const values={json:{values:[{examCode:'glicemia',analyte:'Glucosa',numericValue:91.2}]}};
+    await call('uploader','GET',otherLab+'/orders/'+orderId+'/clinical',403);
+    await call('reviewer','GET',otherLab+'/orders/'+orderId+'/clinical',404);
+    await call('uploader','POST',clinical+'/results',409,values);
+    await call('uploader','POST',clinical+'/samples',409,sample('edta'));
+    await call('uploader','POST',clinical+'/samples',201,sample('fluoride'));
+    await call('uploader','POST',clinical+'/samples',409,sample('fluoride'));
+    await call('uploader','POST',clinical+'/results',201,values);
+    await call('uploader','POST',clinical+'/review',403,{json:{decision:'approved'}});
+    await admin(base+'/staff/review-permission',200,{accountId:ids.uploader,enabled:true});
+    await call('uploader','POST',clinical+'/review',200,{json:{decision:'returned',reason:'Revisar valor transcrito'}});
+    await call('uploader','POST',clinical+'/results',201,{json:{values:[
+      {examCode:'glicemia',analyte:'Glucosa',numericValue:93.1},
+    ]}});
+    await call('uploader','POST',clinical+'/review',200,{json:{decision:'approved'}});
+    const recorded=await (await call('uploader','GET',clinical,200)).json();
+    assert.equal(recorded.results.status,'approved');
+    assert.equal(recorded.results.values[0].numericValue,93.1);
+    console.log('API: muestras, resultados por analito, devolución, corrección y aprobación verificados.');
     const path=base+'/orders/'+orderId+'/report';
     const attached=await call('uploader','POST',path,201,{bytes:pdf,headers:{
       'Content-Type':'application/pdf','X-Report-Filename':'informe-sintetico.pdf',
@@ -446,6 +467,30 @@ async function main() {
     }
     await api('POST','/api/auth/logout',204,{token:tokens.patient});
     await call('patient','GET',patientFile,401);
+    const inviteEmail='patient-invited@example.invalid';
+    const inviteInput={email:inviteEmail,identityReference:'verificacion-ficticia-invitacion',identityConfirmed:true};
+    const oldInvite=await (await call('uploader','POST',base+'/patient-invitations',201,{json:inviteInput})).json();
+    const invite=await (await call('uploader','POST',base+'/patient-invitations',201,{json:inviteInput})).json();
+    await api('POST','/api/sil/main/patients/activate',403,{json:{email:inviteEmail,code:oldInvite.code,password}});
+    const activation={email:inviteEmail,code:invite.code,password};
+    await api('POST','/api/sil/main/patients/activate',201,{json:activation});
+    await call('uploader','POST',base+'/patient-invitations',409,{json:inviteInput});
+    await api('POST','/api/sil/main/patients/activate',403,{json:activation});
+    const invited=await (await api('POST','/api/auth/login',200,{json:{
+      mode:'paciente',email:inviteEmail,password,
+    }})).json();
+    const recovery=await (await api('POST','/api/sil/main/patient/recovery/key',201,{
+      token:invited.token,json:{currentPassword:password},
+    })).json();
+    const recovered={email:inviteEmail,recoveryKey:recovery.recoveryKey,password:'ClaveNueva-SoloPrueba-2026!'};
+    await api('POST','/api/sil/main/patient/recovery/complete',204,{json:recovered});
+    await api('POST','/api/sil/main/patient/recovery/complete',422,{json:recovered});
+    await api('GET','/api/auth/me',401,{token:invited.token});
+    await api('POST','/api/auth/login',401,{json:{mode:'paciente',email:inviteEmail,password}});
+    await api('POST','/api/auth/login',200,{json:{
+      mode:'paciente',email:inviteEmail,password:recovered.password,
+    }});
+    console.log('API: activación y recuperación del paciente de un solo uso verificadas.');
     console.log('API y PostgreSQL: recorrido con credenciales y sesiones reales aprobado.');
     if(web){
       const site=express();
