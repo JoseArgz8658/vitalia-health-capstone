@@ -237,11 +237,10 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
               ],
             ),
             const SizedBox(height: 13),
-            Container(
-              decoration: BoxDecoration(
-                color: ColoresVitalia.fondoAzul,
-                borderRadius: BorderRadius.circular(12),
-              ),
+            Material(
+              color: ColoresVitalia.fondoAzul,
+              borderRadius: BorderRadius.circular(12),
+              clipBehavior: Clip.antiAlias,
               child: ExpansionTile(
                 tilePadding: const EdgeInsets.symmetric(horizontal: 12),
                 initiallyExpanded:
