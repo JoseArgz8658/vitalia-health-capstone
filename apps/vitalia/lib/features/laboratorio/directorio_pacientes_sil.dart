@@ -62,7 +62,9 @@ class DirectorioPacientesSilState extends State<DirectorioPacientesSil> {
 
   Future<void> refresh() async {
     final id = ++_requestId;
-    if (mounted) setState(() { _loading = true; _error = null; });
+    if (mounted) {
+      setState(() { _loading = true; _error = null; });
+    }
     try {
       final params = <String, String>{
         'limit': '$_pageSize',
@@ -76,7 +78,7 @@ class DirectorioPacientesSilState extends State<DirectorioPacientesSil> {
       final data = await widget.api.silRequest(
         '/patients/list?${Uri(queryParameters: params).query}',
       );
-      if (!mounted || id != _requestId) return;
+      if (!mounted || id != _requestId) { return; }
       setState(() {
         _patients = (data['patients'] as List? ?? [])
             .map((item) => Map<String, dynamic>.from(item as Map))
@@ -85,7 +87,7 @@ class DirectorioPacientesSilState extends State<DirectorioPacientesSil> {
         _loading = false;
       });
     } on AuthFailure catch (error) {
-      if (!mounted || id != _requestId) return;
+      if (!mounted || id != _requestId) { return; }
       if (error.status == 401) {
         widget.onExpired();
         return;
@@ -126,7 +128,7 @@ class DirectorioPacientesSilState extends State<DirectorioPacientesSil> {
   }
 
   void _changePage(int offset) {
-    if (_loading || offset < 0 || offset >= _total) return;
+    if (_loading || offset < 0 || offset >= _total) { return; }
     setState(() => _offset = offset);
     refresh();
   }
@@ -319,7 +321,7 @@ class DirectorioPacientesSilState extends State<DirectorioPacientesSil> {
         ),
         items: options,
         onChanged: (v) {
-          if (v == null) return;
+          if (v == null) { return; }
           onChanged(v);
           setState(() => _offset = 0);
           refresh();
