@@ -94,7 +94,7 @@ try {
     $combined38 = $sql38Content + "`n" +
       "INSERT INTO public.vitalia_schema_migrations(version,checksum) VALUES('038_sil_main_postanalytical','$hash38');`n" +
       @'
-DO $
+DO $$
 BEGIN
  IF (SELECT count(*) FROM public.vitalia_schema_migrations) <> 34
    OR EXISTS(
@@ -117,7 +117,7 @@ BEGIN
    OR to_regclass('public.vitalia_sil_main_audit') IS NULL THEN
    RAISE EXCEPTION 'SIL principal 038 no está completo en la copia aislada';
  END IF;
-END $;
+END $$;
 '@
     [System.IO.File]::WriteAllText(
       (Join-Path $stagedMigrations '038_apply_ensayo.sql'),
