@@ -967,13 +967,41 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       case 'logout':
         widget.onLogout();
         break;
+      case 'help':
+        PortalAyudaSil.preguntasFrecuentes(context);
+        break;
+      case 'contact':
+        PortalAyudaSil.contacto(context, _reports);
+        break;
     }
   }
 
   Widget _accountMenu({bool includeProfileAndRefresh = true}) =>
       PopupMenuButton<String>(
         tooltip: 'Mi cuenta',
-        icon: const Icon(Icons.manage_accounts_outlined),
+        icon: FutureBuilder<Map<String, dynamic>>(
+          future: _profileRequest,
+          builder: (context, snapshot) {
+            final profile = snapshot.data?['profile'] as Map?;
+            final names = profile?['hasProfile'] == true
+                ? (profile?['givenNames'] as String? ?? '').trim()
+                : '';
+            final initial = names.isNotEmpty
+                ? names.characters.first.toUpperCase()
+                : 'P';
+            return CircleAvatar(
+              radius: 18,
+              backgroundColor: ColoresVitalia.azulSuave,
+              child: Text(
+                initial,
+                style: const TextStyle(
+                  color: ColoresVitalia.azulActivo,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            );
+          },
+        ),
         onSelected: _accountAction,
         itemBuilder: (context) => [
           if (includeProfileAndRefresh) ...[
@@ -1000,6 +1028,23 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               dense: true,
               leading: Icon(Icons.key_outlined),
               title: Text('Configurar recuperación'),
+            ),
+          ),
+          const PopupMenuDivider(),
+          const PopupMenuItem(
+            value: 'help',
+            child: ListTile(
+              dense: true,
+              leading: Icon(Icons.help_outline),
+              title: Text('Centro de ayuda'),
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'contact',
+            child: ListTile(
+              dense: true,
+              leading: Icon(Icons.support_agent_outlined),
+              title: Text('Contacto del laboratorio'),
             ),
           ),
         ],
@@ -1107,8 +1152,8 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     final narrow = width < 600;
     // El AppBar tiene menos espacio útil que el ancho total de pantalla.
     // Evitamos mostrar todas las etiquetas en escritorios intermedios.
-    final fullAccountActions = width >= 1580;
-    final mediumAccountActions = width >= 1050 && !fullAccountActions;
+    final fullAccountActions = width >= 1700;
+    final mediumAccountActions = width >= 1120 && !fullAccountActions;
     final query = _filter.text.trim().toLowerCase();
     final visibleReports = _reports
         .where((report) =>
@@ -1123,26 +1168,72 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
 
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: 68,
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        toolbarHeight: 79,
+        elevation: 0,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(3),
+          child: Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFF1C485E),
+                  Color(0xFF3BA4A0),
+                  Color(0xFFE2F0ED),
+                ],
+              ),
+            ),
+          ),
+        ),
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.favorite_outline,
-                color: ColoresVitalia.azul, size: 26),
-            const SizedBox(width: 9),
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: ColoresVitalia.azulSuave,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: const Icon(
+                Icons.favorite_outline,
+                color: ColoresVitalia.azul,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 10),
             Text(
               narrow ? 'Vitalia' : 'Vitalia Health',
-              style: const TextStyle(fontWeight: FontWeight.w800),
+              style: TextStyle(
+                fontSize: narrow ? 19 : 21,
+                color: ColoresVitalia.texto,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-            if (width >= 1580) ...[
-              const SizedBox(width: 15),
-              Container(width: 1, height: 24, color: ColoresVitalia.borde),
-              const SizedBox(width: 15),
-              Text(
-                'Portal del paciente',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: ColoresVitalia.textoSecundario,
-                ),
+            if (width >= 1700) ...[
+              const SizedBox(width: 16),
+              Container(width: 1, height: 27, color: ColoresVitalia.borde),
+              const SizedBox(width: 16),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'PORTAL PRIVADO',
+                    style: TextStyle(
+                      color: ColoresVitalia.azul,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  Text(
+                    'Paciente',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: ColoresVitalia.textoSecundario,
+                    ),
+                  ),
+                ],
               ),
             ],
           ],
@@ -1151,29 +1242,35 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
           if (fullAccountActions || mediumAccountActions) ...[
             TextButton.icon(
               onPressed: _openProfile,
-              icon: const Icon(Icons.person_outline),
+              icon: const Icon(Icons.person_outline, size: 18),
               label: const Text('Mi perfil'),
             ),
             TextButton.icon(
               onPressed: _loading ? null : _refresh,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Actualizar informes'),
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Actualizar'),
             ),
           ],
-          if (fullAccountActions)
+          if (fullAccountActions) ...[
             TextButton.icon(
               onPressed: _openRecovery,
-              icon: const Icon(Icons.key_outlined),
-              label: const Text('Configurar recuperación'),
-            )
-          else
+              icon: const Icon(Icons.key_outlined, size: 18),
+              label: const Text('Recuperación'),
+            ),
+            TextButton.icon(
+              onPressed: () => PortalAyudaSil.preguntasFrecuentes(context),
+              icon: const Icon(Icons.help_outline, size: 18),
+              label: const Text('Ayuda'),
+            ),
+          ] else
             _accountMenu(
               includeProfileAndRefresh: !mediumAccountActions,
             ),
+          const SizedBox(width: 6),
           if (fullAccountActions)
             TextButton.icon(
               onPressed: widget.onLogout,
-              icon: const Icon(Icons.logout_outlined),
+              icon: const Icon(Icons.logout_outlined, size: 18),
               label: const Text('Cerrar sesión'),
             )
           else
@@ -1182,7 +1279,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               onPressed: widget.onLogout,
               icon: const Icon(Icons.logout_outlined),
             ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
         ],
       ),
       body: SafeArea(
