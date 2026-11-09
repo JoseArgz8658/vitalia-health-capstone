@@ -116,6 +116,87 @@ class AuthApi {
     }
   }
 
+  /// Acceso controlado a las operaciones de activación del portal SIL DEMO.
+  /// El navegador nunca consulta secretos de contraseñas existentes.
+  Future<Map<String,dynamic>> silPortalRequest(
+    String path,{Map<String,dynamic>? body}
+  ) async {
+    final uri=Uri.tryParse(path);
+    if(uri==null||uri.hasScheme||uri.hasAuthority||uri.hasQuery||
+       uri.hasFragment||
+       !RegExp(r'^/portal/patients(?:/[a-f0-9-]{36}(?:/invitations)?)?$')
+         .hasMatch(uri.path)){
+      throw const AuthFailure('Acción de portal inválida.');
+    }
+    final token=_token;
+    if(token==null||expiresAt==null||!expiresAt!.isAfter(DateTime.now())){
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+    }
+    try{
+      final target=_base.resolve('/api/sil${uri.path}');
+      final headers={'Authorization':'Bearer $token',
+        'Content-Type':'application/json'};
+      final response=await (body==null
+        ?_client.get(target,headers:headers)
+        :_client.post(target,headers:headers,body:jsonEncode(body)))
+        .timeout(const Duration(seconds:25));
+      if(response.statusCode==401||token!=_token){
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+      }
+      if(response.statusCode>=400){
+        throw AuthFailure(switch(response.statusCode){
+          400=>'Comprueba los datos del paciente y los requisitos.',
+          403=>'Tu rol no puede gestionar invitaciones.',
+          404=>'El registro no está disponible en este entorno.',
+          409=>'La cuenta ya está activa, existe un conflicto o alcanzaste el límite de invitaciones.',
+          429=>'Demasiados intentos. Vuelve a intentarlo más tarde.',
+          _=>'No se pudo completar la gestión del portal.',
+        },response.statusCode);
+      }
+      return jsonDecode(response.body) as Map<String,dynamic>;
+    } on AuthFailure {rethrow;}
+      on TimeoutException {throw const AuthFailure('La operación tardó demasiado.');}
+      catch(_){throw const AuthFailure('No fue posible conectar con el portal DEMO.');}
+  }
+
+  /// Solo entorno SIL DEMO: simulación de correo (no envía emails reales).
+  Future<Map<String,dynamic>> silPortalPublic(
+    String path,{Map<String,dynamic>? body}
+  ) async {
+    final uri=Uri.tryParse(path);
+    final mailbox=uri?.path=='/portal/demo-mailbox';
+    final activate=uri?.path=='/portal/activate';
+    if(uri==null||uri.hasScheme||uri.hasAuthority||uri.hasFragment||
+      !(activate&&uri.query.isEmpty&&body!=null ||
+        mailbox&&body==null&&uri.queryParameters.length==1&&
+          uri.queryParameters.containsKey('email'))){
+      throw const AuthFailure('Ruta pública inválida.');
+    }
+    try{
+      final target=_base.resolve('/api/sil${uri.path}').replace(
+        queryParameters:mailbox?uri.queryParameters:null);
+      final response=await (body==null
+        ?_client.get(target)
+        :_client.post(target,headers:{'Content-Type':'application/json'},
+          body:jsonEncode(body))).timeout(const Duration(seconds:25));
+      if(response.statusCode>=400){
+        throw AuthFailure(switch(response.statusCode){
+          400=>'Comprueba el correo, los códigos y la contraseña.',
+          404=>'El correo simulado no está habilitado.',
+          409=>'La invitación no se encuentra disponible.',
+          422=>'Código incorrecto, vencido o utilizado. Comprueba ambos canales.',
+          429=>'Demasiados intentos. Intenta más tarde.',
+          _=>'No fue posible activar el portal.',
+        },response.statusCode);
+      }
+      return jsonDecode(response.body) as Map<String,dynamic>;
+    } on AuthFailure {rethrow;}
+      on TimeoutException {throw const AuthFailure('La consulta tardó demasiado.');}
+      catch(_){throw const AuthFailure('No fue posible conectar con la activación.');}
+  }
+
   /// Prelectura de solicitud médica ficticia: no crea órdenes.
   Future<Map<String,dynamic>> silPreviewMedicalRequest({
     required String email,
