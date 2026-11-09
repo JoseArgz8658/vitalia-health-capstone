@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
 import 'portal_visual_sil.dart';
+import 'portal_ayuda_sil.dart';
 
 class ResumenInformesSilPage extends StatefulWidget {
   const ResumenInformesSilPage({
@@ -483,6 +484,11 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
         toolbarHeight: 65,
         title: const Text('Resumen de informes'),
         actions: [
+          IconButton(
+            tooltip: 'Ayuda y preguntas frecuentes',
+            onPressed: () => PortalAyudaSil.preguntasFrecuentes(context),
+            icon: const Icon(Icons.help_outline),
+          ),
           if (!narrow)
             Padding(
               padding: const EdgeInsets.only(right: 18),
@@ -562,7 +568,12 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
                           )),
                     ),
                   ],
-                  const SizedBox(height: 25),
+                  const SizedBox(height: 37),
+                  PortalAyudaFooterSil(
+                    reports: widget.reports,
+                    onReports: () => Navigator.pop(context),
+                  ),
+                  const SizedBox(height: 16),
                   const Text(
                     'Vitalia Health · Lectura educativa sobre documentos '
                     'ficticios. Conserva siempre el informe original.',
