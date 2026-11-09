@@ -56,7 +56,7 @@ export function createSilPortalRouterDemo(
     }
     const parsed=z.object({
       email,emailCode:code,handoffCode:code,
-      password:z.string().min(12).refine(v=>Buffer.byteLength(v,'utf8')<=1024),
+      password:z.string().refine(v=>[...v].length>=12 && Buffer.byteLength(v,'utf8')<=1024),
       confirmedDetails:z.literal(true),
     }).strict().safeParse(req.body);
     if(!parsed.success){
@@ -100,6 +100,7 @@ export function createSilPortalRouterDemo(
     const parsed=z.object({
       contactConfirmed:z.literal(true),
       identityChecked:z.literal(true),
+      recipientRevision:z.string().regex(/^[a-f0-9]{64}$/),
     }).strict().safeParse(req.body);
     if(!parsed.success){
       res.status(400).json({error:{code:'INVALID_CONFIRMATION'}});return;

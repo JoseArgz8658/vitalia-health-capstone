@@ -6,21 +6,7 @@ export class PortalDemoConflict extends Error {}
 export class PortalDemoNotFound extends Error {}
 export class PortalDemoInvalidCode extends Error {}
 
-const mailbox=new Map<string,{code:string;createdAt:number;expiresAt:number}>();
 const tokenPattern=/^[A-Za-z0-9_-]{12}$/;
-function storeDemoMail(email:string,code:string) {
-  const now=Date.now();
-  for(const [key,item] of mailbox){
-    if(item.expiresAt<=now)mailbox.delete(key);
-  }
-  // Buzón efímero y acotado, incluso durante pruebas de carga.
-  if(mailbox.size>=200&&!mailbox.has(email)){
-    const oldest=mailbox.keys().next().value;
-    if(oldest!==undefined)mailbox.delete(oldest);
-  }
-  mailbox.set(email,{code,createdAt:now,expiresAt:now+20*60*1000});
-}
-
 const demoEmailPattern=/^[a-z0-9.!#$%&'*+\/?^_`{|}~-]+@example\.invalid$/;
 const sha=(value:string)=>createHash('sha256').update(value,'utf8').digest('hex');
 const secureMatch=(a:string,b:string)=>{
@@ -48,7 +34,31 @@ type NewProfile={
   sexForReference:'female'|'male'|'not_specified';contactPhoneDemo?:string;
 };
 
+type Recipient=Pick<NewProfile,'email'|'givenNames'|'familyNames'|'birthDate'> & {
+  syntheticIdentifier:string;
+};
+const recipientRevision=(p:Recipient)=>sha(JSON.stringify([
+  p.email,p.givenNames,p.familyNames,p.birthDate,p.syntheticIdentifier,
+]));
+
 export function createSilPortalActivationDemo(db:Pool) {
+  const mailbox=new Map<string,{invitationId:string;code:string;expiresAt:number}>();
+  function storeDemoMail(email:string,invitationId:string,code:string,expiresAt:number){
+    const now=Date.now();
+    for(const [key,item] of mailbox){
+      if(item.expiresAt<=now)mailbox.delete(key);
+    }
+    if((mailbox.get(email)?.expiresAt??0)>expiresAt)return;
+    if(mailbox.size>=200&&!mailbox.has(email)){
+      const oldest=mailbox.keys().next().value;
+      if(oldest!==undefined)mailbox.delete(oldest);
+    }
+    mailbox.set(email,{invitationId,code,expiresAt});
+  }
+  function clearDemoMail(email:string,invitationId:string){
+    if(mailbox.get(email)?.invitationId===invitationId)mailbox.delete(email);
+  }
+
   return {
     /** Alta del paciente sintético: crea un registro SIN contraseña conocida.
      *  El paciente sólo obtiene credenciales cuando valida ambos canales. */
@@ -118,12 +128,13 @@ export function createSilPortalActivationDemo(db:Pool) {
              a.email LIKE '%@example.invalid'`,[patientId]);
         if(found.rows.length!==1)throw new PortalDemoNotFound();
         await audit(client,patientId,actorId,'portal_access_read');
-        return {patient:found.rows[0],canInvite:found.rows[0].portalStatus==='pending'||
-          found.rows[0].portalStatus==='invited'};
+        const patient=found.rows[0];
+        const canInvite=['pending','invited'].includes(patient.portalStatus);
+        return {patient,canInvite,...(canInvite?{recipientRevision:recipientRevision(patient)}:{})};
       }finally{client.release();}
     },
     async invite(patientId:string,actorId:string,
-      assertions:{contactConfirmed:true;identityChecked:true}){
+      assertions:{contactConfirmed:true;identityChecked:true;recipientRevision:string}){
       if(!assertions.contactConfirmed||!assertions.identityChecked)
         throw new PortalDemoConflict();
       const emailCode=newCode();
@@ -134,10 +145,7 @@ export function createSilPortalActivationDemo(db:Pool) {
       let email='';
       try{
         await client.query('BEGIN');
-        const result=await client.query<{
-          email:string;status:string;givenNames:string;familyNames:string;
-          syntheticIdentifier:string;birthDate:string;
-        }>(
+        const result=await client.query<Recipient & {status:string}>(
           `SELECT a.email,access.status,
              p.given_names AS "givenNames",p.family_names AS "familyNames",
              p.synthetic_identifier AS "syntheticIdentifier",
@@ -147,26 +155,32 @@ export function createSilPortalActivationDemo(db:Pool) {
            JOIN public.vitalia_sil_patient_profiles_demo p ON p.patient_id=a.id
            WHERE access.patient_id=$1 AND a.role_code='paciente'
              AND a.email LIKE '%@example.invalid'
-           FOR UPDATE OF access`,[patientId]);
+           FOR UPDATE OF access,p`,[patientId]);
         if(result.rows.length!==1)throw new PortalDemoNotFound();
         const patient=result.rows[0];
         email=patient.email;
-        if(!['pending','invited'].includes(patient.status))
+        if(!['pending','invited'].includes(patient.status)||
+           assertions.recipientRevision!==recipientRevision(patient))
           throw new PortalDemoConflict();
         const recent=await client.query<{total:number}>(
           `SELECT COUNT(*)::int AS total
            FROM public.vitalia_sil_portal_invitations_demo
-           WHERE patient_id=$1 AND created_at > CURRENT_TIMESTAMP - INTERVAL '1 hour'`,
+           WHERE patient_id=$1 AND created_at > statement_timestamp() - INTERVAL '1 hour'`,
           [patientId]);
         if(recent.rows[0].total>=3)throw new PortalDemoConflict();
-        await client.query(
-          `UPDATE public.vitalia_sil_portal_invitations_demo SET revoked_at=CURRENT_TIMESTAMP
+        const revoked=await client.query(
+          `UPDATE public.vitalia_sil_portal_invitations_demo SET revoked_at=statement_timestamp()
            WHERE patient_id=$1 AND consumed_at IS NULL AND revoked_at IS NULL`,[patientId]);
-        await client.query(
+        if(revoked.rowCount){
+          await audit(client,patientId,actorId,'invitation_revoked',{reason:'resend'});
+        }
+        const issued=await client.query<{expiresAt:Date}>(
           `INSERT INTO public.vitalia_sil_portal_invitations_demo
-           (id,patient_id,email_token_hash,handoff_token_hash,issued_by,expires_at)
-           VALUES($1,$2,$3,$4,$5,CURRENT_TIMESTAMP + INTERVAL '20 minutes')`,
+           (id,patient_id,email_token_hash,handoff_token_hash,issued_by,created_at,expires_at)
+           VALUES($1,$2,$3,$4,$5,statement_timestamp(),statement_timestamp() + INTERVAL '20 minutes')
+           RETURNING expires_at AS "expiresAt"`,
           [id,patientId,sha(emailCode),sha(handoffCode),actorId]);
+        const expiresAt=issued.rows[0].expiresAt;
         await client.query(
           `UPDATE public.vitalia_sil_portal_access_demo
             SET status='invited',contact_confirmed_at=CURRENT_TIMESTAMP,
@@ -178,7 +192,7 @@ export function createSilPortalActivationDemo(db:Pool) {
         await client.query('COMMIT');
         // El código del correo nunca se devuelve al operador.
         // Buzón simulado, sólo activo en el servicio DEMO aislado.
-        storeDemoMail(email,emailCode);
+        storeDemoMail(email,id,emailCode,expiresAt.getTime());
         return {
           invitation:{id,patientId,status:'invited',expiresInMinutes:20,
             delivery:'simulated_outbox',contactEmail:email},
@@ -196,7 +210,7 @@ export function createSilPortalActivationDemo(db:Pool) {
     demoMailbox(email:string){
       const address=safeEmail(email);
       const item=mailbox.get(address);
-      if(!item||Date.now()>item.expiresAt)return {message:'No hay invitaciones vigentes.'};
+      if(!item||Date.now()>=item.expiresAt)return {message:'No hay invitaciones vigentes.'};
       return {
         message:'Mensaje ficticio disponible. Nunca contiene informes ni datos clínicos.',
         subject:'Vitalia Health · Activa tu acceso privado (DEMO)',
@@ -216,68 +230,72 @@ export function createSilPortalActivationDemo(db:Pool) {
       if(!input.confirmedDetails)throw safeCodeError();
       const client=await db.connect();
       let invalid=false;
+      let transactionOpen=false;
       try{
-        await client.query('BEGIN');
-        const result=await client.query<{
-          patientId:string;status:string;invitationId:string|null;emailTokenHash:string|null;
-          handoffTokenHash:string|null;attempts:number|null;expiresAt:Date|null
-        }>(
-          `SELECT a.id AS "patientId",access.status,
-            i.id AS "invitationId",i.email_token_hash AS "emailTokenHash",
-            i.handoff_token_hash AS "handoffTokenHash",
-            i.attempts,i.expires_at AS "expiresAt"
+        await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+        transactionOpen=true;
+        const access=await client.query<{patientId:string;status:string}>(
+          `SELECT a.id AS "patientId",access.status
            FROM public.vitalia_accounts a
            JOIN public.vitalia_sil_portal_access_demo access ON access.patient_id=a.id
-           LEFT JOIN LATERAL (
-             SELECT id,email_token_hash,handoff_token_hash,attempts,expires_at
-             FROM public.vitalia_sil_portal_invitations_demo
-             WHERE patient_id=a.id AND consumed_at IS NULL AND revoked_at IS NULL
-             ORDER BY created_at DESC,id DESC LIMIT 1
-           ) i ON TRUE
            WHERE a.email=$1 AND a.role_code='paciente'
            FOR UPDATE OF access`,[email]);
-        const row=result.rows[0];
-        if(!row||row.status!=='invited'||!row.invitationId||
-           !row.emailTokenHash||!row.handoffTokenHash||
-           !row.expiresAt||row.attempts===null||
-           new Date(row.expiresAt).getTime()<=Date.now()||row.attempts>=5)
+        const patient=access.rows[0];
+        if(!patient||patient.status!=='invited')throw safeCodeError();
+        const {patientId}=patient;
+        // La lectura posterior al bloqueo observa cualquier reenvío ya confirmado.
+        const invitation=await client.query<{
+          id:string;emailTokenHash:string;handoffTokenHash:string;attempts:number;expiresAt:Date;
+        }>(
+          `SELECT id,email_token_hash AS "emailTokenHash",
+            handoff_token_hash AS "handoffTokenHash",attempts,expires_at AS "expiresAt"
+           FROM public.vitalia_sil_portal_invitations_demo
+           WHERE patient_id=$1 AND consumed_at IS NULL AND revoked_at IS NULL
+           ORDER BY created_at DESC,id DESC LIMIT 1`,[patientId]);
+        const row=invitation.rows[0];
+        if(!row||row.expiresAt.getTime()<=Date.now()||row.attempts>=5)
           throw safeCodeError();
-        if(!secureMatch(input.emailCode,row.emailTokenHash) ||
-           !secureMatch(input.handoffCode,row.handoffTokenHash)){
+        const emailMatches=secureMatch(input.emailCode,row.emailTokenHash);
+        const handoffMatches=secureMatch(input.handoffCode,row.handoffTokenHash);
+        if(!emailMatches||!handoffMatches){
           const attempts=row.attempts+1;
           await client.query(
             `UPDATE public.vitalia_sil_portal_invitations_demo
              SET attempts=$2,revoked_at=CASE WHEN $2>=5 THEN CURRENT_TIMESTAMP ELSE NULL END
-             WHERE id=$1`,[row.invitationId,attempts]);
-          await audit(client,row.patientId,null,'invitation_failed',{attempts});
+             WHERE id=$1`,[row.id,attempts]);
+          await audit(client,patientId,null,'invitation_failed',{attempts});
           await client.query('COMMIT');
+          transactionOpen=false;
+          if(attempts>=5)clearDemoMail(email,row.id);
           throw safeCodeError();
         }
         const hash=await hashPassword(input.password);
         await client.query(
           'UPDATE public.vitalia_accounts SET password_hash=$2 WHERE id=$1',
-          [row.patientId,hash]);
+          [patientId,hash]);
         await client.query(
           `UPDATE public.vitalia_sil_portal_invitations_demo
            SET consumed_at=CURRENT_TIMESTAMP WHERE id=$1`,
-          [row.invitationId]);
+          [row.id]);
         await client.query(
           `UPDATE public.vitalia_sil_portal_access_demo
            SET status='active',activated_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP
-           WHERE patient_id=$1`,[row.patientId]);
+           WHERE patient_id=$1`,[patientId]);
         await client.query(
           `UPDATE public.vitalia_account_roles
            SET active=true WHERE account_id=$1 AND role_code='paciente'`,
-          [row.patientId]);
+          [patientId]);
         await client.query(
-          'DELETE FROM public.vitalia_sessions WHERE account_id=$1',[row.patientId]);
-        await audit(client,row.patientId,row.patientId,'portal_activated',{method:'two_channel'});
+          'DELETE FROM public.vitalia_sessions WHERE account_id=$1',[patientId]);
+        await audit(client,patientId,patientId,'portal_activated',{method:'two_channel'});
         await client.query('COMMIT');
-        mailbox.delete(email);
+        transactionOpen=false;
+        clearDemoMail(email,row.id);
         return {activated:true,loginRequired:true};
       }catch(error){
-        // Intentos fallidos ya comprometidos no deben revertirse.
-        try{await client.query('ROLLBACK');}catch{invalid=true;}
+        if(transactionOpen){
+          try{await client.query('ROLLBACK');}catch{invalid=true;}
+        }
         throw error;
       }finally{client.release(invalid);}
     },

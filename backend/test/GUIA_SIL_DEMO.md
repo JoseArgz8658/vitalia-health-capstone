@@ -138,7 +138,7 @@ if (-not (Select-String -Path $secretPath -Pattern '^VITALIA_SIL_PATIENT_PASSWOR
 }
 ```
 
-El script de inicio reutiliza `paciente.sil@example.invalid` y actualiza solamente el hash para la nueva clave persistente. La nueva variable requiere **recrear exclusivamente** `vitalia-sil-demo` (no basta `docker start`). No revelar contraseñas por chat ni guardarlas en Git.
+El script de inicio reutiliza `paciente.sil@example.invalid` y comprueba que la clave configurada coincida con la existente. La nueva variable requiere **recrear exclusivamente** `vitalia-sil-demo` (no basta `docker start`). No revelar contraseñas por chat ni guardarlas en Git.
 
 Para abrir el portal aislado del paciente, lanzar Flutter con ambos parámetros:
 ```powershell
@@ -174,7 +174,7 @@ npm --prefix .\backend run build
 npm --prefix .\backend test
 ```
 
-**Detenerse si falla el compilador o las pruebas.** Para actualizar una demo existente, detén solo `vitalia-sil-demo`, deja PostgreSQL encendido y ejecuta el migrador hasta la versión 035 en `vitalia_dev`. Si el contenedor demo ya monta `backend\dist` y `backend\test`, vuelve a iniciarlo con `docker start vitalia-sil-demo` cuando la migración termine correctamente.
+**Detenerse si falla el compilador o las pruebas.** Para actualizar una demo existente, detén solo `vitalia-sil-demo`, deja PostgreSQL encendido y ejecuta el migrador hasta la versión 035 en `vitalia_dev`. Si el contenedor demo ya monta `backend\dist` y `backend\test`, vuelve a iniciarlo con `docker start vitalia-sil-demo` cuando la migración termine correctamente. En la rama del portal, completa también la [migración optativa 036](GUIA_ACTIVACION_PORTAL_DEMO.md#4-aplicar-solamente-la-migración-aislada-tras-pruebas) antes de iniciar la demo.
 
 ```powershell
 $distPath = (Resolve-Path ".\backend\dist").Path

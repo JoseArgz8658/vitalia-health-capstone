@@ -14,7 +14,9 @@ invitación nueva (con los límites indicados), que invalida la anterior.
 
 La pantalla muestra un destinatario completo ANTES de enviar la invitación:
 nombre, apellidos, identificador sintético, fecha de nacimiento y correo.
-Dos confirmaciones independientes del operador son obligatorias. Es una
+Dos confirmaciones independientes del operador son obligatorias. Si el
+destinatario cambia antes de emitir la invitación, se debe consultar la ficha y
+confirmar nuevamente. Es una
 **declaración manual**, no una comprobación automatizada de identidad.
 
 Un paciente DEMO nuevo se registra primero con una credencial aleatoria
@@ -54,11 +56,12 @@ Desde `C:\Users\dpalm\Documents\vitalia-health-git`:
 ```powershell
 git status --short
 git fetch origin
-git switch -c feat/sil-portal-activacion-demo --track origin/feat/sil-portal-activacion-demo
+git switch feat/sil-portal-activacion-demo
+git merge --ff-only origin/feat/sil-portal-activacion-demo
 npm --prefix backend run check
 npm --prefix backend test
 cd apps\vitalia
-flutter analyze lib/features/acceso/activar_portal_sil_page.dart lib/features/laboratorio/acceso_portal_paciente_demo.dart lib/features/laboratorio/nuevo_paciente_sil_dialog.dart lib/features/laboratorio/directorio_pacientes_sil.dart lib/features/laboratorio/operador_laboratorio_page.dart
+flutter analyze
 flutter test test/activar_portal_sil_test.dart
 flutter test
 flutter build web
@@ -87,7 +90,7 @@ try {
     --mount "type=bind,source=$migrationsPath,target=/app/database/migrations,readonly" `
     --env PGPASSWORD --env PGHOST=postgres --env PGPORT=5432 `
     --env PGDATABASE=vitalia_dev --env PGUSER=vitalia `
-    --env VITALIA_RUNTIME=container --entrypoint node `
+    --env VITALIA_RUNTIME=container --env VITALIA_SIL_PORTAL_MIGRATION_DEMO=YES --entrypoint node `
     vitalia-backend:local dist/database/migrate-all.js
   if($LASTEXITCODE -ne 0){throw "Falló la migración del portal DEMO."}
 } finally {
@@ -95,8 +98,12 @@ try {
 }
 ```
 
-La migración `036` crea tablas nuevas. No modifica datos de fichas,
-credenciales ni órdenes existentes.
+La migración `036` es optativa. El migrador general la omite si no se especifica
+`VITALIA_SIL_PORTAL_MIGRATION_DEMO=YES` y rechaza ese permiso para una base
+distinta de `vitalia_dev`. La migración crea tablas nuevas.
+
+El arranque de la demo comprueba las claves configuradas de las cuentas
+preexistentes. Si alguna difiere, detiene el arranque conservando las credenciales.
 
 ```powershell
 docker restart vitalia-sil-demo

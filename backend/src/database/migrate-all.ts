@@ -11,9 +11,16 @@ async function main(){
   const directory=resolve(__dirname,'../../database/migrations');
   const files=(await readdir(directory)).filter(file=>/^\d{3}_[a-z_]+\.sql$/.test(file)).sort();
   if(files[0]!=='001_accounts.sql')throw new Error('Migraciones incompletas.');
-  pool=createDatabasePool(readDatabaseConfig(process.env));client=await pool.connect();let previous='';
+  const config=readDatabaseConfig(process.env);
+  const portalDemo=process.env.VITALIA_SIL_PORTAL_MIGRATION_DEMO==='YES';
+  if(portalDemo && config.database!=='vitalia_dev'){
+   throw new Error('La migración del portal DEMO requiere la base aislada vitalia_dev.');
+  }
+  pool=createDatabasePool(config);client=await pool.connect();let previous='';
   for(const file of files){
-   const version=file.slice(0,-4),sql=await readFile(resolve(directory,file),'utf8');
+   const version=file.slice(0,-4);
+   if(version==='036_sil_portal_invites_demo'&&!portalDemo)continue;
+   const sql=await readFile(resolve(directory,file),'utf8');
    const result=previous?await applyAdditionalMigration(client,version,sql,previous):await applyAccountsMigration(client,sql);
    console.info(`${version}: ${result==='applied'?'aplicada':'ya aplicada'}.`);previous=version;
   }

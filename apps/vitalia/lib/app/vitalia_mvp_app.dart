@@ -135,7 +135,8 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
     theme: temaVitalia(),
     initialRoute: widget.initialRoute,
     onGenerateRoute: (settings) {
-      if (settings.name == '/activar-portal')
+      if (settings.name == '/activar-portal' &&
+          const bool.fromEnvironment('VITALIA_SIL_DEMO_MODE'))
         return MaterialPageRoute<void>(
           settings: settings,
           builder: (_) => ActivarPortalSilPage(api: _api),

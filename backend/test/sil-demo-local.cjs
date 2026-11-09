@@ -11,7 +11,7 @@ const {createSilService}=require('../dist/sil/service');
 const {createSilPortalRouterDemo}=require('../dist/sil/portal-router-demo');
 const {createSilPortalActivationDemo}=require('../dist/sil/portal-activation-demo');
 const {createCredentialAuthenticator}=require('../dist/auth/credentials');
-const {hashPassword}=require('../dist/auth/password');
+const {hashPassword,verifyPassword}=require('../dist/auth/password');
 const {issueSession,findSessionAccount,revokeSession}=require('../dist/auth/sessions');
 const {localWebCors}=require('../dist/http/local-web-cors');
 
@@ -50,18 +50,17 @@ async function main(){
   process.once('SIGTERM',()=>{void shutdown().catch(()=>{process.exitCode=1;});});
 
   async function ensureAccount(email,role,password){
-    const hashed=await hashPassword(password);
     const existing=await db.query(
-      'SELECT id,role_code FROM public.vitalia_accounts WHERE email=$1',[email]);
+      'SELECT id,role_code,password_hash FROM public.vitalia_accounts WHERE email=$1',[email]);
     if(existing.rows.length){
       if(existing.rows[0].role_code!==role)
         throw new Error('Existe un correo con un rol distinto; no se modificará.');
-      // La cuenta persiste entre reinicios. Si se cambia la clave local se actualiza el hash.
-      await db.query('UPDATE public.vitalia_accounts SET password_hash=$1 WHERE id=$2',
-        [hashed,existing.rows[0].id]);
+      if(!await verifyPassword(password,existing.rows[0].password_hash))
+        throw new Error('La clave local no coincide con la cuenta DEMO existente. Revisa tu configuración.');
       return existing.rows[0].id;
     }
     const id=randomUUID();
+    const hashed=await hashPassword(password);
     await db.query(
       `INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code)
        VALUES($1,$2,$3,$4)`,[id,email,hashed,role]);
@@ -121,7 +120,14 @@ async function main(){
     }));
     app.use((_req,res)=>res.status(404).json({error:{code:'NOT_FOUND'}}));
     app.use((error,_req,res,_next)=>{
-      console.error('Error controlado SIL:',error.message);
+      if(error.type==='entity.parse.failed'){
+        res.status(400).json({error:{code:'INVALID_JSON'}});return;
+      }
+      if(error.type==='entity.too.large'){
+        res.status(413).json({error:{code:'PAYLOAD_TOO_LARGE'}});return;
+      }
+      // Los errores del analizador o de PostgreSQL pueden contener valores recibidos.
+      console.error('Error interno controlado SIL.');
       res.status(500).json({error:{code:'INTERNAL_ERROR'}});
     });
     server=app.listen(3000,'0.0.0.0');

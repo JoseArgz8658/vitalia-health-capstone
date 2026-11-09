@@ -56,7 +56,11 @@ class _NuevoPacienteSilDialogState extends State<NuevoPacienteSilDialog>{
       if(mounted)setState(()=>_error='No fue posible registrar la ficha DEMO.');
     }finally{if(mounted)setState(()=>_busy=false);}
   }
-  @override Widget build(BuildContext context)=>Dialog(
+  @override Widget build(BuildContext context)=>PopScope(
+    canPop:!_busy,
+    child:_dialog(context),
+  );
+  Widget _dialog(BuildContext context)=>Dialog(
     insetPadding:const EdgeInsets.all(16),
     child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:570),
       child:SingleChildScrollView(
@@ -97,19 +101,19 @@ class _NuevoPacienteSilDialogState extends State<NuevoPacienteSilDialog>{
               ]),
             ),
             const SizedBox(height:16),
-            TextFormField(controller:_names,maxLength:100,
+            TextFormField(controller:_names,maxLength:100,enabled:!_busy,
               decoration:const InputDecoration(labelText:'Nombres ficticios',
                 prefixIcon:Icon(Icons.person_outline),counterText:''),
               validator:(v)=>(v??'').trim().length<2?
                 'Ingresa al menos 2 caracteres.':null),
             const SizedBox(height:9),
-            TextFormField(controller:_family,maxLength:100,
+            TextFormField(controller:_family,maxLength:100,enabled:!_busy,
               decoration:const InputDecoration(labelText:'Apellidos ficticios',
                 prefixIcon:Icon(Icons.badge_outlined),counterText:''),
               validator:(v)=>(v??'').trim().length<2?
                 'Ingresa al menos 2 caracteres.':null),
             const SizedBox(height:9),
-            TextFormField(controller:_birth,validator:_validBirth,
+            TextFormField(controller:_birth,validator:_validBirth,enabled:!_busy,
               decoration:const InputDecoration(
                 labelText:'Nacimiento ficticio (AAAA-MM-DD)',
                 prefixIcon:Icon(Icons.calendar_today_outlined),
@@ -117,6 +121,7 @@ class _NuevoPacienteSilDialogState extends State<NuevoPacienteSilDialog>{
             const SizedBox(height:9),
             DropdownButtonFormField<String>(
               initialValue:_sex,
+              isExpanded:true,
               decoration:const InputDecoration(
                 labelText:'Sexo para referencias DEMO',
                 prefixIcon:Icon(Icons.assignment_ind_outlined)),
@@ -129,7 +134,7 @@ class _NuevoPacienteSilDialogState extends State<NuevoPacienteSilDialog>{
               onChanged:_busy?null:(v)=>setState(()=>_sex=v??'not_specified'),
             ),
             const SizedBox(height:9),
-            TextFormField(controller:_email,
+            TextFormField(controller:_email,enabled:!_busy,
               keyboardType:TextInputType.emailAddress,
               decoration:const InputDecoration(labelText:'Correo ficticio',
                 prefixIcon:Icon(Icons.alternate_email),

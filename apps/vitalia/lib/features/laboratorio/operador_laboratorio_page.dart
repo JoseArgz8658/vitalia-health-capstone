@@ -702,6 +702,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     if (_busy) return;
     final response=await showDialog<Map<String,dynamic>>(
       context:context,
+      barrierDismissible:false,
       builder:(_)=>NuevoPacienteSilDialog(api:widget.api),
     );
     if(!mounted||response==null)return;
@@ -3135,8 +3136,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           ? NavigationBar(
               backgroundColor: Colors.white,
               indicatorColor: const Color(0xFFD6EEEC),
-              labelBehavior:
-                  NavigationDestinationLabelBehavior.onlyShowSelected,
+              labelBehavior: width >= 360
+                  ? NavigationDestinationLabelBehavior.alwaysShow
+                  : NavigationDestinationLabelBehavior.onlyShowSelected,
               selectedIndex: _navigationIndex,
               onDestinationSelected: _busy
                   ? null

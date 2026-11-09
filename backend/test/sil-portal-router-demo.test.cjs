@@ -5,6 +5,7 @@ const {createSilPortalRouterDemo}=require('../dist/sil/portal-router-demo');
 const operatorId='11111111-1111-4111-8111-111111111111';
 const patientId='22222222-2222-4222-8222-222222222222';
 const token='a'.repeat(64);
+const recipientRevision='b'.repeat(64);
 const authHeader={Authorization:'Bearer '+token};
 const previousDemo=process.env.VITALIA_SIL_DEMO;
 const previousMailbox=process.env.VITALIA_SIL_DEV_MAILBOX;
@@ -67,7 +68,7 @@ test.each(['administrador','paciente','profesional'])(
     .set(authHeader);
  const post=await request(app)
     .post('/api/sil/portal/patients/'+patientId+'/invitations')
-    .set(authHeader).send({contactConfirmed:true,identityChecked:true});
+    .set(authHeader).send({contactConfirmed:true,identityChecked:true,recipientRevision});
  expect(get.status).toBe(403);
  expect(post.status).toBe(403);
  expect(portal.invite).not.toHaveBeenCalled();
@@ -80,17 +81,19 @@ test('la invitación exige dos confirmaciones expresas',async()=>{
    {},
    {contactConfirmed:true,identityChecked:false},
    {contactConfirmed:false,identityChecked:true},
-   {contactConfirmed:true,identityChecked:true,email:'otro@example.invalid'},
+   {contactConfirmed:true,identityChecked:true},
+   {contactConfirmed:true,identityChecked:true,recipientRevision:'x'},
+   {contactConfirmed:true,identityChecked:true,recipientRevision,email:'otro@example.invalid'},
  ]) {
   const res=await request(app).post(path).set(authHeader).send(value);
   expect(res.status).toBe(400);
  }
  expect(portal.invite).not.toHaveBeenCalled();
  const result=await request(app).post(path).set(authHeader)
-  .send({contactConfirmed:true,identityChecked:true});
+  .send({contactConfirmed:true,identityChecked:true,recipientRevision});
  expect(result.status).toBe(201);
  expect(portal.invite).toHaveBeenCalledWith(patientId,operatorId,
-  {contactConfirmed:true,identityChecked:true});
+  {contactConfirmed:true,identityChecked:true,recipientRevision});
  expect(result.body).not.toHaveProperty('emailCode');
  expect(result.body.handoffCode).toHaveLength(12);
 });
@@ -103,6 +106,7 @@ test('activación pública exige códigos, nueva clave y confirmación',async()=
  for(const invalid of [
   {...valid,confirmedDetails:false},
   {...valid,password:'corta'},
+  {...valid,password:'😀'.repeat(6)},
   {...valid,handoffCode:'bad'},
   {...valid,role:'administrador'},
  ]) {

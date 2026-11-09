@@ -206,13 +206,16 @@ void main() {
     await tester.pumpAndSettle();
     final nav = tester.widget<NavigationBar>(find.byType(NavigationBar));
     expect(nav.destinations, hasLength(5));
-    await tester.tap(find.descendant(
+    final review = find.descendant(
       of: find.byType(NavigationBar),
-      matching: find.byIcon(Icons.fact_check_outlined),
-    ));
+      matching: find.text('Revisión'),
+    );
+    expect(review.hitTestable(), findsOneWidget);
+    await tester.tap(review);
     await tester.pumpAndSettle();
     expect(find.text('Bandeja de revisión de resultados'), findsOneWidget);
     expect(api.calls.last.queryParameters['status'], 'results_recorded');
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('módulo Pacientes permite abrir ficha y consultar sus órdenes', (

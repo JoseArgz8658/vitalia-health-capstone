@@ -233,7 +233,8 @@ class _AccesoPageState extends State<AccesoPage> {
                               ],
                             ),
                           ),
-                          if (!widget.adminMode && !widget.laboratoryMode && !_professionalMode)
+                          if (!const bool.fromEnvironment('VITALIA_SIL_DEMO_MODE') &&
+                              !widget.adminMode && !widget.laboratoryMode && !_professionalMode)
                             TextButton(
                               onPressed: _busy || widget.api == null
                                   ? null
