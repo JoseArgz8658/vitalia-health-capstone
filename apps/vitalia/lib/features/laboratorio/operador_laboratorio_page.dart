@@ -878,13 +878,14 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
+        columnSpacing: 24,
         columns: const [
           DataColumn(label: Text('N.º de orden')),
+          DataColumn(label: Text('Acción')),
+          DataColumn(label: Text('Estado')),
           DataColumn(label: Text('Paciente')),
           DataColumn(label: Text('Exámenes')),
-          DataColumn(label: Text('Estado')),
           DataColumn(label: Text('Fecha')),
-          DataColumn(label: Text('Acción')),
         ],
         rows: rows.map((order) {
           final exams = (order['examCodes'] as List? ?? [])
@@ -892,19 +893,19 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               .join(', ');
           return DataRow(cells: [
             DataCell(Text(_orderCode(order))),
-            DataCell(Text('${order['patientEmail'] ?? '—'}')),
-            DataCell(SizedBox(
-              width: 250,
-              child: Text(exams, maxLines: 2, overflow: TextOverflow.ellipsis),
-            )),
-            DataCell(Text(_statusLabel(order['status'] as String?))),
-            DataCell(Text(_date(order['createdAt']))),
             DataCell(TextButton(
               onPressed: _busy
                   ? null
                   : () => _run(() => _openOrder(order['id'] as String)),
               child: Text(_orderAction(order['status'])),
             )),
+            DataCell(Text(_statusLabel(order['status'] as String?))),
+            DataCell(Text('${order['patientEmail'] ?? '—'}')),
+            DataCell(SizedBox(
+              width: 250,
+              child: Text(exams, maxLines: 2, overflow: TextOverflow.ellipsis),
+            )),
+            DataCell(Text(_date(order['createdAt']))),
           ]);
         }).toList(),
       ),

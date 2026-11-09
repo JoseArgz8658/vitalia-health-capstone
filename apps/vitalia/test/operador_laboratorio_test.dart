@@ -18,12 +18,12 @@ class _OperatorApi extends AuthApi {
   final calls = <Uri>[];
 
   Map<String, dynamic> get _order => {
-    'id': _id,
-    'orderNumber': 'VH-000013',
-    'patientEmail': 'paciente.sil@example.invalid',
-    'status': status,
-    'examCodes': ['glicemia'],
-  };
+        'id': _id,
+        'orderNumber': 'VH-000013',
+        'patientEmail': 'paciente.sil@example.invalid',
+        'status': status,
+        'examCodes': ['glicemia'],
+      };
 
   @override
   Future<Map<String, dynamic>> silRequest(
@@ -85,7 +85,9 @@ void main() {
 
     final rail = tester.widget<NavigationRail>(find.byType(NavigationRail));
     expect(rail.destinations, hasLength(4));
-    await tester.tap(find.text('Órdenes'));
+    final orders = find.text('Ver todas las órdenes');
+    await tester.ensureVisible(orders);
+    await tester.tap(orders);
     await tester.pumpAndSettle();
 
     final search = find.widgetWithText(TextField, 'Buscar orden o correo');
@@ -117,7 +119,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(save, findsNothing);
     expect(find.text('Buscar y gestionar órdenes'), findsOneWidget);
-    expect(find.text('Pendiente de revisión'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(DataTable),
+        matching: find.text('Pendiente de revisión'),
+      ),
+      findsOneWidget,
+    );
     expect(
       find.textContaining('Resultados registrados para VH-000013'),
       findsOneWidget,
