@@ -7,6 +7,7 @@ import '../../core/tema_vitalia.dart';
 import 'clave_recuperacion_sil_dialog.dart';
 import 'resumen_informes_sil_page.dart';
 import 'portal_visual_sil.dart';
+import 'portal_ayuda_sil.dart';
 
 /// Solo demostración local: consulta privada de PDFs autorizados externamente.
 class PacienteInformesSilPage extends StatefulWidget {
@@ -39,6 +40,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
   String? _chatBusyReport;
   String? _chatError;
   late Future<Map<String, dynamic>> _profileRequest;
+  final _reportsAnchor = GlobalKey();
 
   @override
   void dispose() {
@@ -132,6 +134,48 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
 
   bool _simpleReading = false;
 
+  Widget _profileField(IconData icon, String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: ColoresVitalia.fondoAzul,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: ColoresVitalia.bordeTenue),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: ColoresVitalia.azul, size: 20),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: ColoresVitalia.textoSecundario,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                SelectableText(
+                  '$label: $value',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: ColoresVitalia.texto,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _openProfile() {
     final request = _profileRequest;
     showDialog<void>(
@@ -140,53 +184,204 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         future: request,
         builder: (context, snapshot) {
           final profile = snapshot.data?['profile'] as Map?;
+          final hasProfile = profile?['hasProfile'] == true;
+          final name = hasProfile
+              ? [profile?['givenNames'], profile?['familyNames']]
+                  .whereType<String>()
+                  .join(' ')
+                  .trim()
+              : '';
           final expired = snapshot.error is AuthFailure &&
               (snapshot.error as AuthFailure).status == 401;
-          return AlertDialog(
-            title: const Text('Mi perfil'),
-            scrollable: true,
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Cuenta activa · Paciente DEMO'),
-                Text(widget.email),
-                const SizedBox(height: 12),
-                if (snapshot.connectionState == ConnectionState.waiting)
-                  const LinearProgressIndicator()
-                else if (snapshot.hasError)
-                  Text(expired
-                      ? 'Tu sesión terminó. Vuelve a ingresar.'
-                      : 'No pudimos cargar tu ficha. Intenta abrir Mi perfil otra vez.')
-                else if (profile?['hasProfile'] == true) ...[
-                  for (final (label, value) in [
-                    (
-                      'Nombre',
-                      [profile?['givenNames'], profile?['familyNames']]
-                          .whereType<String>()
-                          .join(' ')
-                    ),
-                    ('Fecha de nacimiento', _date(profile?['birthDate'])),
-                    ('Identificador DEMO', profile?['identifier']),
-                    ('Teléfono', profile?['phone']),
-                  ])
-                    if (value is String && value.isNotEmpty)
-                      Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Text('$label: $value')),
-                ] else
-                  const Text(
-                      'Tu cuenta web aún no tiene una ficha asociada por el laboratorio.'),
-              ],
+          return Dialog(
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 20,
             ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  if (expired && mounted) widget.onExpired();
-                },
-                child: Text(expired ? 'Volver a ingresar' : 'Cerrar'),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 650, maxHeight: 750),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(23),
+                      decoration: const BoxDecoration(
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(22),
+                        ),
+                        gradient: LinearGradient(
+                          colors: [
+                            Color(0xFF1C465D),
+                            Color(0xFF2D7B80),
+                          ],
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const CircleAvatar(
+                            radius: 28,
+                            backgroundColor: Color(0x33FFFFFF),
+                            child: Icon(Icons.person_outline,
+                                color: Colors.white, size: 29),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Mi perfil',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 23,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                  name.isEmpty ? 'Tu cuenta privada' : name,
+                                  style: const TextStyle(
+                                    color: Color(0xFFE3F2F2),
+                                    height: 1.4,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Cuenta activa · Paciente DEMO',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(21),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting)
+                            const LinearProgressIndicator()
+                          else if (snapshot.hasError)
+                            Text(
+                              expired
+                                  ? 'Tu sesión terminó. Vuelve a ingresar.'
+                                  : 'No pudimos cargar tu ficha. '
+                                      'Intenta abrir Mi perfil otra vez.',
+                            )
+                          else ...[
+                            _profileField(
+                              Icons.alternate_email,
+                              'Correo de acceso',
+                              widget.email,
+                            ),
+                            const SizedBox(height: 10),
+                            if (hasProfile) ...[
+                              _profileField(
+                                Icons.person_outline,
+                                'Nombre',
+                                name,
+                              ),
+                              const SizedBox(height: 10),
+                              _profileField(
+                                Icons.cake_outlined,
+                                'Fecha de nacimiento',
+                                _date(profile?['birthDate']),
+                              ),
+                              if (profile?['identifier']
+                                  case final String identifier
+                                  when identifier.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                _profileField(
+                                  Icons.badge_outlined,
+                                  'Identificador DEMO',
+                                  identifier,
+                                ),
+                              ],
+                              if (profile?['phone']
+                                  case final String phone
+                                  when phone.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                _profileField(
+                                  Icons.phone_outlined,
+                                  'Teléfono',
+                                  phone,
+                                ),
+                              ],
+                            ] else ...[
+                              const SizedBox(height: 14),
+                              const Text(
+                                'Tu cuenta web aún no tiene una ficha '
+                                'asociada por el laboratorio.',
+                              ),
+                            ],
+                          ],
+                          const SizedBox(height: 14),
+                          Container(
+                            padding: const EdgeInsets.all(13),
+                            decoration: BoxDecoration(
+                              color: ColoresVitalia.verdeSuave,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Text(
+                              'Los datos de esta ficha los administra el '
+                              'laboratorio. Si detectas un error, solicita '
+                              'su revisión por un canal oficial.',
+                              style: TextStyle(
+                                color: ColoresVitalia.texto,
+                                height: 1.45,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Wrap(
+                            alignment: WrapAlignment.end,
+                            spacing: 8,
+                            runSpacing: 7,
+                            children: [
+                              if (!expired)
+                                OutlinedButton.icon(
+                                  onPressed: () {
+                                    Navigator.pop(dialogContext);
+                                    PortalAyudaSil.contacto(
+                                      this.context,
+                                      _reports,
+                                    );
+                                  },
+                                  icon: const Icon(Icons.support_agent_outlined),
+                                  label: const Text('Ayuda con mis datos'),
+                                ),
+                              FilledButton(
+                                onPressed: () {
+                                  Navigator.pop(dialogContext);
+                                  if (expired && mounted) widget.onExpired();
+                                },
+                                child: Text(
+                                  expired ? 'Volver a ingresar' : 'Cerrar',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ],
+            ),
           );
         },
       ),
