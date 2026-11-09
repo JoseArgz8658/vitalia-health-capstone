@@ -32,6 +32,7 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
   _Section _section = _Section.results;
   bool _loading = false;
   String? _error;
+  final _detailsKey = GlobalKey();
 
   Future<void> _analyze() async {
     if (_loading || _selected.isEmpty) return;
@@ -45,7 +46,23 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
         '/patient/reports/overview',
         body: {'reportIds': _selected.toList()},
       );
-      if (mounted) setState(() => _overview = response);
+      if (mounted) {
+        setState(() => _overview = response);
+        // En móvil, el resultado suele quedar bajo el selector. Lleva la
+        // lectura a la vista sin mover el contenido en escritorio.
+        if (MediaQuery.sizeOf(context).width < 900) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            final destination = _detailsKey.currentContext;
+            if (mounted && destination != null) {
+              Scrollable.ensureVisible(
+                destination,
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+              );
+            }
+          });
+        }
+      }
     } on AuthFailure catch (error) {
       if (!mounted) return;
       if (error.status == 401) {
@@ -506,7 +523,10 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final selector = _selector();
-                      final details = _contentArea();
+                      final details = KeyedSubtree(
+                        key: _detailsKey,
+                        child: _contentArea(),
+                      );
                       if (constraints.maxWidth >= 900) {
                         return Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
