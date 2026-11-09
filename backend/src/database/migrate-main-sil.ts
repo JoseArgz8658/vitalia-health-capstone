@@ -14,17 +14,25 @@ const sha=(sql:string)=>createHash('sha256')
 
 async function main(){
   const args=process.argv.slice(2);
+  const rehearse=args.length===1&&args[0]==='--rehearse';
   const apply=args.length===1&&args[0]==='--apply';
   const status=args.length===1&&args[0]==='--status';
-  if(!apply&&!status){
-    console.error('Uso: node dist/database/migrate-main-sil.js --status|--apply');
+  if(!apply&&!status&&!rehearse){
+    console.error('Uso: node dist/database/migrate-main-sil.js --status|--apply|--rehearse');
     process.exitCode=1;return;
   }
   const config=readDatabaseConfig(process.env);
-  if(config.database!=='vitalia' ||
+  const expectedDatabase=rehearse?'vitalia_restored':'vitalia';
+  if(config.database!==expectedDatabase ||
     process.env.VITALIA_SIL_DEMO==='YES' ||
     process.env.VITALIA_SIL_PORTAL_MIGRATION_DEMO==='YES'){
-    console.error('BLOQUEADO: este migrador es exclusivo de la base principal vitalia.');
+    console.error('BLOQUEADO: la base no corresponde al modo de migración solicitado.');
+    process.exitCode=1;return;
+  }
+  if(rehearse &&
+    (process.env.VITALIA_ISOLATED_REHEARSAL!=='YES' ||
+     process.env.PGHOST!=='127.0.0.1' || config.user!=='vitalia_restore')){
+    console.error('BLOQUEADO: el ensayo requiere una copia temporal y conexión loopback explícita.');
     process.exitCode=1;return;
   }
   if(apply &&
@@ -52,12 +60,15 @@ async function main(){
   const client=await pool.connect();
   let broken=false;
   try{
-    await client.query(apply?'BEGIN':'BEGIN READ ONLY');
+    await client.query(status?'BEGIN READ ONLY':'BEGIN');
     await client.query(
       'SELECT pg_advisory_xact_lock(hashtext($1))',['vitalia-health-migrations']);
-    const db=await client.query<{database:string}>(
-      'SELECT current_database() AS database');
-    if(db.rows[0]?.database!=='vitalia')throw new Error('Base incorrecta.');
+    const db=await client.query<{database:string;isolated:boolean}>(
+      `SELECT current_database() AS database,
+        current_user='vitalia_restore' AND inet_server_addr()='127.0.0.1'::inet AS isolated`);
+    if(db.rows[0]?.database!==expectedDatabase || (rehearse && db.rows[0].isolated!==true)){
+      throw new Error('La conexión no corresponde a la base solicitada.');
+    }
     const history=await client.query<{version:string;checksum:string}>(
       'SELECT version,checksum FROM public.vitalia_schema_migrations ORDER BY version');
     const ledger=new Map(history.rows.map(row=>[row.version,row.checksum]));
@@ -188,13 +199,20 @@ async function main(){
           WHERE version='012_profiles_locations')
         AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
           WHERE version='038_sil_main_postanalytical')
-        AND (SELECT count(*) FROM public.vitalia_account_roles)=
-          (SELECT count(*) FROM public.vitalia_accounts)
+        AND NOT EXISTS (
+          (SELECT id,role_code FROM public.vitalia_accounts
+           EXCEPT ALL SELECT account_id,role_code FROM public.vitalia_account_roles)
+          UNION ALL
+          (SELECT account_id,role_code FROM public.vitalia_account_roles
+           EXCEPT ALL SELECT id,role_code FROM public.vitalia_accounts)
+        )
         AND to_regclass('public.vitalia_sil_main_reports') IS NOT NULL
         AS ok`);
     if(verified.rows[0]?.ok!==true)throw new Error('Estado final inválido.');
     await client.query('COMMIT');
-    console.info('SIL principal migrado 012–032 + 038; DEMO 033–037 omitida.');
+    console.info(rehearse
+      ?'SIL PRINCIPAL 012–032 + 038 ENSAYADO EN COPIA AISLADA. Migraciones en copia: 34.'
+      :'SIL principal migrado 012–032 + 038; DEMO 033–037 omitida.');
     console.info('Historial, cuentas y sesiones originales preservados.');
   }catch(error){
     try{await client.query('ROLLBACK');}catch{broken=true;}

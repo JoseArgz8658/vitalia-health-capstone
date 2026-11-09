@@ -1,5 +1,6 @@
 const {test,expect,describe}=require('@jest/globals');
 const {readdirSync}=require('node:fs');
+const {spawnSync}=require('node:child_process');
 const {join}=require('node:path');
 const {silDemoMigrationPlan,silMainRehearsedPlan,SIL_MAIN_LAST_REHEARSED}
   =require('../dist/database/sil-migration-policy');
@@ -37,4 +38,25 @@ describe('Política de migraciones SIL',()=>{
     expect(()=>silDemoMigrationPlan([...files,'026_another.sql'],'vitalia_dev',false)).toThrow();
     expect(()=>silMainRehearsedPlan([...files,'bad_name.sql'])).toThrow();
   });
+});
+
+describe('Ensayo del migrador principal',()=>{
+  test.each([
+    ['vitalia','127.0.0.1','vitalia_restore','YES','base no corresponde'],
+    ['vitalia_restored','localhost','vitalia_restore','YES','conexión loopback'],
+    ['vitalia_restored','127.0.0.1','otro_usuario','YES','conexión loopback'],
+    ['vitalia_restored','127.0.0.1','vitalia_restore','NO','conexión loopback'],
+  ])('rechaza la configuración %s %s %s %s antes de conectarse',
+    (database,host,user,isolated,message)=>{
+      const run=spawnSync(process.execPath,
+        [join(__dirname,'../dist/database/migrate-main-sil.js'),'--rehearse'],{
+          encoding:'utf8',
+          env:{
+            PGDATABASE:database,PGHOST:host,PGUSER:user,PGPASSWORD:'fixture',
+            VITALIA_ISOLATED_REHEARSAL:isolated,
+          },
+        });
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain(message);
+    });
 });
