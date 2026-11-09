@@ -133,7 +133,7 @@ class AuthApi {
     }
     final candidate=Uri.tryParse(path);
     final allowed=RegExp(
-      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/report/publish)?|staff|patients))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
+      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/report/publish)?|staff|patients|operator-invitations))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
     );
     final queries=candidate?.queryParametersAll ?? <String,List<String>>{};
     final isOrders=candidate?.path.endsWith('/orders') ?? false;
@@ -179,6 +179,38 @@ class AuthApi {
     }catch(_){
       throw const AuthFailure('No fue posible conectar con Vitalia principal.');
     }
+  }
+
+  /// Activación por invitación del operador. El código se entrega por un
+  /// canal externo seguro, no por un buzón simulado.
+  Future<void> silMainActivateOperator({
+    required String email,
+    required String code,
+    required String password,
+  }) async {
+    if(!_silMainMode)throw const AuthFailure('El SIL principal no está activo.');
+    final address=email.trim().toLowerCase();
+    if(!address.contains('@')||code.length!=43||password.runes.length<12){
+      throw const AuthFailure('Revisa correo, código y contraseña de 12 caracteres o más.');
+    }
+    try{
+      final response=await _client.post(
+        _base.resolve('/api/sil/main/operators/activate'),
+        headers:{'Content-Type':'application/json'},
+        body:jsonEncode({'email':address,'code':code,'password':password}),
+      ).timeout(const Duration(seconds:30));
+      if(response.statusCode>=400){
+        throw AuthFailure(switch(response.statusCode){
+          400=>'Revisa el formato de tus datos.',
+          403=>'La invitación no es válida, expiró o ya fue utilizada.',
+          409=>'La cuenta ya existe o la invitación cambió de estado.',
+          429=>'Demasiados intentos. Intenta más tarde.',
+          _=>'No se pudo activar el acceso.',
+        },response.statusCode);
+      }
+    }on AuthFailure {rethrow;}
+    on TimeoutException {throw const AuthFailure('La activación tardó demasiado.');}
+    catch(_){throw const AuthFailure('No fue posible conectar con Vitalia.');}
   }
 
   /// Carga PDF autorizado al laboratorio seleccionado. Publica otro profesional.
