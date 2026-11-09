@@ -1,5 +1,6 @@
 import 'package:file_selector/file_selector.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 
 import '../../core/auth_api.dart';
@@ -258,6 +259,15 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final hasMedicalRequest = _details?['hasMedicalRequest'] == true;
+    final canSaveFile =
+        kIsWeb ||
+        switch (defaultTargetPlatform) {
+          TargetPlatform.linux ||
+          TargetPlatform.macOS ||
+          TargetPlatform.windows => true,
+          _ => false,
+        };
     final containers = (_details?['containers'] as List? ?? []).cast<Map>();
     final analytes = (_details?['analytes'] as List? ?? []).cast<Map>();
     final result = _details?['results'] as Map?;
@@ -308,7 +318,7 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
             spacing: 8,
             runSpacing: 8,
             children: [
-              if (_details?['hasMedicalRequest'] == true)
+              if (hasMedicalRequest && canSaveFile)
                 OutlinedButton.icon(
                   onPressed: _busy ? null : () => _run(_downloadMedicalRequest),
                   icon: const Icon(Icons.download_outlined),
@@ -321,6 +331,10 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
               ),
             ],
           ),
+          if (hasMedicalRequest && !canSaveFile)
+            const Text(
+              'Puedes descargar la solicitud desde Vitalia en el navegador.',
+            ),
           const SizedBox(height: 12),
           const Text('Contenedores requeridos'),
           for (final row in containers)
