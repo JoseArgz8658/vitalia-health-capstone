@@ -44,11 +44,11 @@ test('el operador no recibe el token de correo y el buzón simulado es separado'
  const service=createSilPortalActivationDemo(fixture.db);
  const reply=await service.invite(patientId,operatorId,
    {contactConfirmed:true,identityChecked:true});
- expect(reply.handoffCode).toMatch(/^[A-Za-z0-9_-]{24}$/);
+ expect(reply.handoffCode).toMatch(/^[A-Za-z0-9_-]{12}$/);
  expect(reply).not.toHaveProperty('emailCode');
  expect(JSON.stringify(reply)).not.toContain('emailTokenHash');
  const mail=service.demoMailbox(email);
- expect(mail.emailCode).toMatch(/^[A-Za-z0-9_-]{24}$/);
+ expect(mail.emailCode).toMatch(/^[A-Za-z0-9_-]{12}$/);
  expect(mail.emailCode).not.toBe(reply.handoffCode);
  expect(fixture.calls.some(q=>q.sql.includes('contact_confirmed_at'))).toBe(true);
  const audit=fixture.calls.find(q=>q.sql.includes("'invitation_sent_demo'"));
@@ -75,13 +75,13 @@ test('código de canal incorrecto incrementa intentos y no modifica la contrase�
    {contactConfirmed:true,identityChecked:true});
  const mail=service.demoMailbox(email);
  await expect(service.activate({
-   email,emailCode:mail.emailCode,handoffCode:'Z'.repeat(24),
+   email,emailCode:mail.emailCode,handoffCode:'Z'.repeat(12),
    password:'ContraseñaSeguraNueva2026',confirmedDetails:true,
  })).rejects.toBeInstanceOf(PortalDemoInvalidCode);
  expect(fixture.getAttempts()).toBe(1);
  expect(fixture.calls.some(q=>q.sql.includes('UPDATE public.vitalia_accounts SET password_hash')))
    .toBe(false);
- expect(invitation.handoffCode).not.toBe('Z'.repeat(24));
+ expect(invitation.handoffCode).not.toBe('Z'.repeat(12));
 });
 
 test('límite de reenvíos evita generar una cuarta invitación',async()=>{
