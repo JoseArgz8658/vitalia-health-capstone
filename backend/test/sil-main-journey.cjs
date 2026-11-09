@@ -147,9 +147,12 @@ async function operatorJourney(browser, order, base) {
       ['sil-report-date','2024-01-01'],
     ]){
       const input=id(key).locator('input[data-semantics-role="text-field"]');
-      await click(input,key);
-      await page.keyboard.insertText(value);
-      assert.equal(await input.inputValue(),value,key);
+      await reach(page,input,key);
+      const box=await input.boundingBox();
+      await page.mouse.click(box.x+box.width/2,box.y+box.height/2);
+      const focused=page.locator('input:focus');
+      await focused.fill(value,{timeout:7000});
+      assert.equal(await focused.inputValue(),value,key);
     }
     const authorized=checkbox('El informe ya fue autorizado fuera de Vitalia');
     const matched=checkbox('Confirmé que el PDF corresponde al paciente de la orden');
@@ -168,6 +171,7 @@ async function operatorJourney(browser, order, base) {
   await stage('reviewer',async ({page,button,checkbox,click,select})=>{
     await select('sil-review-order');
     const publication=button('Publicar informe');
+    await reach(page,publication,'Publicar informe');
     assert.equal(await publication.isEnabled(),false,'Se exige revisar antes de publicar');
     const download=page.waitForEvent('download');
     const response=page.waitForResponse(r=>r.url().endsWith(endpoint+'/file') && r.request().method()==='GET');
