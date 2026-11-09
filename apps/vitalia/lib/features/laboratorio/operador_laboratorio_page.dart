@@ -34,6 +34,10 @@ class OperadorLaboratorioPage extends StatefulWidget {
 
 class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   static const _pageSize = 20;
+  static const _navy = Color(0xFF142A41);
+  static const _teal = Color(0xFF086F72);
+  static const _workspace = Color(0xFFF4F7FB);
+  static const _line = Color(0xFFDBE5EE);
   static const _nav = <(_OperatorSection, IconData, String)>[
     (_OperatorSection.dashboard, Icons.dashboard_outlined, 'Resumen'),
     (_OperatorSection.orders, Icons.assignment_outlined, 'Órdenes'),
@@ -56,6 +60,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   final _barcodeController = TextEditingController();
   final _receiptNoteController = TextEditingController();
   final _reviewNoteController = TextEditingController();
+  final _reviewPanelKey = GlobalKey();
   final _reportProfessional = TextEditingController();
   final _reportPatientIdentifier = TextEditingController();
   final _patientDemoGiven = TextEditingController();
@@ -96,9 +101,12 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   bool _loading = true;
   bool _ordersLoading = false;
   bool _canReview = false;
+  bool? _railExpanded;
   int _page = 0;
   int _total = 0;
   _OperatorSection _section = _OperatorSection.dashboard;
+
+  int get _pendingReviews => (_summary?['pendingReview'] as num?)?.toInt() ?? 0;
 
   int get _navigationIndex {
     final index = _nav.indexWhere((item) => item.$1 == _section);
@@ -939,10 +947,11 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     final theme = Theme.of(context);
     return Card(
       margin: EdgeInsets.zero,
+      color: theme.colorScheme.surface,
       elevation: 0,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        side: BorderSide(color: theme.colorScheme.outlineVariant),
+        side: const BorderSide(color: _line),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Padding(
@@ -969,33 +978,47 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
 
   Widget _queueCard(IconData icon, String title, int count, String status) {
     final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final urgent = status == 'review_rejected' && count > 0;
-    final foreground = urgent ? colors.onErrorContainer : colors.onSurface;
+    final (ink, tint) = switch (status) {
+      'review_rejected' => (const Color(0xFF9E2F43), const Color(0xFFFDEDF0)),
+      'registered' => (const Color(0xFF785019), const Color(0xFFFFF3DC)),
+      'sampled' => (const Color(0xFF245D99), const Color(0xFFEAF3FF)),
+      _ => (_teal, const Color(0xFFE5F5F3)),
+    };
     return Material(
-      color: urgent ? colors.errorContainer : colors.surfaceContainerLow,
+      color: count > 0 ? tint : theme.colorScheme.surface,
       shape: RoundedRectangleBorder(
-        side: BorderSide(color: colors.outlineVariant),
+        side: const BorderSide(color: _line),
         borderRadius: BorderRadius.circular(14),
       ),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: _busy ? null : () => _openQueue(status),
+        hoverColor: ink.withValues(alpha: .08),
+        focusColor: ink.withValues(alpha: .13),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Icon(icon, color: urgent ? foreground : colors.primary),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: count > 0 ? Colors.white : tint,
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(icon, size: 20, color: ink),
+              ),
               const Spacer(),
-              Icon(Icons.arrow_forward, size: 18, color: foreground),
+              Icon(Icons.arrow_outward, size: 18, color: ink),
             ]),
             const SizedBox(height: 10),
             Text('$count',
-                style: theme.textTheme.headlineMedium
-                    ?.copyWith(color: foreground)),
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  color: _navy,
+                  fontWeight: FontWeight.w700,
+                )),
             Text(title,
-                style: theme.textTheme.titleSmall?.copyWith(color: foreground)),
+                style: theme.textTheme.titleSmall?.copyWith(color: _navy)),
           ]),
         ),
       ),
@@ -1073,6 +1096,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         scrollDirection: Axis.horizontal,
         child: DataTable(
           columnSpacing: 24,
+          headingRowColor: const WidgetStatePropertyAll(Color(0xFFF0F5FA)),
           columns: const [
             DataColumn(label: Text('N.º de orden')),
             DataColumn(label: Text('Acción')),
@@ -1100,12 +1124,66 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     });
   }
 
+  Widget _dashboardHeader() {
+    final text = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(colors: [_navy, _teal]),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('ESTACIÓN DEL OPERADOR',
+            style: text.labelMedium?.copyWith(
+              color: const Color(0xFFB9EEEA),
+              letterSpacing: 1.3,
+            )),
+        const SizedBox(height: 6),
+        Text('Panel del laboratorio',
+            style: text.headlineMedium?.copyWith(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            )),
+        const SizedBox(height: 8),
+        Text('Recibe solicitudes y sigue cada orden hasta su revisión.',
+            style: text.bodyMedium?.copyWith(color: const Color(0xFFE3EFF4))),
+        const SizedBox(height: 18),
+        Wrap(spacing: 10, runSpacing: 10, children: [
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: _navy,
+            ),
+            onPressed: _busy ? null : () => _goTo(_OperatorSection.request),
+            icon: const Icon(Icons.note_add_outlined),
+            label: const Text('Recibir solicitud de exámenes'),
+          ),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: const BorderSide(color: Color(0xFFA9DBDE)),
+            ),
+            onPressed: _busy ? null : () => _openQueue('results_recorded'),
+            icon: const Icon(Icons.fact_check_outlined),
+            label: Text(_canReview
+                ? 'Por revisar · $_pendingReviews'
+                : 'Pendientes de revisión · $_pendingReviews'),
+          ),
+        ]),
+      ]),
+    );
+  }
+
   Widget _dashboard() {
     final summary = _summary;
     if (summary == null) {
-      return Text(_loading
-          ? 'Cargando indicadores del laboratorio…'
-          : 'Actualiza los datos para consultar la bandeja del laboratorio.');
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _dashboardHeader(),
+        const SizedBox(height: 16),
+        Text(_loading
+            ? 'Cargando indicadores del laboratorio…'
+            : 'Actualiza los datos para consultar la bandeja del laboratorio.'),
+      ]);
     }
     int count(String key) => (summary[key] as num?)?.toInt() ?? 0;
     final queues = [
@@ -1137,14 +1215,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            onPressed: _busy ? null : () => _goTo(_OperatorSection.request),
-            icon: const Icon(Icons.add_circle_outline),
-            label: const Text('Recibir solicitud de exámenes'),
-          ),
-        ),
+        _dashboardHeader(),
         const SizedBox(height: 16),
         _panel(
           'Trabajo del operador',
@@ -1152,7 +1223,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           LayoutBuilder(builder: (context, constraints) {
             final columns = constraints.maxWidth >= 860
                 ? 4
-                : constraints.maxWidth >= 340
+                : constraints.maxWidth >= 300
                     ? 2
                     : 1;
             final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
@@ -1168,18 +1239,12 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         const SizedBox(height: 12),
         Wrap(spacing: 8, runSpacing: 4, children: [
           ActionChip(
-            label: Text(_canReview ? 'Por revisar · ${count('pendingReview')}'
-                : '${count('pendingReview')} pendientes de revisión'),
-            avatar: const Icon(Icons.schedule, size: 17),
-            onPressed: _busy ? null : () => _openQueue('results_recorded'),
-          ),
-          ActionChip(
-            label: Text('${count('published')} informes disponibles'),
+            label: Text('Informes disponibles · ${count('published')}'),
             avatar: const Icon(Icons.check_circle_outline, size: 17),
             onPressed: _busy ? null : () => _openQueue('report_published'),
           ),
           ActionChip(
-            label: Text('${count('total')} órdenes en total'),
+            label: Text('Total de órdenes · ${count('total')}'),
             avatar: const Icon(Icons.assignment_outlined, size: 17),
             onPressed: _busy ? null : () => _openQueue(null),
           ),
@@ -1967,78 +2032,84 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     ]);
   }
 
-  Widget _resultsView() {
-    final data = _selected;
-    if (data == null) return _withoutOrder('Resultados');
-    final order = Map<String, dynamic>.from(data['order'] as Map);
-    final status = order['status'] as String?;
-    final results = data['results'] as List? ?? [];
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _panel(
-        'Resultados de la orden',
-        'Registro y revisión interna de resultados ficticios.',
-        Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _orderHeader(order),
-          const SizedBox(height: 18),
-          if (status == 'registered')
-            const Text('Primero se deben registrar todos los tubos requeridos '
-                'en la sección Muestras.'),
-          if (status == 'sampled' || status == 'review_rejected') ...[
-            if (status == 'review_rejected') ...[
-              Text(
-                'Devuelta por el responsable de revisión. Corrige los valores '
-                'y registra nuevamente la orden.',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-              if (data['latestReview'] is Map)
-                Text('Motivo: ${(data['latestReview'] as Map)['details']?['note'] ?? 'Sin motivo disponible'}'),
-              const SizedBox(height: 15),
-            ],
-            _manualFields(data),
+  Widget _resultReadings(List<dynamic> results) {
+    String source(Map row) => switch (row['entryMethod']) {
+          'manual' => 'Manual',
+          'simulated' => 'Prueba automática',
+          _ => 'Registro anterior',
+        };
+    String reference(Map row) =>
+        '${row['referenceMin'] ?? '—'} – ${row['referenceMax'] ?? '—'}';
+    return LayoutBuilder(builder: (context, constraints) {
+      if (constraints.maxWidth < 860) {
+        final text = Theme.of(context).textTheme;
+        return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final row in results.cast<Map>())
+                Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _workspace,
+                    border: Border.all(color: _line),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(_examName('${row['examCode'] ?? ''}'),
+                            style: text.labelMedium),
+                        const SizedBox(height: 4),
+                        Wrap(
+                            spacing: 12,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text('${row['analyte']}', style: text.titleSmall),
+                              Text('${row['numericValue']} ${row['unit']}',
+                                  style: text.titleMedium?.copyWith(
+                                      color: _teal,
+                                      fontWeight: FontWeight.w700)),
+                            ]),
+                        const SizedBox(height: 4),
+                        Text(
+                            'Referencia de prueba ${reference(row)} · ${source(row)}',
+                            style: text.bodySmall),
+                      ]),
+                ),
+            ]);
+      }
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          columns: const [
+            DataColumn(label: Text('Examen')),
+            DataColumn(label: Text('Analito')),
+            DataColumn(label: Text('Valor')),
+            DataColumn(label: Text('Unidad')),
+            DataColumn(label: Text('Origen')),
+            DataColumn(label: Text('Referencia de prueba')),
           ],
-          if (results.isNotEmpty)
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: const [
-                  DataColumn(label: Text('Examen')),
-                  DataColumn(label: Text('Analito')),
-                  DataColumn(label: Text('Valor')),
-                  DataColumn(label: Text('Unidad')),
-                  DataColumn(label: Text('Origen')),
-                  DataColumn(label: Text('Referencia de prueba')),
-                ],
-                rows: results.map((item) {
-                  final row = item as Map;
-                  final source = switch (row['entryMethod']) {
-                    'manual' => 'Manual',
-                    'simulated' => 'Prueba automática',
-                    _ => 'Registro anterior',
-                  };
-                  return DataRow(cells: [
-                    DataCell(Text(_examName('${row['examCode'] ?? ''}'))),
-                    DataCell(Text('${row['analyte']}')),
-                    DataCell(Text('${row['numericValue']}')),
-                    DataCell(Text('${row['unit']}')),
-                    DataCell(Text(source)),
-                    DataCell(Text(
-                      '${row['referenceMin'] ?? '—'} – ${row['referenceMax'] ?? '—'}',
-                    )),
-                  ]);
-                }).toList(),
-              ),
-            ),
-          if (results.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            const Text('Los resultados registrados permanecen en el sistema '
-                'interno y no se publican en el acceso del paciente.'),
-          ],
-        ]),
-        icon: Icons.fact_check_outlined,
-      ),
-      if (_canReview && status == 'results_recorded' && results.isNotEmpty) ...[
-        const SizedBox(height: 14),
-        _panel(
+          rows: results.map((item) {
+            final row = item as Map;
+            return DataRow(cells: [
+              DataCell(Text(_examName('${row['examCode'] ?? ''}'))),
+              DataCell(Text('${row['analyte']}')),
+              DataCell(Text('${row['numericValue']}')),
+              DataCell(Text('${row['unit']}')),
+              DataCell(Text(source(row))),
+              DataCell(Text(reference(row))),
+            ]);
+          }).toList(),
+        ),
+      );
+    });
+  }
+
+  Widget _reviewPanel() => KeyedSubtree(
+        key: _reviewPanelKey,
+        child: _panel(
           'Revisión interna',
           'Coteja los valores registrados con el documento de origen antes de decidir.',
           Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -2049,7 +2120,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               maxLines: 2,
               decoration: const InputDecoration(
                 labelText: 'Observación de revisión',
-                helperText: 'Para devolver la orden, escribe al menos 10 caracteres.',
+                helperText: 'Para devolver, escribe al menos 10 caracteres.',
                 helperMaxLines: 2,
                 border: OutlineInputBorder(),
               ),
@@ -2070,10 +2141,89 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           ]),
           icon: Icons.fact_check_outlined,
         ),
-      ],
-      const SizedBox(height: 14),
-      _auditTrail(data),
-    ]);
+      );
+
+  Widget _resultsView() {
+    final data = _selected;
+    if (data == null) return _withoutOrder('Resultados');
+    final order = Map<String, dynamic>.from(data['order'] as Map);
+    final status = order['status'] as String?;
+    final results = data['results'] as List? ?? [];
+    final canReview =
+        _canReview && status == 'results_recorded' && results.isNotEmpty;
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final wide = canReview && constraints.maxWidth >= 1020;
+      final readings = _panel(
+        'Resultados de la orden',
+        'Registro y revisión interna de resultados ficticios.',
+        Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _orderHeader(order),
+          if (canReview && !wide) ...[
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () {
+                  final target = _reviewPanelKey.currentContext;
+                  if (target != null) {
+                    Scrollable.ensureVisible(target,
+                        alignment: .05,
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : const Duration(milliseconds: 250));
+                  }
+                },
+                icon: const Icon(Icons.south),
+                label: const Text('Ir a revisión interna'),
+              ),
+            ),
+          ],
+          const SizedBox(height: 18),
+          if (status == 'registered')
+            const Text('Primero se deben registrar todos los tubos requeridos '
+                'en la sección Muestras.'),
+          if (status == 'sampled' || status == 'review_rejected') ...[
+            if (status == 'review_rejected') ...[
+              Text(
+                'Devuelta por el responsable de revisión. Corrige los valores '
+                'y registra nuevamente la orden.',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              if (data['latestReview'] is Map)
+                Text(
+                    'Motivo: ${(data['latestReview'] as Map)['details']?['note'] ?? 'Sin motivo disponible'}'),
+              const SizedBox(height: 15),
+            ],
+            _manualFields(data),
+          ],
+          if (results.isNotEmpty) _resultReadings(results),
+          if (results.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            const Text(
+                'Resultados de uso interno. El portal muestra los informes publicados.'),
+          ],
+        ]),
+        icon: Icons.fact_check_outlined,
+      );
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (wide)
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: readings),
+            const SizedBox(width: 16),
+            SizedBox(width: 320, child: _reviewPanel()),
+          ])
+        else ...[
+          readings,
+          if (canReview) ...[
+            const SizedBox(height: 14),
+            _reviewPanel(),
+          ],
+        ],
+        const SizedBox(height: 14),
+        _auditTrail(data),
+      ]);
+    });
   }
 
   Widget _reportsView() {
@@ -2347,6 +2497,27 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     _OperatorSection.report => _reportsView(),
   };
 
+  Widget _notice(String message, {required bool error}) {
+    final colors = Theme.of(context).colorScheme;
+    final ink = error ? colors.onErrorContainer : _navy;
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: error ? colors.errorContainer : const Color(0xFFE5F5F3),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(children: [
+          Icon(error ? Icons.error_outline : Icons.check_circle_outline,
+              color: ink),
+          const SizedBox(width: 10),
+          Expanded(child: Text(message, style: TextStyle(color: ink))),
+        ]),
+      ),
+    );
+  }
+
   Widget _content() {
     final theme = Theme.of(context);
     final title = switch (_section) {
@@ -2357,33 +2528,59 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       _OperatorSection.report => 'Informe externo',
       _ => _nav[_navigationIndex].$3,
     };
+    final subtitle = switch (_section) {
+      _OperatorSection.orders =>
+        'Encuentra una orden y continúa desde su estado actual.',
+      _OperatorSection.request =>
+        'Coteja la solicitud con la ficha del paciente y registra la orden.',
+      _OperatorSection.patient =>
+        'Consulta la ficha que se usa para comprobar identidad.',
+      _OperatorSection.manualOrder =>
+        'Vincula un paciente con las prestaciones solicitadas.',
+      _OperatorSection.samples =>
+        'Registra los tubos requeridos para esta orden.',
+      _OperatorSection.results =>
+        'Consulta los valores y sigue el estado de la revisión.',
+      _OperatorSection.report => 'Gestiona el PDF autorizado de esta orden.',
+      _OperatorSection.dashboard => '',
+    };
     final order = _selected?['order'] as Map?;
     final isOrderDetail = _section == _OperatorSection.samples ||
-        _section == _OperatorSection.results || _section == _OperatorSection.report;
+        _section == _OperatorSection.results ||
+        _section == _OperatorSection.report;
     return SingleChildScrollView(
       key: ValueKey(_section),
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 26),
+      padding: EdgeInsets.symmetric(
+        horizontal: MediaQuery.sizeOf(context).width < 600 ? 14 : 24,
+        vertical: 24,
+      ),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1280),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(title, style: theme.textTheme.headlineMedium),
-              const SizedBox(height: 5),
-              Text(
-                'Gestión de órdenes, muestras y resultados.',
-                style: theme.textTheme.bodyLarge,
-              ),
-              const SizedBox(height: 18),
-              if (_loading) const LinearProgressIndicator(),
+              if (_section != _OperatorSection.dashboard) ...[
+                Text(title,
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: _navy,
+                    )),
+                const SizedBox(height: 5),
+                Text(subtitle, style: theme.textTheme.bodyLarge),
+                const SizedBox(height: 18),
+              ],
+              if (_loading) ...[
+                const LinearProgressIndicator(),
+                const SizedBox(height: 12),
+              ],
               if (_error != null) ...[
-                Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
-                const SizedBox(height: 10),
+                _notice(_error!, error: true),
+                const SizedBox(height: 12),
               ],
               if (_message != null) ...[
-                Text(_message!, style: TextStyle(color: theme.colorScheme.primary)),
-                const SizedBox(height: 10),
+                _notice(_message!, error: false),
+                const SizedBox(height: 12),
               ],
               if (isOrderDetail && order != null) ...[
                 _orderNavigation(order),
@@ -2393,7 +2590,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
-                    onPressed: _busy ? null : () => _goTo(_OperatorSection.orders),
+                    onPressed:
+                        _busy ? null : () => _goTo(_OperatorSection.orders),
                     icon: const Icon(Icons.arrow_back),
                     label: const Text('Volver a órdenes'),
                   ),
@@ -2414,13 +2612,107 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     );
   }
 
+  Widget _desktopNavigation(bool expanded) {
+    final toggle = IconButton(
+      tooltip: expanded ? 'Plegar menú' : 'Expandir menú',
+      color: Colors.white,
+      onPressed: () => setState(() => _railExpanded = !expanded),
+      icon: Icon(expanded ? Icons.menu_open : Icons.menu),
+    );
+    final reviewIcon = Badge.count(
+      count: _pendingReviews,
+      isLabelVisible: _pendingReviews > 0,
+      backgroundColor: const Color(0xFFB9EEEA),
+      textColor: _navy,
+      child: const Icon(Icons.fact_check_outlined),
+    );
+    return NavigationRailTheme(
+      data: const NavigationRailThemeData(
+        backgroundColor: _navy,
+        indicatorColor: Color(0xFF22546A),
+        selectedIconTheme: IconThemeData(color: Color(0xFFC5F5F0)),
+        unselectedIconTheme: IconThemeData(color: Color(0xFFC4D4E0)),
+        selectedLabelTextStyle:
+            TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+        unselectedLabelTextStyle: TextStyle(color: Color(0xFFDAE5EE)),
+      ),
+      child: NavigationRail(
+        extended: expanded,
+        scrollable: true,
+        minWidth: 72,
+        minExtendedWidth: 224,
+        selectedIndex: _navigationIndex,
+        labelType: NavigationRailLabelType.none,
+        useIndicator: true,
+        leading: expanded
+            ? SizedBox(
+                width: 202,
+                child: Row(children: [
+                  const Expanded(
+                      child: Padding(
+                    padding: EdgeInsets.only(left: 8),
+                    child: Text('ÁREA DE TRABAJO',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: Color(0xFFB9EEEA),
+                            fontSize: 11,
+                            letterSpacing: 1)),
+                  )),
+                  toggle,
+                ]))
+            : toggle,
+        onDestinationSelected: _busy ? null : (index) => _goTo(_nav[index].$1),
+        destinations: _nav
+            .map((item) => NavigationRailDestination(
+                  icon: expanded
+                      ? Icon(item.$2)
+                      : Tooltip(message: item.$3, child: Icon(item.$2)),
+                  label: Text(item.$3),
+                ))
+            .toList(),
+        trailing: _canReview
+            ? Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: expanded
+                    ? TextButton.icon(
+                        style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFC5F5F0)),
+                        onPressed:
+                            _busy ? null : () => _openQueue('results_recorded'),
+                        icon: reviewIcon,
+                        label: const Text('Bandeja de revisión'),
+                      )
+                    : IconButton(
+                        tooltip: 'Abrir bandeja por revisar',
+                        color: const Color(0xFFC5F5F0),
+                        onPressed:
+                            _busy ? null : () => _openQueue('results_recorded'),
+                        icon: reviewIcon,
+                      ),
+              )
+            : null,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final compactToolbar = width < 700;
     return Scaffold(
+      backgroundColor: _workspace,
       appBar: AppBar(
-        title: const Text('Vitalia Health'),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        title: Row(mainAxisSize: MainAxisSize.min, children: [
+          Image.asset('assets/branding/vitalia-simbolo.png',
+              width: 31, height: 31, excludeFromSemantics: true),
+          const SizedBox(width: 8),
+          const Flexible(
+              child: Text('Vitalia Health',
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: _navy, fontWeight: FontWeight.w700))),
+        ]),
         actions: [
           IconButton(
             tooltip: 'Actualizar datos del laboratorio',
@@ -2452,31 +2744,24 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           return _content();
         }
         return Row(children: [
-          NavigationRail(
-            extended: constraints.maxWidth >= 1250,
-            selectedIndex: _navigationIndex,
-            labelType: constraints.maxWidth >= 1250
-                ? NavigationRailLabelType.none
-                : NavigationRailLabelType.all,
-            onDestinationSelected: _busy ? null : (index) => _goTo(_nav[index].$1),
-            destinations: _nav
-                .map((item) => NavigationRailDestination(
-                  icon: Icon(item.$2), label: Text(item.$3),
-                ))
-                .toList(),
-          ),
-          const VerticalDivider(width: 1),
+          _desktopNavigation(_railExpanded ?? constraints.maxWidth >= 1200),
           Expanded(child: _content()),
         ]);
       }),
       bottomNavigationBar: width < 900
           ? NavigationBar(
+              backgroundColor: Colors.white,
+              indicatorColor: const Color(0xFFD6EEEC),
+              labelBehavior:
+                  NavigationDestinationLabelBehavior.onlyShowSelected,
               selectedIndex: _navigationIndex,
-              onDestinationSelected: _busy ? null : (index) => _goTo(_nav[index].$1),
+              onDestinationSelected:
+                  _busy ? null : (index) => _goTo(_nav[index].$1),
               destinations: _nav
                   .map((item) => NavigationDestination(
-                    icon: Icon(item.$2), label: item.$3,
-                  ))
+                        icon: Icon(item.$2),
+                        label: item.$3,
+                      ))
                   .toList(),
             )
           : null,

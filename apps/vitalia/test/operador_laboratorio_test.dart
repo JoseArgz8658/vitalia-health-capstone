@@ -114,11 +114,20 @@ void main() {
       home: OperadorLaboratorioPage(api: api, onExpired: () {}),
     ));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Por revisar · 1'));
+    expect(find.text('Por revisar · 1'), findsOneWidget);
+    await tester.tap(find.byTooltip('Plegar menú'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<NavigationRail>(find.byType(NavigationRail)).extended,
+        isFalse);
+    await tester.tap(find.byTooltip('Abrir bandeja por revisar'));
     await tester.pumpAndSettle();
     expect(api.calls.last.queryParameters['status'], 'results_recorded');
+    await tester.tap(find.byTooltip('Expandir menú'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Revisar resultados'));
     await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('Revisión interna')).dx,
+        greaterThan(tester.getTopLeft(find.text('Resultados de la orden')).dx));
     final approve = find.text('Aprobar revisión');
     await tester.ensureVisible(approve);
     await tester.tap(approve);
