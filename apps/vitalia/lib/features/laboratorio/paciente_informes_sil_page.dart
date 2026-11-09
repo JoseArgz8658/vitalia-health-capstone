@@ -29,6 +29,8 @@ class PacienteInformesSilPage extends StatefulWidget {
 }
 
 class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
+  static const _mainSil =
+      bool.fromEnvironment('VITALIA_SIL_MAIN_MODE',defaultValue:false);
   List<Map<String, dynamic>> _reports = [];
   bool _loading = true;
   String? _downloading;
@@ -253,9 +255,11 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                                   ),
                                 ),
                                 const SizedBox(height: 8),
-                                const Text(
-                                  'Cuenta activa · Paciente DEMO',
-                                  style: TextStyle(
+                                Text(
+                                  _mainSil
+                                    ? 'Cuenta activa · Vitalia Health'
+                                    : 'Cuenta activa · Paciente DEMO',
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -965,7 +969,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         if (!_loading) _refresh();
         break;
       case 'recovery':
-        _openRecovery();
+        if (!_mainSil) _openRecovery();
         break;
       case 'logout':
         widget.onLogout();
@@ -1025,14 +1029,15 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               ),
             ),
           ],
-          const PopupMenuItem(
-            value: 'recovery',
-            child: ListTile(
-              dense: true,
-              leading: Icon(Icons.key_outlined),
-              title: Text('Configurar recuperación'),
+          if (!_mainSil)
+            const PopupMenuItem(
+              value: 'recovery',
+              child: ListTile(
+                dense: true,
+                leading: Icon(Icons.key_outlined),
+                title: Text('Configurar recuperación'),
+              ),
             ),
-          ),
           const PopupMenuDivider(),
           const PopupMenuItem(
             value: 'help',
@@ -1064,7 +1069,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               ? ''
               : rawName.split(RegExp(r'\s+')).first;
           return PortalHeroSil(
-            eyebrow: 'Tu espacio personal · SIL DEMO',
+            eyebrow: _mainSil ? 'Tu espacio personal · Vitalia Health' : 'Tu espacio personal · SIL DEMO',
             title: firstName.isEmpty
                 ? 'Hola, bienvenido a Vitalia'
                 : 'Hola, $firstName',
@@ -1268,11 +1273,12 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             ),
           ],
           if (fullAccountActions) ...[
-            TextButton.icon(
-              onPressed: _openRecovery,
-              icon: const Icon(Icons.key_outlined, size: 18),
-              label: const Text('Recuperación'),
-            ),
+            if (!_mainSil)
+              TextButton.icon(
+                onPressed: _openRecovery,
+                icon: const Icon(Icons.key_outlined, size: 18),
+                label: const Text('Recuperación'),
+              ),
             TextButton.icon(
               onPressed: () => PortalAyudaSil.preguntasFrecuentes(context),
               icon: const Icon(Icons.help_outline, size: 18),
@@ -1356,13 +1362,16 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                   PortalAyudaFooterSil(
                     reports: _reports,
                     onProfile: _openProfile,
-                    onRecovery: _openRecovery,
+                    onRecovery: _mainSil ? null : _openRecovery,
                     onReports: _scrollToReports,
                   ),
                   const SizedBox(height: 18),
                   Text(
-                    'Vitalia Health · Proyecto académico · '
-                    'Entorno con datos ficticios.',
+                    _mainSil
+                        ? 'Vitalia Health · Integración en revisión · '
+                            'No utilizar datos clínicos reales antes de la validación.'
+                        : 'Vitalia Health · Proyecto académico · '
+                            'Entorno con datos ficticios.',
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall,
                   ),
