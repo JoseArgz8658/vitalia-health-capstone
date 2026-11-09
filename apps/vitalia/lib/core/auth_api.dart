@@ -213,6 +213,109 @@ class AuthApi {
     catch(_){throw const AuthFailure('No fue posible conectar con Vitalia.');}
   }
 
+  /// Recibe una solicitud médica ya emitida, vinculada a una orden de
+  /// paciente verificado; no realiza procesamiento clínico.
+  Future<Map<String,dynamic>> silMainAttachMedicalRequest({
+    required String labId,
+    required String orderId,
+    required String fileName,
+    required Uint8List bytes,
+    required String documentReference,
+    required String prescriberName,
+    required String requestDate,
+  }) async {
+    if(!_silMainMode){
+      throw const AuthFailure('El SIL principal no está habilitado.');
+    }
+    final id=RegExp(r'^[a-f0-9-]{36}$');
+    if(!id.hasMatch(labId)||!id.hasMatch(orderId)||
+       !fileName.toLowerCase().endsWith('.pdf')||
+       fileName.length<5||fileName.length>120||
+       bytes.length<8||bytes.length>2*1024*1024||
+       bytes[0]!=37||bytes[1]!=80||bytes[2]!=68||bytes[3]!=70||
+       documentReference.trim().length<6||prescriberName.trim().length<3||
+       !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(requestDate)){
+      throw const AuthFailure('Revisa el PDF y los datos de la solicitud.');
+    }
+    final token=_token;
+    if(token==null||expiresAt==null||!expiresAt!.isAfter(DateTime.now())){
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+    }
+    try{
+      final response=await _client.post(
+        _base.resolve('/api/sil/main/labs/$labId/orders/$orderId/medical-request'),
+        headers:{
+          'Authorization':'Bearer $token',
+          'Content-Type':'application/pdf',
+          'x-request-filename':Uri.encodeComponent(fileName),
+          'x-request-prescriber':Uri.encodeComponent(prescriberName.trim()),
+          'x-request-reference':Uri.encodeComponent(documentReference.trim()),
+          'x-request-date':requestDate,
+          'x-request-identity-confirmed':'true',
+          'x-request-reviewed':'true',
+        },
+        body:bytes,
+      ).timeout(const Duration(seconds:40));
+      if(token!=_token||response.statusCode==401){
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+      }
+      if(response.statusCode>=400){
+        throw AuthFailure(switch(response.statusCode){
+          400=>'El PDF o los datos de la solicitud son inválidos.',
+          403=>'No tienes permiso para recibir esta solicitud.',
+          404=>'La orden no pertenece al laboratorio seleccionado.',
+          409=>'La solicitud ya fue recibida o el estado de la orden cambió.',
+          413=>'El PDF supera los 2 MiB.',
+          _=>'No se pudo recibir la solicitud.',
+        },response.statusCode);
+      }
+      return jsonDecode(response.body) as Map<String,dynamic>;
+    }on AuthFailure {rethrow;}
+    on TimeoutException {
+      throw const AuthFailure('La recepción tardó demasiado.');
+    }catch(_){
+      throw const AuthFailure('No fue posible conectar con Vitalia.');
+    }
+  }
+
+  /// Consulta un archivo recibido desde el SIL principal, autenticado y
+  /// limitado por laboratorio en el backend.
+  Future<Uint8List> silMainDownloadMedicalRequest({
+    required String labId,
+    required String orderId,
+  }) async {
+    if(!_silMainMode)throw const AuthFailure('SIL principal no habilitado.');
+    final id=RegExp(r'^[a-f0-9-]{36}$');
+    if(!id.hasMatch(labId)||!id.hasMatch(orderId)){
+      throw const AuthFailure('Orden inválida.');
+    }
+    final token=_token;
+    if(token==null||expiresAt==null||!expiresAt!.isAfter(DateTime.now())){
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+    }
+    try{
+      final response=await _client.get(
+        _base.resolve('/api/sil/main/labs/$labId/orders/$orderId/medical-request/file'),
+        headers:{'Authorization':'Bearer $token'},
+      ).timeout(const Duration(seconds:35));
+      if(token!=_token||response.statusCode==401){
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+      }
+      if(response.statusCode!=200||
+         response.headers['content-type']?.startsWith('application/pdf')!=true||
+         response.bodyBytes.length>2*1024*1024){
+        throw AuthFailure('Solicitud no disponible en este laboratorio.',response.statusCode);
+      }
+      return response.bodyBytes;
+    }on AuthFailure {rethrow;}
+    on TimeoutException {throw const AuthFailure('La descarga tardó demasiado.');}
+    catch(_){throw const AuthFailure('No fue posible descargar la solicitud.');}
+  }
+
   /// Carga PDF autorizado al laboratorio seleccionado. Publica otro profesional.
   Future<Map<String,dynamic>> silMainAttachReport({
     required String labId,
