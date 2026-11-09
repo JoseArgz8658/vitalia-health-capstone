@@ -12,13 +12,13 @@ class _DemoActivationApi extends AuthApi {
     calls.add({'path':path,'body':body});
     if(path=='/portal/activate'){
       expect(body!['email'],'nuevo@example.invalid');
-      expect(body['emailCode'],'a'*24);
-      expect(body['handoffCode'],'b'*24);
+      expect(body['emailCode'],'a'*12);
+      expect(body['handoffCode'],'b'*12);
       expect(body['password'],'UnaClaveSeguraNueva2026');
       expect(body['confirmedDetails'],true);
       return {'activated':true,'loginRequired':true};
     }
-    return {'emailCode':'a'*24};
+    return {'emailCode':'a'*12};
   }
 }
 void main(){
@@ -44,9 +44,9 @@ void main(){
     expect(find.text('Paso A · Código de correo'),findsOneWidget);
     expect(find.text('Paso B · Clave entregada en el laboratorio'),findsOneWidget);
     await tester.enterText(
-      find.widgetWithText(TextField,'Código recibido por correo'),'a'*24);
+      find.widgetWithText(TextField,'Código recibido por correo'),'a'*12);
     await tester.enterText(
-      find.widgetWithText(TextField,'Clave de entrega presencial'),'b'*24);
+      find.widgetWithText(TextField,'Clave de entrega presencial'),'b'*12);
     await tester.ensureVisible(find.text('Continuar'));
     await tester.tap(find.text('Continuar'));
     await tester.pumpAndSettle();
