@@ -201,7 +201,13 @@ async function operatorJourney(browser, order, base) {
       await input.focus();
       const focused=input.and(page.locator(':focus'));
       await focused.waitFor({timeout:7000});
+      // Flutter activa el editor web al finalizar el cambio de foco.
+      await focused.evaluate(()=>new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done))));
       await focused.pressSequentially(value,{delay:18});
+      if(await focused.inputValue()!==value){
+        await focused.press('Control+a');
+        await focused.pressSequentially(value,{delay:18});
+      }
       assert.equal(await focused.inputValue(),value,key);
     }
     await click(button('Elegir fecha de autorización'),'Elegir fecha de autorización');
