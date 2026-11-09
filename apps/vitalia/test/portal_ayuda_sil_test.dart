@@ -57,6 +57,7 @@ void main() {
         );
         expect(tester.takeException(), isNull);
 
+        await tester.ensureVisible(find.text('Entendido'));
         await tester.tap(find.text('Entendido'));
         await tester.pumpAndSettle();
 
@@ -66,6 +67,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('¿Qué informes puedo consultar?'), findsOneWidget);
 
+        await tester.ensureVisible(find.text('Entendido'));
         await tester.tap(find.text('Entendido'));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
