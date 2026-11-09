@@ -149,6 +149,11 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
         req.params.labId as string,data.data.email,res.locals.account.id));
     });
 
+  // La lista de operadores se limita al laboratorio seleccionado y al administrador.
+  router.get('/labs/:labId/staff',administrator,labPath,async(req,res)=>{
+    res.json(await main.listStaff(req.params.labId as string));
+  });
+
   router.post('/labs/:labId/staff',administrator,labPath,async(req,res)=>{
     const data=z.object({
       accountId:uuid,
