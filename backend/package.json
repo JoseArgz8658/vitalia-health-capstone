@@ -8,7 +8,9 @@
     "start": "node --env-file-if-exists=.env dist/server.js",
     "test": "npm run build && jest --runInBand",
     "worker": "node --env-file-if-exists=.env dist/database/run-processing.js",
-    "migrate": "node --env-file-if-exists=.env dist/database/migrate-all.js"
+    "migrate": "node --env-file-if-exists=.env dist/database/migrate-all.js",
+    "migrate:main:status": "node --env-file-if-exists=.env dist/database/migrate-main-sil.js --status",
+    "migrate:main:apply": "node --env-file-if-exists=.env dist/database/migrate-main-sil.js --apply"
   },
   "engines": {
     "node": ">=20.19.0"
