@@ -1051,10 +1051,10 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   Widget _queueCard(IconData icon, String title, int count, String status) {
     final theme = Theme.of(context);
     final (ink, tint) = switch (status) {
-      'review_rejected' => (const Color(0xFF9E2F43), const Color(0xFFFDEDF0)),
-      'registered' => (const Color(0xFF785019), const Color(0xFFFFF3DC)),
-      'sampled' => (const Color(0xFF245D99), const Color(0xFFEAF3FF)),
-      _ => (_teal, const Color(0xFFE5F5F3)),
+      'review_rejected' => (const Color(0xFFA14957), ColoresVitalia.errorSuave),
+      'registered' => (const Color(0xFF876027), ColoresVitalia.advertenciaSuave),
+      'sampled' => (const Color(0xFF315F80), ColoresVitalia.azulSuave),
+      _ => (_teal, ColoresVitalia.verdeSuave),
     };
     return Material(
       color: count > 0 ? tint : theme.colorScheme.surface,
@@ -1075,7 +1075,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: count > 0 ? Colors.white : tint,
+                  color: count > 0 ? Colors.white.withValues(alpha: 0.75) : tint,
                   borderRadius: BorderRadius.circular(9),
                 ),
                 child: Icon(icon, size: 20, color: ink),
@@ -1199,42 +1199,35 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   Widget _dashboardHeader() {
     final text = Theme.of(context).textTheme;
     return Container(
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.all(21),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        gradient: const LinearGradient(colors: [_navy, _teal]),
+        color: const Color(0xFFEAF3F5),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD6E6EA)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('ESTACIÓN DEL OPERADOR',
-            style: text.labelMedium?.copyWith(
-              color: const Color(0xFFB9EEEA),
-              letterSpacing: 1.3,
-            )),
-        const SizedBox(height: 6),
+          style: text.labelMedium?.copyWith(
+            color: ColoresVitalia.verde,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.2,
+          )),
+        const SizedBox(height: 7),
         Text('Panel del laboratorio',
-            style: text.headlineMedium?.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            )),
-        const SizedBox(height: 8),
-        Text('Recibe solicitudes y sigue cada orden hasta su revisión.',
-            style: text.bodyMedium?.copyWith(color: const Color(0xFFE3EFF4))),
-        const SizedBox(height: 18),
-        Wrap(spacing: 10, runSpacing: 10, children: [
+          style: text.headlineMedium?.copyWith(
+            color: _navy, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 6),
+        Text('Recepción, órdenes y revisión interna en un mismo espacio de trabajo.',
+          style: text.bodyMedium?.copyWith(
+            color: ColoresVitalia.textoSecundario)),
+        const SizedBox(height: 16),
+        Wrap(spacing: 10, runSpacing: 8, children: [
           FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: _navy,
-            ),
             onPressed: _busy ? null : () => _goTo(_OperatorSection.request),
             icon: const Icon(Icons.note_add_outlined),
             label: const Text('Recibir solicitud de exámenes'),
           ),
           OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              side: const BorderSide(color: Color(0xFFA9DBDE)),
-            ),
             onPressed: _busy ? null : () => _openQueue('results_recorded'),
             icon: const Icon(Icons.fact_check_outlined),
             label: Text(_canReview
@@ -1464,6 +1457,22 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
   );
   }
 
+  Widget _prerequisiteHint(IconData icon, String message) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    decoration: BoxDecoration(
+      color: ColoresVitalia.fondoAzul,
+      border: Border.all(color: ColoresVitalia.bordeTenue),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Icon(icon, size: 18, color: ColoresVitalia.azul),
+      const SizedBox(width: 10),
+      Expanded(child: Text(message,
+        style: const TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario))),
+    ]),
+  );
+
   Widget _medicalRequestView() => _panel(
     'Recepción de solicitud de exámenes',
     'Vincula un documento médico ficticio con un paciente registrado, sin crear la orden hasta comprobar su identidad.',
@@ -1531,6 +1540,19 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           label:const Text('Revisar texto de la solicitud'),
         ),
       ]),
+      const SizedBox(height:10),
+      if (_requestPdf == null)
+        _prerequisiteHint(Icons.attach_file_outlined,
+          'Para habilitar la revisión, adjunta primero una solicitud médica PDF ficticia.')
+      else if (_requestPreview == null)
+        _prerequisiteHint(Icons.fact_check_outlined,
+          'Archivo seleccionado. El siguiente paso es cotejar su texto y la identidad DEMO.')
+      else if (_requestPreview!['previewToken'] == null)
+        _prerequisiteHint(Icons.info_outline,
+          'No puedes crear una orden hasta corregir la discrepancia en la solicitud original.')
+      else
+        _prerequisiteHint(Icons.check_circle_outline,
+          'Identidad cotejada. Revisa sucursal, fecha, profesional y prestaciones antes de confirmar.'),
       const SizedBox(height:10),
       const Text('Formato admitido: PDF ficticio con texto seleccionable, máximo 2 MiB. '
         'Se cotejan identificador DEMO, nombres, apellidos y fecha de nacimiento. '
@@ -2243,7 +2265,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
         key: _reviewPanelKey,
         child: _panel(
           'Revisión interna',
-          'Coteja los valores registrados con el documento de origen antes de decidir.',
+          'El operador autorizado coteja los valores con su documento de origen. Aprobar no equivale a publicar un informe.',
           Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             TextField(
               controller: _reviewNoteController,
@@ -2624,7 +2646,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               validator: (value) {
                 final date = (value ?? '').trim();
                 final parsed = DateTime.tryParse(date);
-                if (!RegExp(r'^\\d{4}-\\d{2}-\\d{2}$').hasMatch(date) ||
+                if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(date) ||
                     parsed == null ||
                     parsed.toIso8601String().substring(0, 10) != date ||
                     date.compareTo('1900-01-01') < 0 ||
@@ -2792,7 +2814,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       _OperatorSection.request =>
         'Coteja la solicitud con la ficha del paciente y registra la orden.',
       _OperatorSection.patient =>
-        'Consulta la ficha que se usa para comprobar identidad.',
+        'Busca cuentas ficticias, consulta sus fichas y continúa con órdenes o solicitudes.',
       _OperatorSection.manualOrder =>
         'Vincula un paciente con las prestaciones solicitadas.',
       _OperatorSection.samples =>
@@ -2898,11 +2920,13 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                     ? Badge.count(
                         count: _pendingReviews,
                         isLabelVisible: _pendingReviews > 0,
+                        backgroundColor: ColoresVitalia.azul,
+                        textColor: Colors.white,
                         child: Icon(icon, size: 18),
                       )
                     : Icon(icon, size: 18),
             label: Text(section == _OperatorSection.reviewQueue
-                ? 'Revisión ($_pendingReviews)'
+                ? 'Revisión interna ($_pendingReviews)'
                 : label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis),
@@ -2999,6 +3023,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
                     ? Badge.count(
                         count: _pendingReviews,
                         isLabelVisible: _pendingReviews > 0,
+                        backgroundColor: ColoresVitalia.azul,
+                        textColor: Colors.white,
                         child: Icon(item.$2),
                       )
                     : Icon(item.$2);
