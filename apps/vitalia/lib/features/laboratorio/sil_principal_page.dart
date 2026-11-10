@@ -43,7 +43,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   int _patientOffset = 0;
   bool _morePatients = false;
   String _activePatientSearch = '';
-  final _patientAccount = TextEditingController();
   final _evidence = TextEditingController();
   final _orderPatient = TextEditingController();
   final _orderPatientSearch = TextEditingController();
@@ -131,7 +130,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   @override
   void dispose(){
     for(final ctrl in [
-      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_patientAccount,_evidence,_orderPatient,_orderPatientSearch,
+      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_evidence,_orderPatient,_orderPatientSearch,
       _requestPatient,_requestInviteEmail,_requestIdentityEvidence,
       _requestPrescriber,_requestReference,_requestDate,
       _reportProfessional,_reportReference,_reportDate,
@@ -313,7 +312,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _orderOffset = 0;
     _moreOrders = false;
     for (final controller in [
-      _patientAccount, _invitedPatientEmail, _evidence, _orderPatient, _requestPatient,
+      _invitedPatientEmail, _evidence, _orderPatient, _requestPatient,
       _requestInviteEmail, _requestIdentityEvidence, _requestPrescriber,
       _requestReference, _requestDate, _reportProfessional, _reportReference, _reportDate,
     ]) {
@@ -494,8 +493,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             SelectableText(invite['code'] as String),
             if (fromRequest) ...[
               const SizedBox(height: 12),
-              const Text('El paciente se activa en /#/activar-portal. '
-                  'Después vuelve a esta derivación y pulsa «Buscar paciente activado».'),
+              const Text('El paciente debe abrir «Activar cuenta de paciente», ingresar su correo y código, y crear una contraseña personal. Después vuelve aquí y pulsa «Buscar paciente activado». El código no se envía automáticamente por correo.'),
             ],
           ]),
         ),
@@ -551,24 +549,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _requestIdentityChecked = false;
       _requestHumanChecked = false;
     });
-  }
-
-  Future<void> _linkPatient() async {
-    final lab=_labId,patientId=_requireUuid(_patientAccount.text);
-    final evidence=_evidence.text.trim();
-    if(lab==null||patientId==null||evidence.length<6||!_verifiedPatient){
-      throw const AuthFailure('Confirma la identidad por un medio oficial y registra su referencia.');
-    }
-    await widget.api.silMainRequest('/labs/$lab/patients',body:{
-      'patientId':patientId,
-      'identityEvidenceReference':evidence,
-      'identityVerified':true,
-    });
-    if (!mounted) return;
-    _patientAccount.clear();
-    _evidence.clear();
-    setState(()=>_verifiedPatient=false);
-    await _loadPatients(offset: 0);
   }
 
   Future<void> _createOrder() async {
