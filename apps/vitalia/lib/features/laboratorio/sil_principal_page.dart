@@ -982,10 +982,21 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           ),
           const SizedBox(height: 8),
         ],
-        if(list.isEmpty)
-          const Padding(
-            padding:EdgeInsets.only(bottom:12),
-            child:Text('No hay órdenes para mostrar.'),
+        if (list.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: OperatorNextStep(
+              icon: Icons.assignment_outlined,
+              title: 'No hay órdenes para mostrar',
+              message: recent
+                  ? 'Todavía no aparecen órdenes recientes en este laboratorio. Al completar una solicitud, podrás consultarla aquí.'
+                  : 'No hay órdenes que coincidan con los filtros. Prueba otra búsqueda o comienza recibiendo una solicitud médica.',
+              action: OutlinedButton.icon(
+                onPressed: _busy ? null : () => _openSection(_StationSection.requests),
+                icon: const Icon(Icons.note_add_outlined),
+                label: const Text('Recibir una solicitud'),
+              ),
+            ),
           )
         else
           for(final order in list.take(50))
@@ -2199,7 +2210,19 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       ),
       _StationSection.clinical => _operatorSubpage(
         title: 'Control de muestras y resultados',
-        description: 'Consulta una orden y registra su información postanalítica.',
+        description: 'Selecciona una orden registrada para continuar con muestras y resultados.',
+        support: _workflowOrders.isEmpty
+            ? OperatorNextStep(
+                icon: Icons.science_outlined,
+                title: 'No hay órdenes disponibles',
+                message: 'Primero recibe una solicitud médica y registra su orden. Después aparecerá aquí para continuar con el trabajo del laboratorio.',
+                action: OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _openSection(_StationSection.requests),
+                  icon: const Icon(Icons.upload_file_outlined),
+                  label: const Text('Recibir solicitud médica'),
+                ),
+              )
+            : null,
         child: _section(
           'Muestras y resultados',
           'Registra la recepción y revisa los analitos de la orden.',
