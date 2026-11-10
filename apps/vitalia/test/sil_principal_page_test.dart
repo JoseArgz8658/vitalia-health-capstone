@@ -147,16 +147,13 @@ void main() {
     expect(find.text('Datos identificatorios sugeridos por el PDF'),findsOneWidget);
     expect(find.text('Ana Prueba'),findsOneWidget);
     expect(find.text('Descargar derivación pendiente original'),findsOneWidget);
-    final invite=find.widgetWithText(OutlinedButton,'Emitir invitación de paciente');
-    expect(tester.widget<OutlinedButton>(invite).onPressed,isNotNull,
-      reason:'Se puede invitar sin volver a cargar el PDF ya guardado.');
-    final button=find.widgetWithText(FilledButton,'Crear orden con solicitud');
-    expect(tester.widget<FilledButton>(button).onPressed,isNotNull);
-    await tester.ensureVisible(button);
-    await tester.tap(button);
-    await tester.pumpAndSettle();
-    expect(api.pendingCompletions,isEmpty,
-      reason:'La orden no se registra sin paciente activado y cotejo humano.');
+    final invite = find.widgetWithText(OutlinedButton,'Emitir invitación de paciente');
+    expect(tester.widget<OutlinedButton>(invite).onPressed, isNull,
+      reason: 'Antes de invitar debe cotejarse la identidad.');
+    final button = find.widgetWithText(FilledButton,'Crear orden con solicitud');
+    expect(tester.widget<FilledButton>(button).onPressed, isNull,
+      reason: 'La cuenta debe estar activada y el PDF cotejado.');
+    expect(api.pendingCompletions, isEmpty);
     expect(tester.takeException(),isNull);
   });
 
