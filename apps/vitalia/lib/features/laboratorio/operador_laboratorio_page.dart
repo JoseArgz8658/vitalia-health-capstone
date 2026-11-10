@@ -1423,7 +1423,9 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         for (final item in metrics)
           OperatorDistributionBar(
-            label: item.label,
+            label: item.key == 'pendingResults'
+                ? 'Resultados por ingresar'
+                : item.label,
             count: count(item.key),
             total: total,
             color: item.accent,
@@ -1484,7 +1486,7 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       Column(children: [
         OperatorActionTile(
           icon: Icons.note_add_outlined,
-          label: 'Recibir solicitud',
+          label: 'Iniciar recepción',
           subtitle: 'Adjunta un PDF y coteja la identidad',
           onTap: _busy ? null : () => _goTo(_OperatorSection.request),
         ),
