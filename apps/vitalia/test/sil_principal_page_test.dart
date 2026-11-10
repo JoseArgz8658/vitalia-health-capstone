@@ -5,6 +5,8 @@ import 'package:vitalia_health/features/laboratorio/sil_principal_page.dart';
 
 class _StationApi extends AuthApi {
   final reviewActions=<Map<String,dynamic>>[];
+  final pendingCompletions=<Map<String,dynamic>>[];
+  bool showPending=false;
   static const allowedLab = '11111111-1111-4111-8111-111111111111';
   static const restrictedLab = '22222222-2222-4222-8222-222222222222';
   static const ownOrder = '33333333-3333-4333-8333-333333333333';
@@ -16,6 +18,33 @@ class _StationApi extends AuthApi {
     Map<String, dynamic>? body,
   }) async {
     final requestPath=Uri.parse(path).path;
+    if(requestPath=='/labs/$allowedLab/medical-requests/pending'){
+      return {'pending':showPending?[{
+        'id':'66666666-6666-4666-8666-666666666666',
+        'fileName':'derivacion-ejemplo.pdf',
+        'status':'pending',
+        'extractionStatus':'text_ready',
+        'patientEmail':'prueba@example.invalid',
+        'suggestions':{
+          'suggestedDocumentReference':'SOL-2001',
+          'suggestedPrescriberName':'Persona Solicitante',
+          'suggestedRequestDate':'2024-01-01',
+          'suggestedExams':[{'code':'glicemia','name':'Glicemia'}],
+          'suggestedPatient':{
+            'fullName':'Ana Prueba','identifier':null,
+            'birthDate':'1990-01-01','email':'prueba@example.invalid',
+            'phone':null,'sex':null,
+          },
+        },
+      }]:[]};
+    }
+    if(requestPath=='/labs/$allowedLab/medical-requests/pending/66666666-6666-4666-8666-666666666666/complete'){
+      pendingCompletions.add(body??{});
+      return {'order':{'id':ownOrder},'pending':{'status':'completed'}};
+    }
+    if(requestPath=='/labs/$restrictedLab/medical-requests/pending'){
+      return {'pending':[]};
+    }
     if(requestPath=='/labs/$allowedLab/patients'){
       return {
         'patients':[
@@ -92,6 +121,42 @@ Finder _field(String label) => find.byWidgetPredicate(
 
 
 void main() {
+  testWidgets('se recupera un PDF pendiente y no se crea orden sin validación', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(()=>tester.binding.setSurfaceSize(null));
+    final api=_StationApi()..showPending=true;
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home:SilPrincipalPage(
+      api:api,role:'operador_laboratorio',
+      onExpired:(){},onLogout:(){},
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton,'Recibir solicitud'));
+    await tester.pumpAndSettle();
+    expect(find.text('Guardar derivación pendiente'),findsOneWidget);
+    final submit=find.widgetWithText(FilledButton,'Crear orden con solicitud');
+    expect(tester.widget<FilledButton>(submit).onPressed,isNull);
+    final stored=find.byWidgetPredicate((widget)=>
+      widget is DropdownButtonFormField<String> &&
+      widget.decoration.labelText=='Derivación pendiente guardada');
+    await tester.ensureVisible(stored);
+    await tester.tap(stored);
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('derivacion-ejemplo.pdf').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Datos identificatorios sugeridos por el PDF'),findsOneWidget);
+    expect(find.text('Ana Prueba'),findsOneWidget);
+    expect(find.text('Descargar derivación pendiente original'),findsOneWidget);
+    final button=find.widgetWithText(FilledButton,'Crear orden con solicitud');
+    expect(tester.widget<FilledButton>(button).onPressed,isNotNull);
+    await tester.ensureVisible(button);
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(api.pendingCompletions,isEmpty,
+      reason:'La orden no se registra sin paciente activado y cotejo humano.');
+    expect(tester.takeException(),isNull);
+  });
+
   testWidgets('desde derivación permite localizar paciente activado sin escribir UUID', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
