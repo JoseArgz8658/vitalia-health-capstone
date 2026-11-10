@@ -5,6 +5,7 @@ import {createSilPatientRecoveryDemo} from './patient-recovery-demo';
 import {readPdfText} from '../pdf/reader';
 import {suggestMainResults} from './main-results-preview';
 import {suggestMedicalRequestFields} from './medical-request-intake';
+import {suggestReferralIdentity} from './main-referral-identity';
 import {identifyDocument} from '../documents/file-validation';
 import {createSilPatientReportOverview} from './patient-report-overview';
 import {createSilPatientEducation} from './patient-education';
@@ -40,7 +41,8 @@ export function createSilMainService(db:Pool) {
       'order_created'|'medical_request_received'|'medical_request_downloaded'|
       'report_attached'|'report_review_accessed'|'report_published'|'report_downloaded'|
       'sample_received'|'results_recorded'|'results_approved'|'results_returned'|
-      'patient_invited'|'patient_activated',
+      'patient_invited'|'patient_activated'|
+      'pending_request_saved'|'pending_request_downloaded'|'pending_request_completed',
     orderId:string|null=null,details:Record<string,unknown>={}) {
     await tx.query(
       `INSERT INTO public.vitalia_sil_main_audit
@@ -558,6 +560,7 @@ export function createSilMainService(db:Pool) {
         return {
           state:reading.status,
           ...suggestMedicalRequestFields(reading.text??'',catalog.rows),
+          suggestedPatient:suggestReferralIdentity(reading.text??''),
         };
       } finally {
         readingPdf=false;
