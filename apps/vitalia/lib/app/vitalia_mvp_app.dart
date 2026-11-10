@@ -217,16 +217,6 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
             role: _user!['role'] as String,
             onExpired: _expired,
             onLogout: _logout,
-            onOpenOriginal: _user!['role'] == 'administrador'
-              ? () => _navigator.currentState?.push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => AdministracionLaboratorioPage(
-                        email: _user!['email'] as String,
-                        onLogout: _logout,
-                      ),
-                    ),
-                  )
-              : null,
           )
         : _user!['role'] == 'operador_laboratorio'
         ? OperadorLaboratorioPage(
