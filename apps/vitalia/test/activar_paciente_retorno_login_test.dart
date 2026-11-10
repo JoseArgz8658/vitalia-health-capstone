@@ -80,5 +80,5 @@ void main() {
     await _activateAndReturn(t, api);
     await t.pumpWidget(const SizedBox());
     api.close();
-  });
+  }, skip: !mainMode);
 }
