@@ -135,6 +135,63 @@ class AuthApi {
     final allowed=RegExp(
       r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|staff(?:/review-permission)?|patients|patient-invitations|operator-invitations))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
     );
+    final pendingPath=RegExp(
+      r'^/labs/[a-f0-9-]{36}/medical-requests/pending(?:/[a-f0-9-]{36}/complete)?
+    final isOrders=candidate?.path.endsWith('/orders') ?? false;
+    final isPatients=candidate?.path.endsWith('/patients') ?? false;
+    final isPending=candidate?.path.endsWith('/medical-requests/pending') ?? false;
+    final allowedQuery = {
+      'limit', 'offset',
+      if (isPatients || isOrders) 'search',
+      if (isOrders) ...{'status', 'patientId'},
+    };
+    if(candidate==null||candidate.hasScheme||candidate.hasAuthority||
+       candidate.hasFragment||
+       (!allowed.hasMatch(candidate.path)&&!pendingPath.hasMatch(candidate.path))||
+       (queries.isNotEmpty&&(body!=null||(!isOrders&&!isPatients&&!isPending)))||
+       queries.keys.any((key)=>!allowedQuery.contains(key))||
+       queries.values.any((values)=>values.length!=1)){
+      throw const AuthFailure('Ruta del SIL principal inválida.');
+    }
+    final token=_token;
+    if(token==null||expiresAt==null||!expiresAt!.isAfter(DateTime.now())){
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+    }
+    try{
+      final target=_base.resolve('/api/sil/main${candidate.path}')
+        .replace(queryParameters:queries.isEmpty?null:candidate.queryParameters);
+      final headers={'Authorization':'Bearer $token','Content-Type':'application/json'};
+      final response=await (body==null
+          ?_client.get(target,headers:headers)
+          :_client.post(target,headers:headers,body:jsonEncode(body)))
+        .timeout(const Duration(seconds:30));
+      if(token!=_token||response.statusCode==401){
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+      }
+      if(response.statusCode>=400){
+        throw AuthFailure(switch(response.statusCode){
+          400=>'Revisa los datos del formulario.',
+          403=>'No tienes permiso para acceder a este laboratorio.',
+          404=>'El recurso no está disponible en este laboratorio.',
+          409=>'El recurso cambió de estado o ya existe.',
+          429=>'Demasiadas solicitudes. Intenta más tarde.',
+          503=>'La función todavía no está disponible.',
+          _=>'No pudimos completar la operación del SIL principal.',
+        },response.statusCode);
+      }
+      return jsonDecode(response.body) as Map<String,dynamic>;
+    }on AuthFailure {rethrow;}
+    on TimeoutException {
+      throw const AuthFailure('La consulta tardó demasiado.');
+    }catch(_){
+      throw const AuthFailure('No fue posible conectar con Vitalia principal.');
+    }
+  }
+
+,
+    );
     final queries=candidate?.queryParametersAll ?? <String,List<String>>{};
     final isOrders=candidate?.path.endsWith('/orders') ?? false;
     final isPatients=candidate?.path.endsWith('/patients') ?? false;
