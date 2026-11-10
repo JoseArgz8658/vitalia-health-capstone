@@ -42,6 +42,11 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze lib/app/vitalia_mvp_app.dart lib/core/auth_api.dart lib/features/laboratorio/sil_main_clinical_panel.dart
       - run: flutter test
+      - name: Regresión del retorno a login tras activar paciente SIL
+        run: >-
+          flutter test
+          --dart-define=VITALIA_SIL_MAIN_MODE=true
+          test/activar_paciente_retorno_login_test.dart
       - run: >-
           flutter build web --no-web-resources-cdn
           --dart-define=VITALIA_SIL_MAIN_MODE=true
