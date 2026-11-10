@@ -448,7 +448,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     final reference = (fromRequest ? _requestIdentityEvidence : _evidence)
         .text.trim();
     final verified = fromRequest ? _requestPatientVerified : _verifiedPatient;
-    if (fromRequest && _medicalRequestFile == null) {
+    if (fromRequest && _medicalRequestFile == null && _pendingRequestId == null) {
       throw const AuthFailure('Selecciona primero el PDF de la derivación.');
     }
     if (lab == null || !email.contains('@') || reference.length < 6 || !verified) {
