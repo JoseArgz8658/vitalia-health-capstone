@@ -1393,11 +1393,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     children: [
       _requestGuide(),
       const SizedBox(height: 14),
+      // Lectura de izquierda a derecha y de arriba hacia abajo:
+      // 1 -> 2, seguido de 3 -> 4. En móvil el orden se mantiene.
       SilWorkspaceColumns(
-        primary: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-      _section('1. Recibir la solicitud médica',
+        primary: _section('1. Recibir la solicitud médica',
         'Carga una solicitud o retoma un PDF guardado en el laboratorio.',
         Icons.description_outlined, [
         SwitchListTile(
@@ -1498,7 +1497,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             ],
           ),
       ]),
-      _section('2. Identificar al paciente',
+        secondary: _section('2. Identificar al paciente',
         'Comprueba a quién pertenece la solicitud.',
         Icons.badge_outlined, [
         if (_attachToExistingOrder)
@@ -1585,12 +1584,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             ),
         ],
       ]),
-          ],
-        ),
-        secondary: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-      _section('3. Revisar la solicitud y los exámenes',
+      ),
+      const SizedBox(height: 12),
+      SilWorkspaceColumns(
+        primary: _section('3. Revisar la solicitud y los exámenes',
         'Coteja y ajusta los datos y las prestaciones antes de registrar.',
         Icons.playlist_add_check_outlined, [
         if (!_attachToExistingOrder) ...[
@@ -1614,7 +1611,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         _field(_requestPrescriber,'Profesional solicitante'),
         _field(_requestDate,'Fecha de solicitud (AAAA-MM-DD)'),
       ]),
-      _section('4. Confirmar y crear la orden',
+        secondary: _section('4. Confirmar y crear la orden',
         'Confirma el cotejo para guardar la solicitud en una orden.',
         Icons.fact_check_outlined, [
         CheckboxListTile(
@@ -1646,8 +1643,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           ),
         ),
       ]),
-          ],
-        ),
       ),
     ],
   );
@@ -2203,11 +2198,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _StationSection.requests => _operatorSubpage(
         title: 'Recibir solicitud',
         description: 'Carga una derivación PDF, coteja la identidad y confirma su vinculación.',
-        support: const OperatorInfoNote(
-          icon: Icons.file_present_outlined,
-          title: 'Recepción segura',
-          description: 'La solicitud puede guardarse como pendiente. La extracción automática no confirma la identidad ni autoriza órdenes.',
-        ),
         child: _requestIntake(),
       ),
       _StationSection.patients => _operatorSubpage(
