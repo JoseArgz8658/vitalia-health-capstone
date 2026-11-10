@@ -48,6 +48,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _requestIdentityEvidence = TextEditingController();
   bool _requestPatientVerified = false;
   String? _requestPatientStatus;
+  List<Map<String,dynamic>> _pendingRequests = [];
+  String? _pendingRequestId;
+  Map<String,dynamic> _requestIdentitySuggestions = {};
   final _requestExams = <String>{};
   bool _attachToExistingOrder = false;
   String? _requestPreviewNotice;
@@ -163,7 +166,21 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       if (selected != _labId) _resetLab(selected);
     });
     await _loadOrders();
+    if(_operator) await _loadPendingRequests();
     if(_admin && _labId!=null) await _loadStaff();
+  }
+
+  Future<void> _loadPendingRequests() async {
+    final lab=_labId;
+    if(!_operator||lab==null) {
+      if(mounted)setState(()=>_pendingRequests=[]);
+      return;
+    }
+    final data=await widget.api.silMainRequest(
+      '/labs/$lab/medical-requests/pending?limit=50&offset=0');
+    if(!mounted||_labId!=lab)return;
+    setState(()=>_pendingRequests=(data['pending'] as List? ?? [])
+      .map((row)=>Map<String,dynamic>.from(row as Map)).toList());
   }
 
   // Lista de operadores que ya tienen acceso al laboratorio actual.
@@ -294,6 +311,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _verifiedPatient = false;
     _requestPatientVerified = false;
     _requestPatientStatus = null;
+    _pendingRequestId = null;
+    _pendingRequests = [];
+    _requestIdentitySuggestions = {};
     _requestOrderId = null;
     _attachToExistingOrder = false;
     _requestExams.clear();
@@ -315,6 +335,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     setState(() => _resetLab(value));
     _execute(() async {
       await _loadOrders();
+      if(_operator)await _loadPendingRequests();
       if(_admin)await _loadStaff();
     },showNotice:false);
   }
@@ -560,6 +581,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if (file == null || !mounted) return;
     setState(() {
       _medicalRequestFile = file;
+      _pendingRequestId = null;
+      _requestIdentitySuggestions = {};
       _requestPatient.clear();
       _requestInviteEmail.clear();
       _requestIdentityEvidence.clear();
