@@ -33,6 +33,20 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
   static const _mainSil =
       bool.fromEnvironment('VITALIA_SIL_MAIN_MODE',defaultValue:false);
   String? _accessNotice;
+  String? _activatedPatientEmail;
+  int _accessFormRevision = 0;
+
+  void _returnFromPatientActivation(String email) {
+    if (!mounted) return;
+    // Regresar a la ruta raíz y reconstruir el formulario de acceso:
+    // evita reutilizar la conexión de texto que quedó tras la activación.
+    FocusManager.instance.primaryFocus?.unfocus();
+    _navigator.currentState?.popUntil((route) => route.isFirst);
+    setState(() {
+      _activatedPatientEmail = email;
+      _accessFormRevision++;
+    });
+  }
   @override
   void initState() {
     super.initState();
@@ -59,6 +73,7 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
       _user = user;
       _message = null;
       _accessNotice = null;
+      _activatedPatientEmail = null;
     });
   }
 
@@ -148,7 +163,11 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
       if (settings.name == '/activar-portal' && _mainSil) {
         return MaterialPageRoute<void>(
           settings: settings,
-          builder: (_) => ActivarOperadorSilPage(api: _api, patient: true),
+          builder: (_) => ActivarOperadorSilPage(
+              api: _api,
+              patient: true,
+              onReturnToLogin: _returnFromPatientActivation,
+            ),
         );
       }
       if (settings.name == '/activar-portal' &&
@@ -204,7 +223,9 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
     },
     home: _user == null
         ? AccesoPage(
+            key: ValueKey(_accessFormRevision),
             api: _api,
+            initialEmail: _activatedPatientEmail,
             onAuthenticated: _signedIn,
             notice: _accessNotice,
           )
