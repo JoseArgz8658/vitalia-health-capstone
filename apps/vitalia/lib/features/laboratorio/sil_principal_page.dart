@@ -1202,8 +1202,13 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         message: 'Al activar el código, el paciente configura su contraseña y Vitalia crea su cuenta vinculada a este laboratorio. No debes ingresar números internos ni crear contraseñas por él.',
       ),
       const SizedBox(height: 14),
-      _field(_invitedPatientEmail, 'Correo electrónico del paciente'),
-      _field(_evidence, 'Referencia del procedimiento de verificación'),
+      _field(_invitedPatientEmail, 'Correo electrónico del paciente',
+          onChanged: (_) => setState(() {
+            _verifiedPatient = false;
+            _patientInviteStatus = null;
+          })),
+      _field(_evidence, 'Referencia del procedimiento de verificación',
+          onChanged: (_) => setState(() => _verifiedPatient = false)),
       const Padding(
         padding: EdgeInsets.only(bottom: 8),
         child: Text('Usa un folio o referencia no sensible que permita auditar la verificación de identidad. No escribas diagnósticos ni datos clínicos aquí.'),
@@ -1218,7 +1223,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         controlAffinity: ListTileControlAffinity.leading,
       ),
       FilledButton.icon(
-        onPressed: _busy ? null : () => _execute(() => _invitePatient(), showNotice: false),
+        onPressed: _busy || !_verifiedPatient || _evidence.text.trim().length < 6 ||
+            !_invitedPatientEmail.text.contains('@')
+            ? null : () => _execute(() => _invitePatient(), showNotice: false),
         icon: const Icon(Icons.mark_email_read_outlined),
         label: const Text('Emitir código de activación'),
       ),
@@ -1348,6 +1355,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     final current = !documentReady ? 0 : !patientReady ? 1 : !reviewed ? 2 : 3;
     final message = !documentReady
         ? 'Comienza cargando un PDF médico. Si existe una solicitud guardada, selecciónala en «Derivaciones pendientes».'
+        : !_attachToExistingOrder && _pendingRequestId == null
+        ? 'Archivo seleccionado. Guárdalo como derivación pendiente: así no se perderá mientras identificas al paciente o esperas que active su cuenta.'
         : !patientReady && !_attachToExistingOrder
         ? 'Busca al paciente por correo. Si no tiene cuenta, verifica su identidad, entrega un código de activación y conserva la derivación pendiente. Cuando active su cuenta, búscalo de nuevo.'
         : !patientReady
@@ -1544,8 +1553,13 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           OutlinedButton.icon(
             // La invitación debe estar disponible tanto para un PDF local
             // como para una derivación pendiente recuperada de PostgreSQL.
-            onPressed:_busy||(_medicalRequestFile==null&&_pendingRequestId==null)
-              ?null:()=>_execute(()=>_invitePatient(fromRequest:true),showNotice:false),
+            onPressed: _busy ||
+                (_medicalRequestFile == null && _pendingRequestId == null) ||
+                !_requestPatientVerified ||
+                _requestIdentityEvidence.text.trim().length < 6 ||
+                !_requestInviteEmail.text.contains('@')
+                ? null : () => _execute(
+                    () => _invitePatient(fromRequest: true), showNotice: false),
             icon:const Icon(Icons.mark_email_read_outlined),
             label:const Text('Emitir invitación de paciente'),
           ),
@@ -1623,8 +1637,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         else SizedBox(
           width:double.infinity,
           child:FilledButton.icon(
-            onPressed:_busy||_pendingRequestId==null?null:
-              ()=>_execute(_completePendingRequest),
+            onPressed: _busy || _pendingRequestId == null ||
+                _requestPatient.text.isEmpty || _requestExams.isEmpty ||
+                !_requestIdentityChecked || !_requestHumanChecked
+                ? null : () => _execute(_completePendingRequest),
             icon:const Icon(Icons.post_add_outlined),
             label:const Text('Crear orden con solicitud'),
           ),
