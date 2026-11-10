@@ -4,7 +4,6 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
-import 'portal_visual_sil.dart';
 import 'sil_workspace.dart';
 import 'sil_main_clinical_panel.dart';
 
