@@ -16,6 +16,19 @@ class _StationApi extends AuthApi {
     Map<String, dynamic>? body,
   }) async {
     final requestPath=Uri.parse(path).path;
+    if(requestPath=='/labs/$allowedLab/patients'){
+      return {
+        'patients':[
+          {
+            'id':ownOrder,
+            'email':'prueba@example.invalid',
+            'givenNames':'Ana',
+            'familyNames':'Prueba',
+          },
+        ],
+        'hasMore':false,
+      };
+    }
     if(requestPath=='/labs/$allowedLab/staff/review-permission' && body!=null){
       reviewActions.add(body);
       return {'membership':{'canReviewReports':body['enabled']}};
@@ -79,6 +92,51 @@ Finder _field(String label) => find.byWidgetPredicate(
 
 
 void main() {
+  testWidgets('desde derivación permite localizar paciente activado sin escribir UUID', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api=_StationApi();
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(
+      home:SilPrincipalPage(
+        api:api,role:'operador_laboratorio',
+        onExpired:(){},onLogout:(){},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(),isNull);
+
+    final requests=find.widgetWithText(TextButton,'Recibir solicitud');
+    await tester.ensureVisible(requests);
+    await tester.tap(requests);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Paciente de esta derivación'),findsOneWidget);
+    final invite=find.widgetWithText(OutlinedButton,'Emitir invitación de paciente');
+    expect(invite,findsOneWidget);
+    expect(tester.widget<OutlinedButton>(invite).onPressed,isNull,
+      reason:'No se emiten invitaciones desde una derivación sin PDF.');
+    final emailField=find.byWidgetPredicate((widget)=>
+      widget is TextField && widget.decoration?.labelText=='Correo del paciente');
+    await tester.ensureVisible(emailField);
+    await tester.enterText(emailField,'prueba@example.invalid');
+    await tester.pumpAndSettle();
+
+    final search=find.widgetWithText(OutlinedButton,'Buscar paciente activado');
+    await tester.ensureVisible(search);
+    await tester.tap(search);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Cuenta activada y vinculada'),findsOneWidget);
+    final advanced=find.text('Seleccionar paciente por identificador (avanzado)');
+    await tester.ensureVisible(advanced);
+    await tester.tap(advanced);
+    await tester.pumpAndSettle();
+    final uuidField=find.byWidgetPredicate((widget)=>
+      widget is TextField && widget.decoration?.labelText=='UUID del paciente vinculado');
+    expect(tester.widget<TextField>(uuidField).controller?.text,_StationApi.ownOrder);
+    expect(tester.takeException(),isNull);
+  });
+
   testWidgets('administración muestra operadores y autoriza revisión desde un botón', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
     addTearDown(()=>tester.binding.setSurfaceSize(null));
