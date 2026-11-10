@@ -298,13 +298,15 @@ void main() {
     // Con un único PDF, la ayuda no duplica el acceso a la comparación.
     expect(find.text('Cómo leer mis resultados'), findsOneWidget);
     expect(find.text('Comparar informes'), findsNothing);
-    expect(find.text('Mi perfil'), findsOneWidget);
-    expect(find.text('Actualizar informes'), findsOneWidget);
-    // En pantallas de escritorio intermedias, la recuperación se
-    // conserva en el menú superior para evitar desbordamientos.
+    // La navegación clínica está visible y las herramientas de cuenta
+    // permanecen disponibles desde el menú, sin duplicarlas en la cabecera.
+    expect(find.text('Inicio'), findsOneWidget);
+    expect(find.text('Mis informes'), findsOneWidget);
+    expect(find.byTooltip('Actualizar informes'), findsOneWidget);
     expect(find.byTooltip('Mi cuenta'), findsOneWidget);
     await tester.tap(find.byTooltip('Mi cuenta'));
     await tester.pumpAndSettle();
+    expect(find.text('Mi perfil'), findsOneWidget);
     expect(find.text('Configurar recuperación'), findsOneWidget);
     await tester.tapAt(const Offset(600, 450));
     await tester.pumpAndSettle();
@@ -356,7 +358,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Hola, Paciente'), findsOneWidget);
     expect(find.text('Ayuda'), findsOneWidget);
-    expect(find.text('Recuperación'), findsOneWidget);
+    expect(find.text('Explorar resultados'), findsOneWidget);
+    await tester.tap(find.byTooltip('Mi cuenta'));
+    await tester.pumpAndSettle();
+    expect(find.text('Configurar recuperación'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
