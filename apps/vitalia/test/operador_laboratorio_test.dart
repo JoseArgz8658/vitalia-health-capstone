@@ -361,6 +361,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.calls.last.queryParameters['search'], 'VH-000013');
 
+    await tester.ensureVisible(find.text('Ingresar resultados'));
     await tester.tap(find.text('Ingresar resultados'));
     await tester.pumpAndSettle();
     expect(find.text('Volver a órdenes'), findsOneWidget);
