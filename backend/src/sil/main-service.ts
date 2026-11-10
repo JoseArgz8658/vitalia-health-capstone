@@ -654,13 +654,18 @@ export function createSilMainService(db:Pool) {
       examCodes:string[],input:Omit<MedicalRequestInput,'fileName'>){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
-        const response=await tx.query<{fileName:string;bytes:Buffer;sha256:string}>(
-          `SELECT file_name AS "fileName",pdf_data AS bytes,pdf_sha256 AS sha256
+        const response=await tx.query<{fileName:string;bytes:Buffer;sha256:string;patientEmail:string|null}>(
+          `SELECT file_name AS "fileName",pdf_data AS bytes,pdf_sha256 AS sha256,
+                  patient_email AS "patientEmail"
            FROM public.vitalia_sil_main_pending_requests
            WHERE id=$1 AND lab_id=$2 AND status='pending'
            FOR UPDATE`,[pendingId,labId]);
         const pending=response.rows[0];
         if(!pending)throw new SilMainNotFound();
+        // Una derivación recibida para un correo no debe cerrarse
+        // vinculándola a otro paciente del mismo laboratorio.
+        if(pending.patientEmail!==null && pending.patientEmail!==patientEmail)
+          throw new SilMainConflict();
         if(createHash('sha256').update(pending.bytes).digest('hex')!==pending.sha256)
           throw new SilMainConflict();
         checkMedicalRequest({...input,fileName:pending.fileName},pending.bytes);
