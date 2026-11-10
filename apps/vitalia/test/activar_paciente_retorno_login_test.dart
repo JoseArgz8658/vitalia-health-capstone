@@ -75,7 +75,9 @@ void main() {
     final api = _ActivationApi();
     await t.pumpWidget(VitaliaMvpApp(api: api));
     await t.pumpAndSettle();
-    await t.tap(find.text('Activar acceso con invitación'));
+    await t.ensureVisible(find.text('Activar acceso con invitación'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Activar acceso con invitación').hitTestable());
     await t.pumpAndSettle();
     await _activateAndReturn(t, api);
     await t.pumpWidget(const SizedBox());
