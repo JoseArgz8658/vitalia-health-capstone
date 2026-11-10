@@ -639,7 +639,9 @@ async function main() {
     await call('uploader','POST',pendingComplete,400,{json:{
       ...pendingData,patientIdentityConfirmed:false,
     }});
-    await call('uploader','POST',pendingComplete,404,{json:{
+    // Bloquear reutilización de la derivación para otro correo,
+    // antes incluso de comprobar si existe la cuenta del paciente.
+    await call('uploader','POST',pendingComplete,409,{json:{
       ...pendingData,patientEmail:'equivocado@example.invalid',
     }});
     await call('reviewer','POST',otherLab+'/medical-requests/pending/'+pendingId+'/complete',404,{
