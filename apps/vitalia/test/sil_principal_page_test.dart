@@ -195,14 +195,36 @@ void main() {
     await tester.tap(search);
     await tester.pumpAndSettle();
     expect(find.textContaining('Cuenta activada y vinculada'),findsOneWidget);
-    final advanced=find.text('Seleccionar paciente por identificador (avanzado)');
-    await tester.ensureVisible(advanced);
-    await tester.tap(advanced);
-    await tester.pumpAndSettle();
-    final uuidField=find.byWidgetPredicate((widget)=>
-      widget is TextField && widget.decoration?.labelText=='UUID del paciente vinculado');
-    expect(tester.widget<TextField>(uuidField).controller?.text,_StationApi.ownOrder);
+    // El identificador técnico queda en el estado del programa, no en el formulario.
+    expect(find.text('Paciente encontrado en este laboratorio'), findsOneWidget);
+    expect(find.text('Seleccionar paciente por identificador (avanzado)'), findsNothing);
+    expect(find.text('UUID del paciente vinculado'), findsNothing);
     expect(tester.takeException(),isNull);
+  });
+
+  testWidgets('órdenes manuales seleccionan paciente activo por nombre, nunca por UUID', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1050));
+    addTearDown(()=>tester.binding.setSurfaceSize(null));
+    final api = _StationApi();
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home: SilPrincipalPage(
+      api: api, role: 'operador_laboratorio',
+      onExpired: (){}, onLogout: (){},
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton,'Órdenes'));
+    await tester.pumpAndSettle();
+    expect(find.text('UUID del paciente vinculado'), findsNothing);
+    final expansion = find.text('Crear orden sin derivación PDF');
+    await tester.ensureVisible(expansion);
+    await tester.tap(expansion);
+    await tester.pumpAndSettle();
+    final patientSelection = find.byWidgetPredicate((widget) =>
+        widget is DropdownButtonFormField<String> &&
+        widget.decoration.labelText == 'Paciente con cuenta activada');
+    expect(patientSelection, findsOneWidget);
+    expect(find.text('Buscar paciente por nombre o correo'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('administración muestra operadores y autoriza revisión desde un botón', (tester) async {
