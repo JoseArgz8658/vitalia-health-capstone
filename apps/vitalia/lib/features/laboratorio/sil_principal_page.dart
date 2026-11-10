@@ -533,9 +533,16 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         .where((row) => (row['email'] as String?)?.toLowerCase() == email)
         .toList();
     if (matches.length != 1 || matches.single['id'] is! String) {
-      throw const AuthFailure('No aparece una cuenta activada y vinculada a '
-          'este laboratorio. Comprueba la activación o usa Pacientes '
-          'para vincular una cuenta existente.');
+      setState(() {
+        _requestPatient.clear();
+        _requestPatientStatus =
+            'Aún no encontramos una cuenta activa para ese correo en este laboratorio. '
+            'Si es un paciente nuevo, verifica su identidad, entrega una invitación y conserva el PDF pendiente. '
+            'Cuando termine la activación, vuelve a buscarlo aquí.';
+        _requestIdentityChecked = false;
+        _requestHumanChecked = false;
+      });
+      return;
     }
     setState(() {
       _requestPatient.text = matches.single['id'] as String;
@@ -1792,14 +1799,20 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   }
 
   Widget _patientDirectory() => _section(
-    'Directorio de pacientes', 'Pacientes vinculados al laboratorio activo.',
+    'Directorio de pacientes', 'Busca por nombre o correo. Aquí solo aparecen cuentas activas y asociadas al laboratorio.',
     Icons.badge_outlined, [
       _field(_patientSearch, 'Buscar por nombre o correo'),
       _action('Buscar pacientes', Icons.search,
         () => _loadPatients(offset: 0, search: _patientSearch.text.trim())),
       if (_patients.isEmpty)
-        const Padding(padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text('No hay pacientes para mostrar.')),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: OperatorNextStep(
+            icon: Icons.person_search_outlined,
+            title: 'Sin pacientes en esta búsqueda',
+            message: 'Prueba otro nombre o correo. Para un paciente nuevo, utiliza «Registrar paciente nuevo»: primero se emite un código y después el paciente activa su cuenta.',
+          ),
+        ),
       for (final patient in _patients)
         ListTile(
           contentPadding: EdgeInsets.zero,
@@ -2155,13 +2168,30 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _StationSection.dashboard => _dashboard(),
       _StationSection.orders => _operatorSubpage(
         title: 'Órdenes',
-        description: 'Encuentra una orden y continúa su seguimiento en el laboratorio activo.',
-        support: _operatorMetrics(),
-        child: SilWorkspaceColumns(
-          primary: _ordersPanel(),
-          secondary: Column(children: [_newOrder(), _reportUpload()]),
-          primaryFlex: 6, secondaryFlex: 5,
+        description: 'Busca órdenes existentes, consulta su estado y continúa con la siguiente tarea.',
+        support: OperatorNextStep(
+          icon: Icons.note_add_outlined,
+          title: '¿Recibiste una derivación médica?',
+          message: 'Comienza en «Recibir solicitud»: desde ahí se conserva el PDF, se identifica al paciente y se crea la orden. Esta pantalla sirve para buscar órdenes ya registradas.',
+          action: OutlinedButton.icon(
+            onPressed: _busy ? null : () => _openSection(_StationSection.requests),
+            icon: const Icon(Icons.upload_file_outlined),
+            label: const Text('Recibir solicitud médica'),
+          ),
         ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _ordersPanel(),
+          const SizedBox(height: 12),
+          ExpansionTile(
+            initiallyExpanded: false,
+            title: const Text('Crear orden sin derivación PDF'),
+            subtitle: const Text('Opción para casos autorizados, con un paciente ya activado'),
+            leading: const Icon(Icons.post_add_outlined),
+            children: [_newOrder()],
+          ),
+          const SizedBox(height: 12),
+          _reportUpload(),
+        ]),
       ),
       _StationSection.requests => _operatorSubpage(
         title: 'Recibir solicitud',
@@ -2174,8 +2204,13 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         child: _requestIntake(),
       ),
       _StationSection.patients => _operatorSubpage(
-        title: 'Pacientes',
-        description: 'Consulta cuentas asociadas al laboratorio y continúa sus órdenes.',
+        title: 'Pacientes y activación de cuentas',
+        description: 'Busca a un paciente que ya tiene acceso o invita a uno nuevo para que active su cuenta.',
+        support: const OperatorNextStep(
+          icon: Icons.manage_accounts_outlined,
+          title: 'Dos situaciones distintas',
+          message: 'Paciente existente: búscalo en el directorio. Paciente nuevo: verifica su identidad, genera un código y entrégaselo. La cuenta se crea cuando el paciente activa ese código.',
+        ),
         child: SilWorkspaceColumns(
           primary: _patientDirectory(),
           secondary: _patientLink(),
@@ -2305,7 +2340,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                                   _AdminSection.laboratories => 'Administración de laboratorios',
                                   _AdminSection.operators => 'Operadores y permisos',
                                   _AdminSection.activity => 'Actividad del laboratorio',
-                                } : 'Área operativa',
+                                } : 'Laboratorio activo',
                                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                                   fontWeight: FontWeight.w800,
                                   color: ColoresVitalia.texto,
