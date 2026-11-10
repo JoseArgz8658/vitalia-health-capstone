@@ -106,7 +106,7 @@ class _ActivarOperadorSilPageState extends State<ActivarOperadorSilPage>{
                           enabled:!_busy,
                           keyboardType:TextInputType.emailAddress,
                           decoration:const InputDecoration(
-                            labelText:'Correo institucional',
+                            labelText: widget.patient ? 'Correo electrónico del paciente' : 'Correo institucional',
                             border:OutlineInputBorder(),
                             prefixIcon:Icon(Icons.alternate_email),
                           ),
@@ -161,7 +161,9 @@ class _ActivarOperadorSilPageState extends State<ActivarOperadorSilPage>{
                       const SizedBox(height:12),
                       const Text(
                         'Por seguridad, no compartas el código ni tu contraseña. '
-                        'Si la invitación expira, solicita otra al administrador.',
+                        widget.patient
+                           ? 'Si el código vence, solicita otro al laboratorio.'
+                           : 'Si la invitación expira, solicita otra al administrador.',
                         textAlign:TextAlign.center,
                         style:TextStyle(fontSize:12,
                           color:ColoresVitalia.textoSecundario),
