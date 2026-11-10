@@ -44,6 +44,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _evidence = TextEditingController();
   final _orderPatient = TextEditingController();
   final _requestPatient = TextEditingController();
+  final _requestInviteEmail = TextEditingController();
+  final _requestIdentityEvidence = TextEditingController();
+  bool _requestPatientVerified = false;
+  String? _requestPatientStatus;
   final _requestExams = <String>{};
   bool _attachToExistingOrder = false;
   String? _requestPreviewNotice;
@@ -118,7 +122,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   void dispose(){
     for(final ctrl in [
       _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_patientAccount,_evidence,_orderPatient,
-      _requestPatient,_requestPrescriber,_requestReference,_requestDate,
+      _requestPatient,_requestInviteEmail,_requestIdentityEvidence,
+      _requestPrescriber,_requestReference,_requestDate,
       _reportProfessional,_reportReference,_reportDate,
     ]){ctrl.dispose();}
     super.dispose();
@@ -280,12 +285,15 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _orderOffset = 0;
     _moreOrders = false;
     for (final controller in [
-      _patientAccount, _invitedPatientEmail, _evidence, _orderPatient, _requestPatient, _requestPrescriber,
+      _patientAccount, _invitedPatientEmail, _evidence, _orderPatient, _requestPatient,
+      _requestInviteEmail, _requestIdentityEvidence, _requestPrescriber,
       _requestReference, _requestDate, _reportProfessional, _reportReference, _reportDate,
     ]) {
       controller.clear();
     }
     _verifiedPatient = false;
+    _requestPatientVerified = false;
+    _requestPatientStatus = null;
     _requestOrderId = null;
     _attachToExistingOrder = false;
     _requestExams.clear();
@@ -412,11 +420,17 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     await _loadStaff();
   }
 
-  Future<void> _invitePatient() async {
+  Future<void> _invitePatient({bool fromRequest = false}) async {
     final lab = _labId;
-    final email = _invitedPatientEmail.text.trim().toLowerCase();
-    final reference = _evidence.text.trim();
-    if (lab == null || !email.contains('@') || reference.length < 6 || !_verifiedPatient) {
+    final email = (fromRequest ? _requestInviteEmail : _invitedPatientEmail)
+        .text.trim().toLowerCase();
+    final reference = (fromRequest ? _requestIdentityEvidence : _evidence)
+        .text.trim();
+    final verified = fromRequest ? _requestPatientVerified : _verifiedPatient;
+    if (fromRequest && _medicalRequestFile == null) {
+      throw const AuthFailure('Selecciona primero el PDF de la derivación.');
+    }
+    if (lab == null || !email.contains('@') || reference.length < 6 || !verified) {
       throw const AuthFailure('Verifica la identidad e ingresa el correo y la referencia.');
     }
     final invite = await widget.api.silMainRequest('/labs/$lab/patient-invitations', body: {
@@ -424,22 +438,80 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     });
     if (!mounted) return;
     setState(() {
-      _verifiedPatient = false;
-      _evidence.clear();
-      _invitedPatientEmail.clear();
+      if (fromRequest) {
+        _requestPatientVerified = false;
+        _requestIdentityEvidence.clear();
+        _requestPatientStatus =
+            'Invitación emitida. El paciente debe activar su cuenta antes de crear la orden.';
+      } else {
+        _verifiedPatient = false;
+        _evidence.clear();
+        _invitedPatientEmail.clear();
+      }
     });
     await showDialog<void>(
       context: context,
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: const Text('Invitación de paciente'),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Entrega el código a $email por un canal verificado. Vence en 24 horas.'),
-          const SizedBox(height: 12),
-          SelectableText(invite['code'] as String),
-        ]),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar'))],
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Entrega el código a $email por un canal verificado. Vence en 24 horas.'),
+            const SizedBox(height: 12),
+            SelectableText(invite['code'] as String),
+            if (fromRequest) ...[
+              const SizedBox(height: 12),
+              const Text('El paciente se activa en /#/activar-portal. '
+                  'Después vuelve a esta derivación y pulsa «Buscar paciente activado».'),
+            ],
+          ]),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () => Clipboard.setData(
+              ClipboardData(text: invite['code'] as String)),
+            icon: const Icon(Icons.copy_outlined),
+            label: const Text('Copiar código'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('He guardado el código'),
+          ),
+        ],
       ),
     );
+  }
+
+  // El correo se usa solo para localizar una cuenta YA activada y vinculada
+  // a este laboratorio. No se toma por sí solo como evidencia de identidad.
+  Future<void> _findRequestPatient() async {
+    final lab = _labId;
+    final email = _requestInviteEmail.text.trim().toLowerCase();
+    if (lab == null || !email.contains('@') || email.length > 254) {
+      throw const AuthFailure('Ingresa el correo del paciente para buscar su cuenta.');
+    }
+    final query = Uri(queryParameters:{
+      'limit':'50', 'offset':'0', 'search':email,
+    }).query;
+    final found = await widget.api.silMainRequest('/labs/$lab/patients?$query');
+    if (!mounted || lab != _labId) return;
+    final matches = (found['patients'] as List? ?? [])
+        .map((row) => Map<String,dynamic>.from(row as Map))
+        .where((row) => (row['email'] as String?)?.toLowerCase() == email)
+        .toList();
+    if (matches.length != 1 || matches.single['id'] is! String) {
+      throw const AuthFailure('No aparece una cuenta activada y vinculada a '
+          'este laboratorio. Comprueba la activación o usa Pacientes '
+          'para vincular una cuenta existente.');
+    }
+    setState(() {
+      _requestPatient.text = matches.single['id'] as String;
+      _requestPatientStatus =
+          'Cuenta activada y vinculada. Coteja la identidad del PDF antes de crear la orden.';
+      _requestIdentityChecked = false;
+      _requestHumanChecked = false;
+    });
   }
 
   Future<void> _linkPatient() async {
@@ -488,6 +560,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if (file == null || !mounted) return;
     setState(() {
       _medicalRequestFile = file;
+      _requestPatient.clear();
+      _requestInviteEmail.clear();
+      _requestIdentityEvidence.clear();
+      _requestPatientVerified = false;
+      _requestPatientStatus = null;
       _requestReference.clear();
       _requestPrescriber.clear();
       _requestDate.clear();
@@ -545,6 +622,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _medicalRequestFile = null;
       _requestOrderId = null;
       _requestPatient.clear();
+      _requestInviteEmail.clear();
+      _requestIdentityEvidence.clear();
+      _requestPatientVerified = false;
+      _requestPatientStatus = null;
       _requestExams.clear();
       _requestPreviewNotice = null;
       _requestIdentityChecked = false;
@@ -946,7 +1027,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         _action('Vincular paciente',Icons.verified_outlined,_linkPatient),
         const Divider(),
         _field(_invitedPatientEmail, 'Correo de un paciente nuevo'),
-        _action('Emitir código de activación', Icons.person_add_alt_1_outlined, _invitePatient),
+        _action('Emitir código de activación', Icons.person_add_alt_1_outlined,
+          () => _invitePatient()),
       ]);
 
   Widget _newOrder() => _section('Crear orden postanalítica',
@@ -981,6 +1063,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             _requestHumanChecked = false;
           }),
         ),
+        OutlinedButton.icon(
+          onPressed:_busy?null:_pickMedicalRequest,
+          icon:const Icon(Icons.picture_as_pdf_outlined),
+          label:Text(_medicalRequestFile?.name??'Seleccionar solicitud PDF'),
+        ),
+        const SizedBox(height:12),
         if (_attachToExistingOrder)
           DropdownButtonFormField<String>(
             value:_requestOrderId,
@@ -1001,17 +1089,64 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               _requestHumanChecked = false;
             }),
           )
-        else
-          _field(_requestPatient, 'UUID del paciente vinculado', onChanged: (_) => setState(() {
+        else ...[
+          const Padding(
+            padding: EdgeInsets.only(bottom:10),
+            child:Text('Paciente de esta derivación',
+              style:TextStyle(fontWeight:FontWeight.w700)),
+          ),
+          const Text('Si todavía no tiene cuenta, verifica su identidad y '
+              'emite una invitación. El PDF y sus sugerencias permanecen en '
+              'esta pantalla mientras el operador continúa la recepción. '
+              'No se registra la orden hasta que el paciente active el acceso.'),
+          const SizedBox(height:10),
+          _field(_requestInviteEmail,'Correo del paciente',onChanged: (_) => setState(() {
+            _requestPatient.clear();
+            _requestPatientStatus = null;
             _requestIdentityChecked = false;
             _requestHumanChecked = false;
           })),
-        const SizedBox(height:10),
-        OutlinedButton.icon(
-          onPressed:_busy?null:_pickMedicalRequest,
-          icon:const Icon(Icons.picture_as_pdf_outlined),
-          label:Text(_medicalRequestFile?.name??'Seleccionar solicitud PDF'),
-        ),
+          _field(_requestIdentityEvidence,'Referencia de verificación de identidad'),
+          CheckboxListTile(
+            contentPadding:EdgeInsets.zero,
+            controlAffinity:ListTileControlAffinity.leading,
+            title:const Text('Verifiqué la identidad antes de invitar'),
+            subtitle:const Text('El correo por sí solo no demuestra identidad. '
+                'No ingreses datos sensibles como evidencia.'),
+            value:_requestPatientVerified,
+            onChanged:_busy?null:(value)=>setState(
+              ()=>_requestPatientVerified=value??false),
+          ),
+          OutlinedButton.icon(
+            onPressed:_busy||_medicalRequestFile==null?null:
+              ()=>_execute(()=>_invitePatient(fromRequest:true),showNotice:false),
+            icon:const Icon(Icons.mark_email_read_outlined),
+            label:const Text('Emitir invitación de paciente'),
+          ),
+          const SizedBox(height:8),
+          OutlinedButton.icon(
+            onPressed:_busy?null:()=>_execute(_findRequestPatient,showNotice:false),
+            icon:const Icon(Icons.person_search_outlined),
+            label:const Text('Buscar paciente activado'),
+          ),
+          if(_requestPatientStatus!=null)
+            Padding(
+              padding:const EdgeInsets.symmetric(vertical:8),
+              child:Text(_requestPatientStatus!,
+                style:const TextStyle(color:ColoresVitalia.azul)),
+            ),
+          ExpansionTile(
+            tilePadding:EdgeInsets.zero,
+            title:const Text('Seleccionar paciente por identificador (avanzado)'),
+            children:[
+              _field(_requestPatient,'UUID del paciente vinculado',
+                onChanged: (_) => setState(() {
+                  _requestIdentityChecked=false;
+                  _requestHumanChecked=false;
+                })),
+            ],
+          ),
+        ],
         const SizedBox(height:10),
         OutlinedButton.icon(
           onPressed: _busy || _medicalRequestFile == null ? null :
