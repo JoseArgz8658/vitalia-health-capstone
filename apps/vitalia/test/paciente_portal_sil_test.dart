@@ -6,6 +6,7 @@ import 'package:vitalia_health/features/acceso/acceso_page.dart';
 import 'package:vitalia_health/features/acceso/credenciales_paciente.dart';
 import 'package:vitalia_health/features/acceso/recuperar_portal_sil_page.dart';
 import 'package:vitalia_health/features/laboratorio/paciente_informes_sil_page.dart';
+import 'package:vitalia_health/features/laboratorio/sil_workspace.dart';
 
 const _email = 'portal-qa@example.invalid';
 const _password = 'Contraseña DEMO nueva';
@@ -301,7 +302,10 @@ void main() {
     // La navegación clínica está visible y las herramientas de cuenta
     // permanecen disponibles desde el menú, sin duplicarlas en la cabecera.
     expect(find.text('Inicio'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, 'Mis informes'), findsOneWidget);
+    expect(find.descendant(
+      of: find.byType(SilWorkspaceTopNavigation),
+      matching: find.text('Mis informes'),
+    ), findsOneWidget);
     expect(find.byTooltip('Actualizar informes'), findsOneWidget);
     expect(find.byTooltip('Mi cuenta'), findsOneWidget);
     await tester.tap(find.byTooltip('Mi cuenta'));
