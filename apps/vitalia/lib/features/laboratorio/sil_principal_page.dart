@@ -6,6 +6,7 @@ import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
 import 'sil_workspace.dart';
 import 'sil_main_clinical_panel.dart';
+import 'operator_design.dart';
 
 /// Estación de trabajo integrada a Vitalia original.
 /// Sin simuladores ni entidades ficticias de laboratorio.
@@ -1753,53 +1754,174 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         : _ordersPanel(),
   };
 
+
+  Widget _operatorMetrics() {
+    // El API entrega hasta 50 órdenes y 50 derivaciones pendientes.
+    // Las tarjetas muestran solo el recuento del conjunto consultado.
+    final counts = <({IconData icon, String label, int value,
+      _StationSection destination, Color color, Color tint})>[
+      (icon: Icons.note_add_outlined, label: 'Derivaciones pendientes',
+        value: _pendingRequests.length, destination: _StationSection.requests,
+        color: const Color(0xFFB54B5D), tint: ColoresVitalia.errorSuave),
+      (icon: Icons.assignment_outlined, label: 'Órdenes consultadas',
+        value: _orders.length, destination: _StationSection.orders,
+        color: OperatorPalette.blue, tint: ColoresVitalia.azulSuave),
+      (icon: Icons.inventory_2_outlined, label: 'Órdenes registradas',
+        value: _orders.where((o) => o['status'] == 'registered').length,
+        destination: _StationSection.orders,
+        color: const Color(0xFF99630F), tint: ColoresVitalia.advertenciaSuave),
+      (icon: Icons.fact_check_outlined, label: 'PDF pendientes de revisión',
+        value: _orders.where(_isReviewable).length,
+        destination: _canReview ? _StationSection.review : _StationSection.orders,
+        color: const Color(0xFF7454A8), tint: ColoresVitalia.pendienteSuave),
+      (icon: Icons.picture_as_pdf_outlined, label: 'Informes publicados',
+        value: _orders.where((o) => o['status'] == 'report_published').length,
+        destination: _StationSection.orders,
+        color: OperatorPalette.teal, tint: ColoresVitalia.verdeSuave),
+    ];
+    return LayoutBuilder(builder: (context, constraints) {
+      final columns = constraints.maxWidth >= 1060 ? 5 :
+          constraints.maxWidth >= 700 ? 3 :
+          constraints.maxWidth >= 430 ? 2 : 1;
+      const gap = 10.0;
+      final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
+      return Wrap(spacing: gap, runSpacing: gap, children: [
+        for (final item in counts)
+          SizedBox(
+            width: width,
+            child: OperatorMetricCard(
+              icon: item.icon,
+              label: item.label,
+              count: item.value,
+              accent: item.color,
+              tint: item.tint,
+              caption: 'En listas recientes (máx. 50)',
+              onTap: _busy ? null : () => _openSection(item.destination),
+            ),
+          ),
+      ]);
+    });
+  }
+
   Widget _dashboard() {
     final pending = _orders.where(_isReviewable).length;
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-          child: Wrap(
-            spacing: 18, runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            alignment: WrapAlignment.spaceBetween,
-            children: [
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Bandeja de trabajo',
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: ColoresVitalia.texto,
-                    fontWeight: FontWeight.w800,
-                  )),
-                const SizedBox(height: 4),
-                const Text('Retoma tareas pendientes o inicia una recepción.'),
-              ]),
-              FilledButton.icon(
-                onPressed: _busy ? null : () => _openSection(_StationSection.requests),
-                icon: const Icon(Icons.note_add_outlined),
-                label: const Text('Recibir solicitud de exámenes'),
-              ),
-            ],
+    final shortcuts = _section('Accesos rápidos',
+      'Inicia o continúa una tarea desde el mismo panel.',
+      Icons.bolt_outlined, [
+        OperatorActionTile(
+          icon: Icons.note_add_outlined,
+          label: 'Iniciar recepción',
+          subtitle: 'Adjuntar y comprobar una solicitud PDF',
+          onTap: _busy ? null : () => _openSection(_StationSection.requests),
+        ),
+        const SizedBox(height: 9),
+        OperatorActionTile(
+          icon: Icons.post_add_outlined,
+          label: 'Gestionar órdenes',
+          subtitle: 'Buscar o crear una orden interna',
+          onTap: _busy ? null : () => _openSection(_StationSection.orders),
+        ),
+        const SizedBox(height: 9),
+        OperatorActionTile(
+          icon: Icons.people_outline,
+          label: 'Consultar pacientes',
+          subtitle: 'Directorio del laboratorio activo',
+          onTap: _busy ? null : () => _openSection(_StationSection.patients),
+        ),
+        if (_canReview) ...[
+          const SizedBox(height: 9),
+          OperatorActionTile(
+            icon: Icons.fact_check_outlined,
+            label: 'Revisar informes',
+            subtitle: 'Validación y autorización externa',
+            count: pending,
+            onTap: _busy ? null : () => _openSection(_StationSection.review),
           ),
+        ],
+      ]);
+    final queues = _section('Colas del laboratorio',
+      'Recuentos de las listas cargadas, no del histórico completo.',
+      Icons.work_outline, [
+        _queueLink(Icons.note_add_outlined, 'Derivaciones pendientes',
+          _pendingRequests.length, _StationSection.requests),
+        _queueLink(Icons.assignment_outlined, 'Órdenes consultadas',
+          _orders.length, _StationSection.orders),
+        if (_canReview)
+          _queueLink(Icons.fact_check_outlined, 'Informes por revisar',
+            pending, _StationSection.review),
+      ]);
+    final notices = _section('Trabajo seguro',
+      'La publicación es una acción independiente.',
+      Icons.shield_outlined, [
+        const OperatorInfoNote(
+          icon: Icons.verified_user_outlined,
+          title: 'Comprobación humana',
+          description: 'Las sugerencias del PDF no crean ni autorizan órdenes automáticamente. Antes de publicar, verifica el documento original.',
+          color: OperatorPalette.teal,
+          background: ColoresVitalia.verdeSuave,
         ),
-      ),
-      const SizedBox(height: 12),
-      SilWorkspaceColumns(
-        primary: _ordersPanel(recent: true),
-        primaryFlex: 7,
-        secondaryFlex: 4,
-        secondary: _section(
-          'Cola operativa', 'Recuentos de las listas cargadas.',
-          Icons.work_outline, [
-            _queueLink(Icons.pending_actions_outlined, 'Derivaciones pendientes',
-              _pendingRequests.length, _StationSection.requests),
-            _queueLink(Icons.assignment_outlined, 'Órdenes consultadas',
-              _orders.length, _StationSection.orders),
-            if (_canReview)
-              _queueLink(Icons.fact_check_outlined, 'Informes por revisar',
-                pending, _StationSection.review),
-          ],
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: _busy ? null : () => _execute(_loadLabs,showNotice:false),
+          icon: const Icon(Icons.refresh_outlined),
+          label: const Text('Actualizar estación'),
         ),
+      ]);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      OperatorHero(
+        eyebrow: 'Estación del operador',
+        title: 'Panel del laboratorio',
+        subtitle: 'Recibe derivaciones, organiza órdenes y continúa el trabajo postanalítico desde un mismo espacio.',
+        actions: [
+          FilledButton.icon(
+            onPressed: _busy ? null : () => _openSection(_StationSection.requests),
+            icon: const Icon(Icons.note_add_outlined),
+            label: const Text('Recibir solicitud de exámenes'),
+            style: FilledButton.styleFrom(
+              foregroundColor: OperatorPalette.navy,
+              backgroundColor: Colors.white,
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _openSection(_StationSection.orders),
+            icon: const Icon(Icons.assignment_outlined),
+            label: const Text('Ver órdenes'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white,
+              side: const BorderSide(color: Color(0xFFA5D0DC)),
+            ),
+          ),
+        ],
       ),
+      const SizedBox(height: 14),
+      _operatorMetrics(),
+      const SizedBox(height: 14),
+      LayoutBuilder(builder: (context, constraints) {
+        if (constraints.maxWidth < 1020) {
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _ordersPanel(recent: true),
+            const SizedBox(height: 12),
+            queues,
+            const SizedBox(height: 12),
+            shortcuts,
+            const SizedBox(height: 12),
+            notices,
+          ]);
+        }
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(flex: 7, child: Column(children: [
+            _ordersPanel(recent: true),
+            const SizedBox(height: 12),
+            queues,
+          ])),
+          const SizedBox(width: 14),
+          Expanded(flex: 3, child: Column(children: [
+            shortcuts,
+            const SizedBox(height: 12),
+            notices,
+          ])),
+        ]);
+      }),
     ]);
   }
 
