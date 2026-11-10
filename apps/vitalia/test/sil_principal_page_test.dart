@@ -91,6 +91,10 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(tester.takeException(),isNull);
+    // Un único panel administrativo en el SIL principal.
+    expect(find.byTooltip('Abrir módulo original de Vitalia'),findsNothing);
+    expect(find.text('Administración'),findsOneWidget);
+    expect(find.text('Registrar laboratorio'),findsWidgets);
     expect(find.text('Operadores y permisos de revisión'),findsOneWidget);
     expect(find.text('operador@laboratorio.invalid'),findsOneWidget);
     final authorize=find.widgetWithText(OutlinedButton,'Autorizar revisión');
