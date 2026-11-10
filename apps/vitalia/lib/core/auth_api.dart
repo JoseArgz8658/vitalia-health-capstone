@@ -136,7 +136,9 @@ class AuthApi {
       r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|staff(?:/review-permission)?|patients|patient-invitations|operator-invitations))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
     );
     final pendingPath=RegExp(
-      r'^/labs/[a-f0-9-]{36}/medical-requests/pending(?:/[a-f0-9-]{36}/complete)?
+      r'^/labs/[a-f0-9-]{36}/medical-requests/pending(?:/[a-f0-9-]{36}/complete)?$',
+    );
+    final queries=candidate?.queryParametersAll ?? <String,List<String>>{};
     final isOrders=candidate?.path.endsWith('/orders') ?? false;
     final isPatients=candidate?.path.endsWith('/patients') ?? false;
     final isPending=candidate?.path.endsWith('/medical-requests/pending') ?? false;
