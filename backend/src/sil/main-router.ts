@@ -241,6 +241,85 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       data.data.email,data.data.identityReference));
   });
 
+  // Derivaciones pendientes: sin cuenta ni orden hasta que un operador
+  // verifique identidad y el paciente active su acceso al laboratorio.
+  router.post('/labs/:labId/medical-requests/pending',staff,labPath,
+    express.raw({type:'application/pdf',limit:'2mb'}),async(req,res)=>{
+      if(res.locals.account.role!=='operador_laboratorio'){
+        res.status(403).json({error:{code:'FORBIDDEN'}});return;
+      }
+      let name:string,email:string;
+      try{
+        name=decodeURIComponent(req.get('x-request-filename')??'');
+        email=decodeURIComponent(req.get('x-request-patient-email')??'').trim().toLowerCase();
+      }catch{
+        res.status(400).json({error:{code:'INVALID_PENDING_REQUEST'}});return;
+      }
+      const validName=pdfFileName.safeParse(name);
+      const validEmail=z.union([z.literal(''),z.email().max(254)]).safeParse(email);
+      if(!validName.success||!validEmail.success||!Buffer.isBuffer(req.body)){
+        res.status(400).json({error:{code:'INVALID_PENDING_REQUEST'}});return;
+      }
+      res.status(201).json(await main.savePendingMedicalRequest(
+        req.params.labId as string,res.locals.account.id,
+        validName.data,req.body,email||null));
+    });
+
+  router.get('/labs/:labId/medical-requests/pending',staff,labPath,async(req,res)=>{
+    if(res.locals.account.role!=='operador_laboratorio'){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    const page=z.object({
+      limit:z.coerce.number().int().min(1).max(50).default(20),
+      offset:z.coerce.number().int().min(0).max(10000).default(0),
+    }).strict().safeParse(req.query);
+    if(!page.success){res.status(400).json({error:{code:'INVALID_PAGE'}});return;}
+    res.json(await main.listPendingMedicalRequests(req.params.labId as string,
+      res.locals.account.id,page.data.limit,page.data.offset));
+  });
+
+  router.get('/labs/:labId/medical-requests/pending/:pendingId/file',
+    staff,labPath,async(req,res)=>{
+      if(res.locals.account.role!=='operador_laboratorio'){
+        res.status(403).json({error:{code:'FORBIDDEN'}});return;
+      }
+      if(!uuid.safeParse(req.params.pendingId).success){
+        res.status(404).json({error:{code:'NOT_FOUND'}});return;
+      }
+      const file=await main.downloadPendingMedicalRequest(req.params.labId as string,
+        req.params.pendingId as string,res.locals.account.id);
+      res.set('Cache-Control','private, no-store');
+      res.set('X-Content-Type-Options','nosniff');
+      res.set('Content-Type','application/pdf');
+      res.set('Content-Disposition',"attachment; filename*=UTF-8''"+
+        encodeURIComponent(file.fileName));
+      res.set('Content-Length',String(file.bytes.length));
+      res.send(file.bytes);
+    });
+
+  router.post('/labs/:labId/medical-requests/pending/:pendingId/complete',
+    staff,labPath,async(req,res)=>{
+      if(res.locals.account.role!=='operador_laboratorio'){
+        res.status(403).json({error:{code:'FORBIDDEN'}});return;
+      }
+      if(!uuid.safeParse(req.params.pendingId).success){
+        res.status(404).json({error:{code:'NOT_FOUND'}});return;
+      }
+      const parsed=medicalRequest.omit({fileName:true}).extend({
+        patientId:uuid,
+        patientEmail:z.email().max(254).transform(s=>s.trim().toLowerCase()),
+        examCodes:z.array(examCode).min(1).max(6)
+          .refine(items=>new Set(items).size===items.length),
+      }).strict().safeParse(req.body);
+      if(!parsed.success){
+        res.status(400).json({error:{code:'INVALID_PENDING_COMPLETION'}});return;
+      }
+      const {patientId,patientEmail,examCodes,...request}=parsed.data;
+      res.status(201).json(await main.completePendingMedicalRequest(
+        req.params.labId as string,req.params.pendingId as string,
+        res.locals.account.id,patientId,patientEmail,examCodes,request));
+    });
+
   const clinicalPath='/labs/:labId/orders/:orderId/clinical';
   const clinicalOperator=(req:express.Request,res:express.Response,next:express.NextFunction)=>{
     if(res.locals.account.role!=='operador_laboratorio'){
