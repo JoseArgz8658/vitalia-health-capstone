@@ -65,3 +65,73 @@ class SilWorkspaceColumns extends StatelessWidget {
           ),
   );
 }
+
+ 
+/// Destino real de una navegación superior, con estado seleccionado y acción.
+class SilWorkspaceTab {
+  const SilWorkspaceTab({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback? onPressed;
+}
+
+/// Misma navegación para las tres estaciones. La tira se desplaza
+/// horizontalmente cuando la pantalla es estrecha, sin perder destinos.
+class SilWorkspaceTopNavigation extends StatelessWidget {
+  const SilWorkspaceTopNavigation({super.key, required this.tabs, this.label = 'Secciones'});
+
+  final List<SilWorkspaceTab> tabs;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: double.infinity,
+    decoration: const BoxDecoration(
+      color: ColoresVitalia.blanco,
+      border: Border(bottom: BorderSide(color: ColoresVitalia.borde)),
+    ),
+    child: Semantics(
+      label: label,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        child: Row(
+          children: [
+            for (final tab in tabs)
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Semantics(
+                  selected: tab.selected,
+                  child: TextButton.icon(
+                    onPressed: tab.onPressed,
+                    icon: Icon(tab.icon, size: 18),
+                    label: Text(tab.label, maxLines: 1),
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(48, 44),
+                      foregroundColor: tab.selected
+                          ? ColoresVitalia.azulActivo : ColoresVitalia.textoSecundario,
+                      backgroundColor: tab.selected
+                          ? ColoresVitalia.azulSuave : Colors.transparent,
+                      textStyle: TextStyle(fontWeight: tab.selected
+                          ? FontWeight.w700 : FontWeight.w500),
+                      padding: const EdgeInsets.symmetric(horizontal: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
