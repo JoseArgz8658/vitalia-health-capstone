@@ -301,7 +301,7 @@ void main() {
     // La navegación clínica está visible y las herramientas de cuenta
     // permanecen disponibles desde el menú, sin duplicarlas en la cabecera.
     expect(find.text('Inicio'), findsOneWidget);
-    expect(find.text('Mis informes'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Mis informes'), findsOneWidget);
     expect(find.byTooltip('Actualizar informes'), findsOneWidget);
     expect(find.byTooltip('Mi cuenta'), findsOneWidget);
     await tester.tap(find.byTooltip('Mi cuenta'));
