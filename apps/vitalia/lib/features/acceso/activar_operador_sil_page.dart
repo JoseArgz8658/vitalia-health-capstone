@@ -4,9 +4,10 @@ import '../../core/tema_vitalia.dart';
 
 /// Activación del operador principal por código externo de un solo uso.
 class ActivarOperadorSilPage extends StatefulWidget {
-  const ActivarOperadorSilPage({super.key,required this.api,this.patient=false});
+  const ActivarOperadorSilPage({super.key,required this.api,this.patient=false,this.onReturnToLogin});
   final AuthApi api;
   final bool patient;
+  final ValueChanged<String>? onReturnToLogin;
 
   @override
   State<ActivarOperadorSilPage> createState()=>_ActivarOperadorSilPageState();
@@ -25,6 +26,17 @@ class _ActivarOperadorSilPageState extends State<ActivarOperadorSilPage>{
   void dispose(){
     for(final item in [_email,_code,_password,_confirm]){item.dispose();}
     super.dispose();
+  }
+
+  void _returnToLogin() {
+    // El campo de activación web debe perder foco antes de cambiar de ruta.
+    FocusManager.instance.primaryFocus?.unfocus();
+    final email = _email.text.trim().toLowerCase();
+    if (_activated && widget.patient && widget.onReturnToLogin != null) {
+      widget.onReturnToLogin!(email);
+    } else {
+      Navigator.of(context).pop();
+    }
   }
 
   Future<void> _activate()async{
@@ -61,7 +73,7 @@ class _ActivarOperadorSilPageState extends State<ActivarOperadorSilPage>{
         leading:IconButton(
           tooltip:'Volver',
           icon:const Icon(Icons.arrow_back),
-          onPressed:()=>Navigator.of(context).pop(),
+          onPressed:_returnToLogin,
         ),
       ),
       body:SafeArea(
@@ -153,7 +165,7 @@ class _ActivarOperadorSilPageState extends State<ActivarOperadorSilPage>{
                       if(_busy)const LinearProgressIndicator(),
                       FilledButton.icon(
                         onPressed:_busy?null:_activated
-                            ?()=>Navigator.of(context).pop()
+                            ?_returnToLogin
                             :_activate,
                         icon:Icon(_activated?Icons.login:Icons.verified_outlined),
                         label:Text(_activated?'Ir al inicio de sesión':'Activar acceso'),
