@@ -29,6 +29,7 @@ class SilPrincipalPage extends StatefulWidget {
 }
 
 enum _StationSection { dashboard, orders, requests, patients, clinical, review }
+enum _AdminSection { laboratories, operators, activity }
 
 class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _name = TextEditingController();
@@ -62,6 +63,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _reportReference = TextEditingController();
   final _reportDate = TextEditingController();
   _StationSection _activeSection = _StationSection.dashboard;
+  _AdminSection _adminSection = _AdminSection.laboratories;
   bool _verifiedPatient = false;
   bool _externallyAuthorized = false;
   bool _confirmedMatch = false;
@@ -1070,15 +1072,15 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     );
   }
 
-  Widget _adminPanel(){
-    return Column(children:[
-      _section('Registrar laboratorio',
+  Widget _adminPanel({bool showLaboratory = true, bool showOperators = true}){
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children:[
+      if (showLaboratory) _section('Registrar laboratorio',
         'Crea una organización real del sistema, sin generar datos clínicos.',
         Icons.add_business_outlined,[
         _field(_name,'Nombre del laboratorio'),
         _action('Registrar laboratorio',Icons.add,_createLab),
       ]),
-      if(_labId!=null)
+      if(showOperators && _labId!=null)
         _section('Invitar operador de laboratorio',
           'Crea una invitación con código de un solo uso. El destinatario '
           'activa una cuenta nueva con rol de operador.',
@@ -1093,7 +1095,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           const SizedBox(height:12),
           _action('Crear invitación',Icons.person_add_alt_1,_inviteOperator),
         ]),
-      if(_labId!=null)
+      if(showOperators && _labId!=null)
         _section('Operadores y permisos de revisión',
           'Cada operador autorizado aparece aquí después de activar su invitación. '
           'La revisión requiere un permiso explícito del administrador.',
@@ -1655,7 +1657,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ],
   );
 
-  Widget _navigation(bool compact) {
+  Widget _navigation() {
     final pending = _orders.where(_isReviewable).length;
     final destinations = [
       (_StationSection.dashboard, Icons.dashboard_outlined, 'Resumen'),
@@ -1666,51 +1668,119 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       if (_canReview)
         (_StationSection.review, Icons.fact_check_outlined, 'Revisión interna ($pending)'),
     ];
-    final buttons = [
-      for (final (section, icon, label) in destinations)
-        Semantics(
-          selected: section == _activeSection,
-          child: TextButton(
+    return SilWorkspaceTopNavigation(
+      label: 'Navegación del operador',
+      tabs: [
+        for (final (section, icon, label) in destinations)
+          SilWorkspaceTab(
+            label: label, icon: icon,
+            selected: _activeSection == section,
             onPressed: _busy ? null : () => _openSection(section),
-            style: TextButton.styleFrom(
-              minimumSize: const Size(48, 44),
-              foregroundColor: section == _activeSection
-                  ? ColoresVitalia.azulActivo : ColoresVitalia.textoSecundario,
-              backgroundColor: section == _activeSection
-                  ? ColoresVitalia.azulSuave : Colors.transparent,
-              padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            child: Row(
-              mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
-              children: [
-                Icon(icon, size: 18),
-                const SizedBox(width: 8),
-                Flexible(child: Text(label)),
-              ],
-            ),
           ),
-        ),
-    ];
-    return compact
-        ? Wrap(spacing: 4, runSpacing: 4, children: buttons)
-        : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: buttons);
+      ],
+    );
   }
+
+  Widget _adminNavigation() => SilWorkspaceTopNavigation(
+    label: 'Navegación de administración',
+    tabs: [
+      SilWorkspaceTab(
+        label: 'Laboratorios', icon: Icons.business_outlined,
+        selected: _adminSection == _AdminSection.laboratories,
+        onPressed: _busy ? null : () => setState(
+          () => _adminSection = _AdminSection.laboratories),
+      ),
+      SilWorkspaceTab(
+        label: 'Operadores y permisos', icon: Icons.admin_panel_settings_outlined,
+        selected: _adminSection == _AdminSection.operators,
+        onPressed: _busy ? null : () => setState(
+          () => _adminSection = _AdminSection.operators),
+      ),
+      SilWorkspaceTab(
+        label: 'Actividad', icon: Icons.history_outlined,
+        selected: _adminSection == _AdminSection.activity,
+        onPressed: _busy ? null : () => setState(
+          () => _adminSection = _AdminSection.activity),
+      ),
+    ],
+  );
+
+  Widget _adminContent() => switch (_adminSection) {
+    _AdminSection.laboratories => SilWorkspaceColumns(
+      primary: _adminPanel(showOperators: false),
+      primaryFlex: 6,
+      secondaryFlex: 5,
+      secondary: _section(
+        'Laboratorio seleccionado',
+        'Consulta el contexto sobre el que trabajarás.',
+        Icons.business_outlined,
+        [
+          Text(_labs.where((lab) => lab['id'] == _labId)
+              .map((lab) => lab['displayName'] as String).firstOrNull
+              ?? 'Todavía no hay un laboratorio seleccionado.'),
+          const SizedBox(height: 10),
+          Text('${_labs.length} laboratorio(s) registrados en esta cuenta.'),
+          if (_labId != null) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : () => setState(
+                () => _adminSection = _AdminSection.operators),
+              icon: const Icon(Icons.people_outline),
+              label: const Text('Gestionar operadores'),
+            ),
+          ],
+        ],
+      ),
+    ),
+    _AdminSection.operators => _labId == null
+        ? _section('Selecciona un laboratorio',
+            'Registra primero un laboratorio para habilitar operadores.',
+            Icons.info_outline, [])
+        : SilWorkspaceColumns(
+            primary: _adminPanel(showLaboratory: false),
+            secondary: _section('Estado de operadores',
+                'Información del laboratorio seleccionado.',
+                Icons.people_outline, [
+                  Text('${_labStaff.length} operadores en la lista'),
+                  const SizedBox(height: 8),
+                  Text('${_labStaff.where((staff) => staff['active'] == true && staff['canReviewReports'] == true).length} con permiso de revisión'),
+                ]),
+            primaryFlex: 7, secondaryFlex: 4,
+          ),
+    _AdminSection.activity => _labId == null
+        ? _section('Selecciona un laboratorio',
+            'La actividad requiere un laboratorio seleccionado.',
+            Icons.info_outline, [])
+        : _ordersPanel(),
+  };
 
   Widget _dashboard() {
     final pending = _orders.where(_isReviewable).length;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      PortalHeroSil(
-        eyebrow: 'Estación de laboratorio',
-        title: 'Bandeja de trabajo',
-        subtitle: 'Inicia una recepción o retoma las tareas de tu laboratorio.',
-        icon: Icons.space_dashboard_outlined,
-        compact: true,
-        showLaboratoryArt: false,
-        action: FilledButton.tonalIcon(
-          onPressed: _busy ? null : () => _openSection(_StationSection.requests),
-          icon: const Icon(Icons.note_add_outlined),
-          label: const Text('Recibir solicitud de exámenes'),
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+          child: Wrap(
+            spacing: 18, runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
+            children: [
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Bandeja de trabajo',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: ColoresVitalia.texto,
+                    fontWeight: FontWeight.w800,
+                  )),
+                const SizedBox(height: 4),
+                const Text('Retoma tareas pendientes o inicia una recepción.'),
+              ]),
+              FilledButton.icon(
+                onPressed: _busy ? null : () => _openSection(_StationSection.requests),
+                icon: const Icon(Icons.note_add_outlined),
+                label: const Text('Recibir solicitud de exámenes'),
+              ),
+            ],
+          ),
         ),
       ),
       const SizedBox(height: 12),
@@ -1827,96 +1897,80 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         ],
       ),
       body: SafeArea(
-        child: LayoutBuilder(builder: (context, constraints) {
-          final desktopNavigation = _operator && constraints.maxWidth >= 1080;
-          final workspace = SingleChildScrollView(
-            key: ValueKey(_activeSection),
-            padding: EdgeInsets.symmetric(
-              horizontal: constraints.maxWidth < 600 ? 12 : 24,
-              vertical: 20,
-            ),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1480),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (_operator && !desktopNavigation) ...[
-                      _navigation(true),
-                      const SizedBox(height: 16),
-                    ],
-                    Wrap(
-                      spacing: 24,
-                      runSpacing: 14,
-                      alignment: WrapAlignment.spaceBetween,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Semantics(header: true, child: Text(
-                          _admin ? 'Administración' : _sectionTitle,
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: ColoresVitalia.texto,
-                          ),
-                        )),
-                        _labSelector(),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-                    if (_busy) const LinearProgressIndicator(
-                      semanticsLabel: 'Cargando operación',
-                    ),
-                    if (_error != null || _notice != null)
-                      Semantics(
-                        liveRegion: true,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          child: Text(
-                            _error ?? _notice!,
-                            style: TextStyle(color: _error != null
-                                ? Theme.of(context).colorScheme.error
-                                : ColoresVitalia.verde),
-                          ),
-                        ),
-                      ),
-                    if (_operator) _station(),
-                    if (_admin)
-                      if (_labId == null)
-                        _adminPanel()
-                      else
-                        SilWorkspaceColumns(
-                          primary: _adminPanel(), secondary: _ordersPanel(),
-                          primaryFlex: 5, secondaryFlex: 6,
-                        ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Vitalia Health · Entorno de integración. '
-                      'No utilizar datos clínicos reales antes de aprobar '
-                      'seguridad, procedimientos y cumplimiento.',
-                      style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-          if (!desktopNavigation) return workspace;
-          return Row(children: [
-            SizedBox(
-              width: 226,
-              child: ColoredBox(
-                color: Colors.white,
-                child: SizedBox.expand(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(12, 24, 12, 12),
-                    child: _navigation(false),
+        child: Column(
+          children: [
+            if (_operator) _navigation(),
+            if (_admin) _adminNavigation(),
+            Expanded(
+              child: LayoutBuilder(builder: (context, constraints) {
+                return SingleChildScrollView(
+                  key: ValueKey((_activeSection, _adminSection)),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: constraints.maxWidth < 600 ? 12 : 24,
+                    vertical: 20,
                   ),
-                ),
-              ),
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 1480),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Wrap(
+                            spacing: 24,
+                            runSpacing: 14,
+                            alignment: WrapAlignment.spaceBetween,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Semantics(header: true, child: Text(
+                                _admin ? switch (_adminSection) {
+                                  _AdminSection.laboratories => 'Administración de laboratorios',
+                                  _AdminSection.operators => 'Operadores y permisos',
+                                  _AdminSection.activity => 'Actividad del laboratorio',
+                                } : _sectionTitle,
+                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: ColoresVitalia.texto,
+                                ),
+                              )),
+                              _labSelector(),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          if (_busy) const LinearProgressIndicator(
+                            semanticsLabel: 'Cargando operación',
+                          ),
+                          if (_error != null || _notice != null)
+                            Semantics(
+                              liveRegion: true,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Text(
+                                  _error ?? _notice!,
+                                  style: TextStyle(color: _error != null
+                                      ? Theme.of(context).colorScheme.error
+                                      : ColoresVitalia.verde),
+                                ),
+                              ),
+                            ),
+                          if (_operator) _station(),
+                          if (_admin) _adminContent(),
+                          const SizedBox(height: 20),
+                          const Text(
+                            'Vitalia Health · Entorno de integración. '
+                            'No utilizar datos clínicos reales antes de aprobar '
+                            'seguridad, procedimientos y cumplimiento.',
+                            style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
             ),
-            const VerticalDivider(width: 1),
-            Expanded(child: workspace),
-          ]);
-        }),
+          ],
+        ),
       ),
     );
   }
