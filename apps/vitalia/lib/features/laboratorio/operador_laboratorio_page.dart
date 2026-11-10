@@ -1256,6 +1256,17 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
           side: const BorderSide(color: Color(0xFFA5D0DC)),
         ),
       ),
+      OutlinedButton.icon(
+        onPressed: _busy ? null : () => _openQueue('results_recorded'),
+        icon: const Icon(Icons.fact_check_outlined),
+        label: Text(_canReview
+            ? 'Por revisar · $_pendingReviews'
+            : 'Pendientes de revisión · $_pendingReviews'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          side: const BorderSide(color: Color(0xFFA5D0DC)),
+        ),
+      ),
     ],
   );
 
