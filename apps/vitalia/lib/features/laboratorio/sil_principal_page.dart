@@ -1102,11 +1102,14 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           const SizedBox(height:10),
           _field(_requestInviteEmail,'Correo del paciente',onChanged: (_) => setState(() {
             _requestPatient.clear();
+            _requestIdentityEvidence.clear();
+            _requestPatientVerified = false;
             _requestPatientStatus = null;
             _requestIdentityChecked = false;
             _requestHumanChecked = false;
           })),
-          _field(_requestIdentityEvidence,'Referencia de verificación de identidad'),
+          _field(_requestIdentityEvidence,'Referencia de verificación de identidad',
+            onChanged: (_) => setState(() => _requestPatientVerified = false)),
           CheckboxListTile(
             contentPadding:EdgeInsets.zero,
             controlAffinity:ListTileControlAffinity.leading,
