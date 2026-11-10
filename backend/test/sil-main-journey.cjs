@@ -209,7 +209,8 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
     assert.ok(desktop && desktop.x+desktop.width<=226,'Navegación lateral visible en escritorio');
     if(captures)await page.screenshot({path:resolve(captures,'operador-escritorio.png')});
     await click(receive,'Recibir solicitud');
-    await page.getByText('3. Identificación del paciente',{exact:true}).waitFor();
+    await button('Leer PDF y sugerir datos').waitFor();
+    await button('Buscar paciente activado').waitFor();
     if(captures)await page.screenshot({path:resolve(captures,'recepcion-escritorio.png')});
     console.log('Microsoft Edge: navegación y recepción verificadas a 390 y 1440 px.');
     await click(button('Órdenes'),'Órdenes');
