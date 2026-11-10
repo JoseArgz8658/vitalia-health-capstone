@@ -1595,7 +1595,65 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
 
   Widget _ordersView() {
     final reviewing = _section == _OperatorSection.reviewQueue;
-    return _panel(
+    final summary = _summary ?? const <String, dynamic>{};
+    int amount(String key) => (summary[key] as num?)?.toInt() ?? 0;
+    final items = <({
+      IconData icon, String label, String key, String? status,
+      Color accent, Color tint,
+    })>[
+      (
+        icon: Icons.assignment_outlined, label: 'Total de órdenes',
+        key: 'total', status: null, accent: OperatorPalette.blue,
+        tint: ColoresVitalia.azulSuave,
+      ),
+      (
+        icon: Icons.inventory_2_outlined, label: 'Pendientes de muestra',
+        key: 'pendingSample', status: 'registered',
+        accent: const Color(0xFF99630F), tint: ColoresVitalia.advertenciaSuave,
+      ),
+      (
+        icon: Icons.fact_check_outlined, label: 'Pendientes de revisión',
+        key: 'pendingReview', status: 'results_recorded',
+        accent: const Color(0xFF7454A8), tint: ColoresVitalia.pendienteSuave,
+      ),
+      (
+        icon: Icons.picture_as_pdf_outlined, label: 'Informes por publicar',
+        key: 'attached', status: 'report_attached',
+        accent: OperatorPalette.teal, tint: ColoresVitalia.verdeSuave,
+      ),
+    ];
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      OperatorHero(
+        compact: true,
+        eyebrow: 'Estación del operador',
+        title: reviewing ? 'Bandeja de revisión' : 'Órdenes',
+        subtitle: reviewing
+            ? 'Encuentra resultados pendientes y registra una decisión trazable. Publicar el informe es una acción independiente.'
+            : 'Encuentra una orden y continúa desde su estado actual.',
+      ),
+      const SizedBox(height: 14),
+      LayoutBuilder(builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 850 ? 4
+            : constraints.maxWidth >= 440 ? 2 : 1;
+        const gap = 10.0;
+        final tileWidth = (constraints.maxWidth - (columns - 1) * gap) / columns;
+        return Wrap(spacing: gap, runSpacing: gap, children: [
+          for (final item in items)
+            SizedBox(
+              width: tileWidth,
+              child: OperatorMetricCard(
+                icon: item.icon,
+                label: item.label,
+                count: amount(item.key),
+                accent: item.accent,
+                tint: item.tint,
+                onTap: _busy ? null : () => _openQueue(item.status),
+              ),
+            ),
+        ]);
+      }),
+      const SizedBox(height: 14),
+      _panel(
     reviewing ? 'Bandeja de revisión de resultados' : 'Buscar y gestionar órdenes',
     reviewing
         ? 'Órdenes pendientes de cotejo interno. La revisión no publica informes al paciente.'
@@ -1732,7 +1790,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       ]),
     ]),
     icon: reviewing ? Icons.fact_check_outlined : Icons.assignment_outlined,
-  );
+  ),
+  ]);
   }
 
   Widget _prerequisiteHint(IconData icon, String message) => Container(
@@ -1751,7 +1810,23 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     ]),
   );
 
-  Widget _medicalRequestView() => _panel(
+  Widget _medicalRequestView() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const OperatorHero(
+        compact: true,
+        eyebrow: 'Estación del operador',
+        title: 'Recibir solicitud',
+        subtitle: 'Carga la derivación, revisa la extracción, coteja al paciente y confirma la orden.',
+      ),
+      const SizedBox(height: 14),
+      const OperatorInfoNote(
+        icon: Icons.verified_user_outlined,
+        title: 'Recepción segura de solicitudes',
+        description: 'El PDF debe contener texto seleccionable y datos ficticios. El operador verifica cada dato con el documento original antes de crear la orden.',
+      ),
+      const SizedBox(height: 14),
+      _panel(
     'Recepción de solicitud de exámenes',
     'Vincula un documento médico ficticio con un paciente registrado, sin crear la orden hasta comprobar su identidad.',
     Column(crossAxisAlignment:CrossAxisAlignment.stretch,children:[
@@ -2029,7 +2104,8 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
       ],
     ]),
     icon:Icons.assignment_outlined,
-  );
+  ),
+  ]);
 
   Widget _newOrderView() => _panel(
     'Nueva orden de exámenes',
