@@ -313,7 +313,7 @@ class OperatorDistributionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fraction = total <= 0 ? 0.0 : (count / total).clamp(0.0, 1.0);
+    final fraction = total <= 0 ? 0.0 : (count / total).clamp(0.0, 1.0).toDouble();
     return Padding(
       padding: const EdgeInsets.only(bottom: 13),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
