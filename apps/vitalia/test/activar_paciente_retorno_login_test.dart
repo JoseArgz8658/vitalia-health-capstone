@@ -56,6 +56,9 @@ Future<void> _activateAndReturn(WidgetTester t, _ActivationApi api) async {
 }
 
 void main() {
+  // El proyecto prueba también el modo general: ejecutar estas rutas
+  // específicas solo en el job que habilita VITALIA_SIL_MAIN_MODE.
+  const mainMode = bool.fromEnvironment('VITALIA_SIL_MAIN_MODE', defaultValue: false);
   testWidgets('ruta directa: tras activar paciente se puede escribir clave sin refrescar', (t) async {
     final api = _ActivationApi();
     await t.pumpWidget(VitaliaMvpApp(
@@ -66,7 +69,7 @@ void main() {
     await _activateAndReturn(t, api);
     await t.pumpWidget(const SizedBox());
     api.close();
-  });
+  }, skip: !mainMode);
 
   testWidgets('inicio: regresar de activación reabre login con correo y campo editable', (t) async {
     final api = _ActivationApi();
