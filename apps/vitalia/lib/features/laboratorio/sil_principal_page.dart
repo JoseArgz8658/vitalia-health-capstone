@@ -598,29 +598,135 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     });
   }
 
+  void _useMedicalSuggestions(Map<String,dynamic> preview){
+    _requestReference.text=preview['suggestedDocumentReference'] as String? ?? '';
+    _requestPrescriber.text=preview['suggestedPrescriberName'] as String? ?? '';
+    _requestDate.text=preview['suggestedRequestDate'] as String? ?? '';
+    _requestExams
+      ..clear()
+      ..addAll((preview['suggestedExams'] as List? ?? [])
+        .whereType<Map>().map((entry)=>entry['code'])
+        .whereType<String>()
+        .where((code)=>_catalog.any((item)=>item.$1==code)).take(6));
+    _requestIdentitySuggestions=preview['suggestedPatient'] is Map
+      ?Map<String,dynamic>.from(preview['suggestedPatient'] as Map)
+      :{};
+    final suggestedEmail=_requestIdentitySuggestions['email'];
+    if(_requestInviteEmail.text.trim().isEmpty&&suggestedEmail is String){
+      _requestInviteEmail.text=suggestedEmail;
+    }
+    _requestPreviewNotice=preview['state']=='text_ready'
+      ?'Datos sugeridos desde el PDF. Coteja identidad y prestaciones antes de aceptar.'
+      :'El PDF no tiene texto legible. Conservamos el archivo, pero los campos se completan manualmente.';
+    _requestIdentityChecked=false;
+    _requestHumanChecked=false;
+  }
+
   Future<void> _previewMedicalRequest() async {
-    final lab = _labId;
-    final file = _medicalRequestFile;
-    if (lab == null || file == null) throw const AuthFailure('Selecciona el PDF de la solicitud.');
-    final preview = await widget.api.silMainPreviewMedicalRequest(
-      labId: lab, fileName: file.name, bytes: await file.readAsBytes(),
-    );
-    if (!mounted) return;
-    setState(() {
-      _requestReference.text = preview['suggestedDocumentReference'] as String? ?? '';
-      _requestPrescriber.text = preview['suggestedPrescriberName'] as String? ?? '';
-      _requestDate.text = preview['suggestedRequestDate'] as String? ?? '';
-      _requestExams
-        ..clear()
-        ..addAll((preview['suggestedExams'] as List? ?? [])
-            .map((entry) => entry['code'] as String)
-            .where((code) => _catalog.any((entry) => entry.$1 == code)).take(6));
-      _requestPreviewNotice = preview['state'] == 'text_ready'
-          ? 'Revisa las sugerencias con el PDF original y confirma la identidad.'
-          : 'No se pudo leer texto del PDF. Contrasta el original e ingresa los datos manualmente.';
-      _requestIdentityChecked = false;
-      _requestHumanChecked = false;
+    final lab=_labId,file=_medicalRequestFile;
+    if(lab==null||file==null)throw const AuthFailure('Selecciona el PDF de la solicitud.');
+    final preview=await widget.api.silMainPreviewMedicalRequest(
+      labId:lab,fileName:file.name,bytes:await file.readAsBytes());
+    if(!mounted)return;
+    setState(()=>_useMedicalSuggestions(preview));
+  }
+
+  Future<void> _savePendingRequest() async {
+    final lab=_labId,file=_medicalRequestFile;
+    if(lab==null||file==null||_attachToExistingOrder){
+      throw const AuthFailure('Selecciona una derivación PDF para guardar pendiente.');
+    }
+    if(_pendingRequestId!=null){
+      throw const AuthFailure('Esta derivación ya está guardada como pendiente.');
+    }
+    final response=await widget.api.silMainSavePendingRequest(
+      labId:lab,fileName:file.name,bytes:await file.readAsBytes(),
+      patientEmail:_requestInviteEmail.text.trim().isEmpty
+        ?null:_requestInviteEmail.text.trim());
+    if(!mounted||lab!=_labId)return;
+    final saved=Map<String,dynamic>.from(response['pending'] as Map);
+    setState((){
+      _pendingRequestId=saved['id'] as String;
+      _useMedicalSuggestions(Map<String,dynamic>.from(saved['suggestions'] as Map)
+        ..['state']=saved['extractionStatus']);
+      _requestPatientStatus='Derivación guardada en LaboMed u otro laboratorio '
+        'seleccionado. Puedes retomarla después de activar al paciente.';
     });
+    await _loadPendingRequests();
+  }
+
+  void _selectPendingRequest(String? id){
+    if(_busy||id==null)return;
+    final matches=_pendingRequests.where((row)=>row['id']==id).toList();
+    if(matches.length!=1)return;
+    final pending=matches.single;
+    final suggestions=Map<String,dynamic>.from(
+      pending['suggestions'] as Map? ?? {});
+    setState((){
+      _pendingRequestId=id;
+      _medicalRequestFile=null;
+      _requestInviteEmail.text=pending['patientEmail'] as String? ?? '';
+      _requestIdentityEvidence.clear();
+      _requestPatientVerified=false;
+      _requestPatient.clear();
+      _requestOrderId=null;
+      _attachToExistingOrder=false;
+      _useMedicalSuggestions(suggestions..['state']=pending['extractionStatus']);
+      _requestPatientStatus='Derivación pendiente recuperada. '
+        'Revisa el PDF original antes de crear la orden.';
+    });
+  }
+
+  Future<void> _downloadPendingRequest() async {
+    final lab=_labId,id=_pendingRequestId;
+    if(lab==null||id==null){
+      throw const AuthFailure('Selecciona una derivación pendiente.');
+    }
+    final bytes=await widget.api.silMainDownloadPendingRequest(
+      labId:lab,pendingId:id);
+    final original=XFile.fromData(bytes,
+      name:'derivacion-pendiente-$id.pdf',mimeType:'application/pdf');
+    await original.saveTo('derivacion-pendiente-$id.pdf');
+  }
+
+  Future<void> _completePendingRequest() async {
+    final lab=_labId,id=_pendingRequestId;
+    final patientId=_requireUuid(_requestPatient.text);
+    final email=_requestInviteEmail.text.trim().toLowerCase();
+    if(lab==null||id==null||patientId==null||!email.contains('@')||
+        _requestExams.isEmpty||!_requestIdentityChecked||!_requestHumanChecked){
+      throw const AuthFailure('Selecciona una cuenta activada, las prestaciones '
+        'y confirma que cotejaste la identidad y el PDF original.');
+    }
+    await widget.api.silMainRequest('/labs/$lab/medical-requests/pending/$id/complete',
+      body:{
+        'patientId':patientId,'patientEmail':email,
+        'examCodes':_requestExams.toList(),
+        'documentReference':_requestReference.text.trim(),
+        'prescriberName':_requestPrescriber.text.trim(),
+        'requestDate':_requestDate.text.trim(),
+        'patientIdentityConfirmed':true,'humanReviewConfirmed':true,
+      });
+    if(!mounted)return;
+    setState((){
+      _pendingRequestId=null;
+      _medicalRequestFile=null;
+      _requestPatient.clear();
+      _requestInviteEmail.clear();
+      _requestIdentityEvidence.clear();
+      _requestIdentitySuggestions={};
+      _requestPatientVerified=false;
+      _requestPatientStatus=null;
+      _requestExams.clear();
+      _requestPreviewNotice=null;
+      _requestIdentityChecked=false;
+      _requestHumanChecked=false;
+      _requestReference.clear();
+      _requestPrescriber.clear();
+      _requestDate.clear();
+    });
+    await _loadPendingRequests();
+    await _loadOrders();
   }
 
   Future<void> _attachMedicalRequest() async {
