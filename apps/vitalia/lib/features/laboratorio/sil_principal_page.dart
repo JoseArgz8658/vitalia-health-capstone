@@ -1174,45 +1174,171 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ]);
   }
 
-  Widget _patientLink() => _section('Vincular paciente verificado',
-        'Primero comprueba la identidad por el procedimiento autorizado '
-        'del laboratorio. Un correo coincidente no es verificación suficiente.',
-        Icons.person_add_alt_1_outlined,[
-        _field(_patientAccount,'UUID de la cuenta del paciente'),
-        _field(_evidence,'Referencia de verificación de identidad'),
-        CheckboxListTile(
-          contentPadding:EdgeInsets.zero,
-          value:_verifiedPatient,
-          onChanged:_busy?null:(v)=>setState(()=>_verifiedPatient=v??false),
-          title:const Text('Identidad contrastada con evidencia externa'),
-          subtitle:const Text('No almacenes datos sensibles en este campo.'),
-          controlAffinity:ListTileControlAffinity.leading,
-        ),
-        _action('Vincular paciente',Icons.verified_outlined,_linkPatient),
-        const Divider(),
-        _field(_invitedPatientEmail, 'Correo de un paciente nuevo'),
-        _action('Emitir código de activación', Icons.person_add_alt_1_outlined,
-          () => _invitePatient()),
-      ]);
+  Future<void> _checkPatientActivation() async {
+    final lab = _labId;
+    final email = _invitedPatientEmail.text.trim().toLowerCase();
+    if (lab == null || !email.contains('@')) {
+      throw const AuthFailure('Escribe el correo que utilizó el paciente para activar su cuenta.');
+    }
+    final query = Uri(queryParameters: {
+      'limit': '20', 'offset': '0', 'search': email,
+    }).query;
+    final data = await widget.api.silMainRequest('/labs/$lab/patients?$query');
+    if (!mounted || lab != _labId) return;
+    final found = (data['patients'] as List? ?? [])
+        .whereType<Map>()
+        .any((row) => (row['email'] as String?)?.toLowerCase() == email);
+    setState(() => _patientInviteStatus = found
+        ? 'Cuenta activa y asociada al laboratorio. Ya puedes crear una orden para este paciente.'
+        : 'Todavía no se encuentra una cuenta activada para este correo. El paciente debe ingresar su código y configurar una contraseña.');
+    if (found) await _loadPatients(offset: 0, search: email);
+  }
 
-  Widget _newOrder() => _section('Crear orden postanalítica',
-        'Selecciona prestaciones del catálogo para un paciente '
-        'previamente vinculado al laboratorio.',
-        Icons.note_add_outlined,[
-        _field(_orderPatient,'UUID del paciente vinculado'),
-        Wrap(spacing:7,runSpacing:4,children:[
-          for(final (code,label) in _catalog)
-            FilterChip(
-              label:Text(label),
-              selected:_codes.contains(code),
-              onSelected:_busy?null:(v)=>setState((){
-                if(v){_codes.add(code);}else{_codes.remove(code);}
-              }),
+  Widget _patientLink() => _section(
+    'Registrar paciente nuevo',
+    'El personal verifica la identidad y entrega una invitación. El paciente activa su propia cuenta.',
+    Icons.person_add_alt_1_outlined, [
+      const OperatorNextStep(
+        icon: Icons.info_outline,
+        title: '¿Cuándo se crea la cuenta?',
+        message: 'Al activar el código, el paciente configura su contraseña y Vitalia crea su cuenta vinculada a este laboratorio. No debes ingresar números internos ni crear contraseñas por él.',
+      ),
+      const SizedBox(height: 14),
+      _field(_invitedPatientEmail, 'Correo electrónico del paciente'),
+      _field(_evidence, 'Referencia del procedimiento de verificación'),
+      const Padding(
+        padding: EdgeInsets.only(bottom: 8),
+        child: Text('Usa un folio o referencia no sensible que permita auditar la verificación de identidad. No escribas diagnósticos ni datos clínicos aquí.'),
+      ),
+      CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        value: _verifiedPatient,
+        onChanged: _busy ? null : (value) =>
+          setState(() => _verifiedPatient = value ?? false),
+        title: const Text('He verificado la identidad del paciente'),
+        subtitle: const Text('La coincidencia del correo por sí sola no confirma la identidad.'),
+        controlAffinity: ListTileControlAffinity.leading,
+      ),
+      FilledButton.icon(
+        onPressed: _busy ? null : () => _execute(() => _invitePatient(), showNotice: false),
+        icon: const Icon(Icons.mark_email_read_outlined),
+        label: const Text('Emitir código de activación'),
+      ),
+      const SizedBox(height: 12),
+      if (_patientInviteStatus != null) ...[
+        OperatorNextStep(
+          icon: Icons.mark_email_read_outlined,
+          title: 'Estado de la invitación',
+          message: _patientInviteStatus!,
+          accent: OperatorPalette.teal,
+          background: ColoresVitalia.verdeSuave,
+        ),
+        const SizedBox(height: 12),
+      ],
+      OutlinedButton.icon(
+        onPressed: _busy ? null : () => _execute(_checkPatientActivation, showNotice: false),
+        icon: const Icon(Icons.person_search_outlined),
+        label: const Text('Comprobar si activó su cuenta'),
+      ),
+      const Divider(height: 28),
+      const Text('Instrucciones que puedes entregar al paciente',
+        style: TextStyle(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 8),
+      const Text('1. Abre la página «Activar cuenta de paciente» de Vitalia.'),
+      const Text('2. Ingresa el correo y el código entregado por el laboratorio.'),
+      const Text('3. Crea y confirma tu contraseña personal.'),
+      const Text('4. Informa al laboratorio que terminaste la activación.'),
+      const SizedBox(height: 8),
+      const Text('En la DEMO local, la activación está en localhost:5173/#/activar-portal. El código vence a las 24 horas y debe entregarse por un canal verificado.',
+        style: TextStyle(color: ColoresVitalia.textoSecundario, fontSize: 12)),
+    ],
+  );
+
+  Widget _newOrder() => _section(
+    'Crear orden sin derivación PDF',
+    'Usa esta opción solo cuando corresponda al procedimiento del laboratorio. Si recibiste una solicitud médica, comienza en «Recibir solicitud».',
+    Icons.note_add_outlined, [
+      const OperatorNextStep(
+        title: 'Antes de registrar la orden',
+        message: 'Selecciona una cuenta activa del laboratorio y verifica las prestaciones solicitadas. Nunca necesitas copiar un identificador técnico.',
+      ),
+      const SizedBox(height: 13),
+      _field(_orderPatientSearch, 'Buscar paciente por nombre o correo'),
+      OutlinedButton.icon(
+        onPressed: _busy ? null : () => _execute(
+          () => _loadPatients(offset: 0, search: _orderPatientSearch.text.trim()),
+          showNotice: false,
+        ),
+        icon: const Icon(Icons.search_outlined),
+        label: const Text('Buscar paciente'),
+      ),
+      const SizedBox(height: 12),
+      DropdownButtonFormField<String>(
+        key: ValueKey((_labId, _manualPatient?['id'], _activePatientSearch)),
+        initialValue: _manualPatient?['id'] as String?,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: 'Paciente con cuenta activada',
+          border: OutlineInputBorder(),
+        ),
+        items: [
+          if (_manualPatient != null &&
+              !_patients.any((p) => p['id'] == _manualPatient?['id']))
+            DropdownMenuItem<String>(
+              value: _manualPatient!['id'] as String,
+              child: Text(_patientName(_manualPatient!),
+                  overflow: TextOverflow.ellipsis),
             ),
-        ]),
-        const SizedBox(height:12),
-        _action('Registrar orden',Icons.add_circle_outline,_createOrder),
-      ]);
+          for (final patient in _patients)
+            DropdownMenuItem<String>(
+              value: patient['id'] as String,
+              child: Text(
+                _patientName(patient) + ' · ' + (patient['email'] as String),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+        onChanged: _busy ? null : (value) => setState(() {
+          _manualPatient = [
+            ..._patients,
+            if (_manualPatient != null) _manualPatient!,
+          ].where((p) => p['id'] == value).firstOrNull;
+          _orderPatient.text = value ?? '';
+        }),
+      ),
+      if (_patients.isEmpty)
+        const Padding(
+          padding: EdgeInsets.only(top: 9),
+          child: Text('No aparecen pacientes activos en la lista. Puedes buscar por correo o iniciar una invitación desde «Pacientes».'),
+        ),
+      const SizedBox(height: 14),
+      const Text('Seleccionar exámenes',
+          style: TextStyle(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 7),
+      Wrap(spacing: 7, runSpacing: 4, children: [
+        for (final (code, label) in _catalog)
+          FilterChip(
+            label: Text(label),
+            selected: _codes.contains(code),
+            onSelected: _busy ? null : (selected) => setState(() {
+              if (selected) {
+                _codes.add(code);
+              } else {
+                _codes.remove(code);
+              }
+            }),
+          ),
+      ]),
+      const SizedBox(height: 14),
+      FilledButton.icon(
+        onPressed: _busy || _orderPatient.text.isEmpty || _codes.isEmpty
+            ? null
+            : () => _execute(_createOrder),
+        icon: const Icon(Icons.add_circle_outline),
+        label: const Text('Registrar orden'),
+      ),
+    ],
+  );
 
   Widget _requestIntake() => SilWorkspaceColumns(
     primary: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -1638,11 +1764,13 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               }
               if (section == _StationSection.requests) {
                 _requestPatient.text = patient['id'] as String;
+                _requestInviteEmail.text = patient['email'] as String;
                 _attachToExistingOrder = false;
                 _requestIdentityChecked = false;
                 _requestHumanChecked = false;
               } else {
                 _orderPatient.text = patient['id'] as String;
+                _manualPatient = patient;
               }
               _openSection(section);
             },
