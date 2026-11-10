@@ -574,7 +574,8 @@ async function main() {
       'x-request-filename':'derivacion-pendiente.pdf',
       'x-request-patient-email':pendingEmail,
     }};
-    await call('patient','POST',pendingPath,403,pendingUpload);
+    // La sesión del paciente fue revocada arriba: debe recibir 401, no 403.
+    await call('patient','POST',pendingPath,401,pendingUpload);
     await call('uploader','POST',otherLab+'/medical-requests/pending',403,pendingUpload);
     const savedPending=await (await call('uploader','POST',pendingPath,201,pendingUpload)).json();
     const pendingId=savedPending.pending.id;
@@ -584,7 +585,7 @@ async function main() {
     await call('uploader','POST',pendingPath,409,pendingUpload);
     const savedList=await (await call('uploader','GET',pendingPath,200)).json();
     assert.ok(savedList.pending.some(item=>item.id===pendingId));
-    await call('patient','GET',pendingPath,403);
+    await call('patient','GET',pendingPath,401);
     await call('reviewer','GET',otherLab+'/medical-requests/pending/'+pendingId+'/file',404);
     const savedPdf=await call('uploader','GET',
       pendingPath+'/'+pendingId+'/file',200);
