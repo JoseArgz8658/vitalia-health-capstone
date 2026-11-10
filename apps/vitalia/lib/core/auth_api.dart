@@ -245,12 +245,40 @@ class AuthApi {
     },
   );
 
-  /// Descargar la derivación original para cotejarla antes de crear la orden.
+  /// PDF pendiente: solo operador autorizado del laboratorio correspondiente.
   Future<Uint8List> silMainDownloadPendingRequest({
     required String labId,required String pendingId,
   }) async {
     if(!_silMainMode)throw const AuthFailure('SIL principal no habilitado.');
-    final uuid=RegExp(r'^[a-f0-9-]{36}
+    final uuid=RegExp(r'^[a-f0-9-]{36}$');
+    if(!uuid.hasMatch(labId)||!uuid.hasMatch(pendingId)){
+      throw const AuthFailure('Derivación inválida.');
+    }
+    final token=_token;
+    if(token==null||expiresAt==null||!expiresAt!.isAfter(DateTime.now())){
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+    }
+    try{
+      final response=await _client.get(
+        _base.resolve('/api/sil/main/labs/$labId/medical-requests/pending/$pendingId/file'),
+        headers:{'Authorization':'Bearer $token'},
+      ).timeout(const Duration(seconds:35));
+      if(token!=_token||response.statusCode==401){
+        clear();throw const AuthFailure('La sesión terminó. Ingresa nuevamente.',401);
+      }
+      if(response.statusCode!=200||
+        response.headers['content-type']?.startsWith('application/pdf')!=true||
+        response.bodyBytes.length>2*1024*1024){
+        throw AuthFailure('Derivación pendiente no disponible.',response.statusCode);
+      }
+      return response.bodyBytes;
+    }on AuthFailure {rethrow;}
+    on TimeoutException {throw const AuthFailure('La descarga tardó demasiado.');}
+    catch(_){throw const AuthFailure('No fue posible descargar la derivación.');}
+  }
+
+  Future<Map<String, dynamic>> silMainPreviewResults({
     required String labId,
     required String orderId,
     required String fileName,
