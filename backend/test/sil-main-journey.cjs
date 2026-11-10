@@ -556,6 +556,50 @@ async function main() {
     }
     await api('POST','/api/auth/logout',204,{token:tokens.patient});
     await call('patient','GET',patientFile,401);
+    // El operador recibe una derivación y la guarda SIN una cuenta paciente.
+    const pendingEmail='patient-invited@example.invalid';
+    const pendingPdf=syntheticPdf([
+      'Paciente: Ana María Pérez Soto','RUT: 12.345.678-5',
+      'Fecha de nacimiento: 12/04/1990',
+      'Correo electrónico: patient-invited@example.invalid',
+      'Teléfono: +56 9 1234 5678',
+      'Sexo: Femenino',
+      'Referencia: SOL-PEND-0042',
+      'Profesional solicitante: Persona Ficticia',
+      'Fecha de solicitud: 2024-01-01','Glicemia',
+    ]);
+    const pendingPath=base+'/medical-requests/pending';
+    const pendingUpload={bytes:pendingPdf,headers:{
+      'Content-Type':'application/pdf',
+      'x-request-filename':'derivacion-pendiente.pdf',
+      'x-request-patient-email':pendingEmail,
+    }};
+    await call('patient','POST',pendingPath,403,pendingUpload);
+    await call('uploader','POST',otherLab+'/medical-requests/pending',403,pendingUpload);
+    const savedPending=await (await call('uploader','POST',pendingPath,201,pendingUpload)).json();
+    const pendingId=savedPending.pending.id;
+    assert.equal(savedPending.pending.status,'pending');
+    assert.equal(savedPending.pending.patientEmail,pendingEmail);
+    assert.ok(Object.hasOwn(savedPending.pending.suggestions,'suggestedPatient'));
+    await call('uploader','POST',pendingPath,409,pendingUpload);
+    const savedList=await (await call('uploader','GET',pendingPath,200)).json();
+    assert.ok(savedList.pending.some(item=>item.id===pendingId));
+    await call('patient','GET',pendingPath,403);
+    await call('reviewer','GET',otherLab+'/medical-requests/pending/'+pendingId+'/file',404);
+    const savedPdf=await call('uploader','GET',
+      pendingPath+'/'+pendingId+'/file',200);
+    assert.deepEqual(Buffer.from(await savedPdf.arrayBuffer()),pendingPdf);
+    const pendingBeforeActivation=await db.query(
+      'SELECT status,order_id FROM public.vitalia_sil_main_pending_requests WHERE id=$1',
+      [pendingId]);
+    assert.equal(pendingBeforeActivation.rows[0].status,'pending');
+    assert.equal(pendingBeforeActivation.rows[0].order_id,null);
+    const pendingOrdersBefore=await db.query(
+      'SELECT count(*)::int AS total FROM public.vitalia_sil_main_orders WHERE lab_id=$1',[base.slice(6)]);
+    assert.ok(pendingOrdersBefore.rows[0].total>=1);
+    console.log('API: derivación con identidad sugerida guardada sin cuenta ni orden.');
+
+
     const inviteEmail='patient-invited@example.invalid';
     const inviteInput={email:inviteEmail,identityReference:'verificacion-ficticia-invitacion',identityConfirmed:true};
     const oldInvite=await (await call('uploader','POST',base+'/patient-invitations',201,{json:inviteInput})).json();
@@ -579,6 +623,51 @@ async function main() {
     await api('POST','/api/auth/login',200,{json:{
       mode:'paciente',email:inviteEmail,password:recovered.password,
     }});
+    const pendingPatient=(await db.query(
+      'SELECT id FROM public.vitalia_accounts WHERE email=$1',[pendingEmail])).rows[0];
+    assert.ok(pendingPatient?.id,'La activación debe crear cuenta paciente.');
+    const pendingComplete=pendingPath+'/'+pendingId+'/complete';
+    const pendingData={
+      patientId:pendingPatient.id,patientEmail:pendingEmail,
+      examCodes:['glicemia'],
+      documentReference:'SOL-PEND-0042',
+      prescriberName:'Persona Ficticia',
+      requestDate:'2024-01-01',
+      patientIdentityConfirmed:true,humanReviewConfirmed:true,
+    };
+    await call('uploader','POST',pendingComplete,400,{json:{
+      ...pendingData,patientIdentityConfirmed:false,
+    }});
+    await call('uploader','POST',pendingComplete,404,{json:{
+      ...pendingData,patientEmail:'equivocado@example.invalid',
+    }});
+    await call('reviewer','POST',otherLab+'/medical-requests/pending/'+pendingId+'/complete',404,{
+      json:pendingData,
+    });
+    const completed=await (await call('uploader','POST',pendingComplete,201,{
+      json:pendingData,
+    })).json();
+    assert.equal(completed.pending.status,'completed');
+    assert.equal(completed.order.patientId,pendingPatient.id);
+    await call('uploader','POST',pendingComplete,404,{json:pendingData});
+    const pendingAfter=await (await call('uploader','GET',pendingPath,200)).json();
+    assert.ok(!pendingAfter.pending.some(item=>item.id===pendingId));
+    const pendingSaved=await db.query(
+      'SELECT status,order_id FROM public.vitalia_sil_main_pending_requests WHERE id=$1',
+      [pendingId]);
+    assert.equal(pendingSaved.rows[0].status,'completed');
+    assert.equal(pendingSaved.rows[0].order_id,completed.order.id);
+    const completedPdf=await call('uploader','GET',
+      base+'/orders/'+completed.order.id+'/medical-request/file',200);
+    assert.deepEqual(Buffer.from(await completedPdf.arrayBuffer()),pendingPdf);
+    const pendingAudit=await db.query(
+      "SELECT action FROM public.vitalia_sil_main_audit WHERE lab_id=$1 AND action LIKE 'pending_request_%'",
+      [base.slice(6)]);
+    assert.ok(pendingAudit.rows.some(row=>row.action==='pending_request_saved'));
+    assert.ok(pendingAudit.rows.some(row=>row.action==='pending_request_downloaded'));
+    assert.ok(pendingAudit.rows.some(row=>row.action==='pending_request_completed'));
+    console.log('API: derivación pendiente recuperada, activación y orden atómica aprobadas.');
+
     console.log('API: activación y recuperación del paciente de un solo uso verificadas.');
     console.log('API y PostgreSQL: recorrido con credenciales y sesiones reales aprobado.');
     if(web){
