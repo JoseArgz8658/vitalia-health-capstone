@@ -13,6 +13,7 @@ class AccesoPage extends StatefulWidget {
     this.api,
     this.onAuthenticated,
     this.notice,
+    this.initialEmail,
     this.adminMode = false,
     this.laboratoryMode = false,
   });
@@ -20,6 +21,7 @@ class AccesoPage extends StatefulWidget {
   final bool adminMode;
   final bool laboratoryMode;
   final String? notice;
+  final String? initialEmail;
   final ValueChanged<Map<String, dynamic>>? onAuthenticated;
   @override
   State<AccesoPage> createState() => _AccesoPageState();
@@ -35,6 +37,14 @@ class _AccesoPageState extends State<AccesoPage> {
   String? _error;
   bool get _patientMode =>
       !widget.adminMode && !widget.laboratoryMode && !_professionalMode;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialEmail != null) {
+      _correo.text = widget.initialEmail!;
+    }
+  }
 
   Future<void> _openPatientAccess(Widget page) async {
     final email = await Navigator.of(context).push<String>(
