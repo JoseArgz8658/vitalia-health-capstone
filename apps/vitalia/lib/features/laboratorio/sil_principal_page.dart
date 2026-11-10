@@ -1935,33 +1935,99 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       onTap: _busy ? null : () => _openSection(section),
     );
 
+  Widget _operatorSubpage({
+    required String title,
+    required String description,
+    required Widget child,
+    Widget? support,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      OperatorHero(
+        eyebrow: 'Estación del operador',
+        title: title,
+        subtitle: description,
+        compact: true,
+      ),
+      const SizedBox(height: 14),
+      if (support != null) ...[
+        support,
+        const SizedBox(height: 14),
+      ],
+      child,
+    ],
+  );
+
   Widget _station() {
     if (_labId == null) return const SizedBox.shrink();
     return switch (_activeSection) {
       _StationSection.dashboard => _dashboard(),
-      _StationSection.orders => SilWorkspaceColumns(
-        primary: _ordersPanel(),
-        secondary: Column(children: [_newOrder(), _reportUpload()]),
-        primaryFlex: 6, secondaryFlex: 5,
+      _StationSection.orders => _operatorSubpage(
+        title: 'Órdenes',
+        description: 'Encuentra una orden y continúa su seguimiento en el laboratorio activo.',
+        support: _operatorMetrics(),
+        child: SilWorkspaceColumns(
+          primary: _ordersPanel(),
+          secondary: Column(children: [_newOrder(), _reportUpload()]),
+          primaryFlex: 6, secondaryFlex: 5,
+        ),
       ),
-      _StationSection.requests => _requestIntake(),
-      _StationSection.patients => SilWorkspaceColumns(
-        primary: _patientDirectory(), secondary: _patientLink(),
-        primaryFlex: 6, secondaryFlex: 5,
+      _StationSection.requests => _operatorSubpage(
+        title: 'Recibir solicitud',
+        description: 'Carga una derivación PDF, coteja la identidad y confirma su vinculación.',
+        support: const OperatorInfoNote(
+          icon: Icons.file_present_outlined,
+          title: 'Recepción segura',
+          description: 'La solicitud puede guardarse como pendiente. La extracción automática no confirma la identidad ni autoriza órdenes.',
+        ),
+        child: _requestIntake(),
       ),
-      _StationSection.clinical => _section(
-        'Muestras y resultados', 'Registra la recepción y revisa los analitos de la orden.',
-        Icons.science_outlined, [
-          SilMainClinicalPanel(
-            key: ValueKey(_labId), api: widget.api, labId: _labId!, orders: _workflowOrders.toList(),
-            initialOrderId: _clinicalOrder?['id'] as String?,
-            onOrderChanged: (id) => _clinicalOrder =
-              _workflowOrders.firstWhere((order) => order['id'] == id),
-            canReview: _canReview, onExpired: widget.onExpired,
-          ),
-        ],
+      _StationSection.patients => _operatorSubpage(
+        title: 'Pacientes',
+        description: 'Consulta cuentas asociadas al laboratorio y continúa sus órdenes.',
+        child: SilWorkspaceColumns(
+          primary: _patientDirectory(),
+          secondary: _patientLink(),
+          primaryFlex: 6, secondaryFlex: 5,
+        ),
       ),
-      _StationSection.review => _canReview ? _reviewPanel() : _dashboard(),
+      _StationSection.clinical => _operatorSubpage(
+        title: 'Control de muestras y resultados',
+        description: 'Consulta una orden y registra su información postanalítica.',
+        child: _section(
+          'Muestras y resultados',
+          'Registra la recepción y revisa los analitos de la orden.',
+          Icons.science_outlined, [
+            SilMainClinicalPanel(
+              key: ValueKey(_labId),
+              api: widget.api,
+              labId: _labId!,
+              orders: _workflowOrders.toList(),
+              initialOrderId: _clinicalOrder?['id'] as String?,
+              onOrderChanged: (id) => _clinicalOrder =
+                _workflowOrders.firstWhere((order) => order['id'] == id),
+              canReview: _canReview,
+              onExpired: widget.onExpired,
+            ),
+          ],
+        ),
+      ),
+      _StationSection.review => _canReview
+          ? _operatorSubpage(
+              title: 'Bandeja de revisión',
+              description: 'Verifica el PDF y su autorización externa antes de publicar.',
+              support: OperatorInfoNote(
+                icon: Icons.fact_check_outlined,
+                title: 'Revisión y publicación',
+                description: 'Pendientes en órdenes recientes: ' +
+                    _orders.where(_isReviewable).length.toString() +
+                    '. La publicación requiere autorización.',
+                color: OperatorPalette.teal,
+                background: ColoresVitalia.verdeSuave,
+              ),
+              child: _reviewPanel(),
+            )
+          : _dashboard(),
     };
   }
 
@@ -2048,7 +2114,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                                   _AdminSection.laboratories => 'Administración de laboratorios',
                                   _AdminSection.operators => 'Operadores y permisos',
                                   _AdminSection.activity => 'Actividad del laboratorio',
-                                } : _sectionTitle,
+                                } : 'Área operativa',
                                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                                   fontWeight: FontWeight.w800,
                                   color: ColoresVitalia.texto,
