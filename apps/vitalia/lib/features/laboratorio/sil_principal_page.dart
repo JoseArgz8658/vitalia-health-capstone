@@ -16,14 +16,12 @@ class SilPrincipalPage extends StatefulWidget {
     required this.role,
     required this.onExpired,
     required this.onLogout,
-    this.onOpenOriginal,
   });
 
   final AuthApi api;
   final String role;
   final VoidCallback onExpired;
   final VoidCallback onLogout;
-  final VoidCallback? onOpenOriginal;
 
   @override
   State<SilPrincipalPage> createState() => _SilPrincipalPageState();
@@ -1390,12 +1388,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           ),
         ) : null,
         actions:[
-          if(widget.onOpenOriginal!=null)
-            IconButton(
-              onPressed:widget.onOpenOriginal,
-              tooltip:'Abrir módulo original de Vitalia',
-              icon:const Icon(Icons.open_in_new),
-            ),
           IconButton(
             onPressed:widget.onLogout,
             tooltip:'Cerrar sesión',
