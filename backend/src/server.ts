@@ -93,9 +93,12 @@ async function main(): Promise<void> {
            AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
              WHERE version='038_sil_main_postanalytical')
            AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
-             WHERE version='040_sil_main_clinical_access') AS ready`);
+             WHERE version='040_sil_main_clinical_access')
+           AND to_regclass('public.vitalia_sil_main_pending_requests') IS NOT NULL
+           AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
+             WHERE version='041_sil_main_pending_referrals') AS ready`);
       if(mainSchema.rows[0]?.ready!==true) {
-        throw new Error('SIL principal solicitado sin esquema 040: activación bloqueada.');
+        throw new Error('SIL principal solicitado sin esquema 041: activación bloqueada.');
       }
     }
     const storageConfig = readStorageConfig(process.env);
