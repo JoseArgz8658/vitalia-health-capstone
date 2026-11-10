@@ -82,7 +82,15 @@ jobs:
         run: |
           export VITALIA_JOURNEY_PLAYWRIGHT="$RUNNER_TEMP/vitalia-browser/node_modules/playwright"
           export VITALIA_JOURNEY_WEB="$GITHUB_WORKSPACE/apps/vitalia/build/web"
+          export VITALIA_JOURNEY_SCREENSHOTS="$RUNNER_TEMP/vitalia-sil-visual"
+          mkdir -p "$VITALIA_JOURNEY_SCREENSHOTS"
           node test/sil-main-journey.cjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitalia-sil-edge
+          path: ${{ runner.temp }}/vitalia-sil-visual
+          if-no-files-found: ignore
       - name: Retirar PostgreSQL temporal
         if: always()
         run: docker stop "vitalia-qa-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" || true

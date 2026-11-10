@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
 import 'portal_visual_sil.dart';
+import 'sil_workspace.dart';
 import 'sil_main_clinical_panel.dart';
 
 /// Estación de trabajo integrada a Vitalia original.
@@ -921,6 +922,23 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _=>'Estado pendiente',
   };
 
+  Widget _orderStatusLabel(dynamic status) {
+    final (background, foreground) = switch (status) {
+      'report_attached' => (const Color(0xFFFFF0D5), const Color(0xFF75430C)),
+      'report_published' => (const Color(0xFFDFEFE8), const Color(0xFF145341)),
+      _ => (ColoresVitalia.azulSuave, ColoresVitalia.azulActivo),
+    };
+    return DecoratedBox(
+      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(6)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Text(_status(status), style: TextStyle(
+          fontSize: 12, color: foreground, fontWeight: FontWeight.w600,
+        )),
+      ),
+    );
+  }
+
   Widget _ordersPanel({bool recent = false}){
     final list=recent ? _orders.take(5) : _orderPage;
     return _section(
@@ -988,8 +1006,14 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                   Expanded(child:Column(
                     crossAxisAlignment:CrossAxisAlignment.start,
                     children:[
-                      Text(_orderLabel(order),style:
-                        const TextStyle(fontWeight:FontWeight.w700)),
+                      Wrap(
+                        spacing: 8, runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(_folio(order), style: const TextStyle(fontWeight: FontWeight.w800)),
+                          _orderStatusLabel(order['status']),
+                        ],
+                      ),
                       const SizedBox(height:4),
                       Text((order['examCodes'] as List? ?? []).join(' · '),
                         style:const TextStyle(
@@ -1179,9 +1203,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         _action('Registrar orden',Icons.add_circle_outline,_createOrder),
       ]);
 
-  Widget _requestIntake() => _section('Recibir solicitud médica',
-        'Lee la solicitud para preparar una orden nueva o adjúntala a una orden existente.',
-        Icons.note_add_outlined,[
+  Widget _requestIntake() => SilWorkspaceColumns(
+    primary: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _section('1. Documento de derivación',
+        'Carga una solicitud o retoma un PDF guardado en el laboratorio.',
+        Icons.description_outlined, [
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Vincular a una orden existente'),
@@ -1230,6 +1256,13 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             (_pendingRequestId==null?'Seleccionar solicitud PDF':
               'Seleccionar un PDF distinto')),
         ),
+        const SizedBox(height:8),
+        OutlinedButton.icon(
+          onPressed: _busy || _medicalRequestFile == null ? null :
+            () => _execute(_previewMedicalRequest, showNotice: false),
+          icon: const Icon(Icons.document_scanner_outlined),
+          label: const Text('Leer PDF y sugerir datos'),
+        ),
         if(!_attachToExistingOrder)...[
           const SizedBox(height:8),
           OutlinedButton.icon(
@@ -1251,6 +1284,57 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           ],
         ],
         const SizedBox(height:12),
+        if (_requestPreviewNotice != null) Text(_requestPreviewNotice!),
+        if(_requestIdentitySuggestions.values.any((v)=>v is String&&v.isNotEmpty))
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            initiallyExpanded: true,
+            title: const Text('Datos identificatorios sugeridos por el PDF'),
+            subtitle: const Text('Coteja estas sugerencias con el documento.'),
+            children: [
+              for(final field in <(String,String)>[
+                ('fullName','Nombre completo'),('identifier','RUT/RUN'),
+                ('birthDate','Fecha de nacimiento'),('email','Correo'),
+                ('phone','Teléfono'),('sex','Sexo'),
+              ])
+                if(_requestIdentitySuggestions[field.$1] case final String value)
+                  ListTile(
+                    dense:true,
+                    title:Text(field.$2),
+                    subtitle:SelectableText(value),
+                  ),
+            ],
+          ),
+      ]),
+      _section('2. Datos de la solicitud',
+        'Coteja y ajusta los datos y las prestaciones antes de registrar.',
+        Icons.playlist_add_check_outlined, [
+        if (!_attachToExistingOrder) ...[
+          const Text('Prestaciones solicitadas'),
+          Wrap(spacing: 8, children: [
+            for (final (code,label) in _catalog)
+              FilterChip(
+                label: Text(label),
+                selected: _requestExams.contains(code),
+                onSelected: _busy ? null : (selected) => setState(() {
+                  if (selected) {
+                    _requestExams.add(code);
+                  } else {
+                    _requestExams.remove(code);
+                  }
+                }),
+              ),
+          ]),
+        ],
+        _field(_requestReference,'Referencia de solicitud'),
+        _field(_requestPrescriber,'Profesional solicitante'),
+        _field(_requestDate,'Fecha de solicitud (AAAA-MM-DD)'),
+      ]),
+    ]),
+    secondary: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _section('3. Identificación del paciente',
+        'Comprueba a quién pertenece la solicitud.',
+        Icons.badge_outlined, [
         if (_attachToExistingOrder)
           DropdownButtonFormField<String>(
             value:_requestOrderId,
@@ -1277,10 +1361,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             child:Text('Paciente de esta derivación',
               style:TextStyle(fontWeight:FontWeight.w700)),
           ),
-          const Text('Si todavía no tiene cuenta, verifica su identidad y '
-              'emite una invitación. El PDF y sus sugerencias permanecen en '
-              'esta pantalla mientras el operador continúa la recepción. '
-              'No se registra la orden hasta que el paciente active el acceso.'),
+          const Text('Busca la cuenta activada. Si aún no existe, '
+              'verifica la identidad y emite una invitación.'),
           const SizedBox(height:10),
           _field(_requestInviteEmail,'Correo del paciente',onChanged: (_) => setState(() {
             _requestPatient.clear();
@@ -1334,51 +1416,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             ],
           ),
         ],
-        const SizedBox(height:10),
-        OutlinedButton.icon(
-          onPressed: _busy || _medicalRequestFile == null ? null :
-            () => _execute(_previewMedicalRequest, showNotice: false),
-          icon: const Icon(Icons.document_scanner_outlined),
-          label: const Text('Leer PDF y sugerir datos'),
-        ),
-        if (_requestPreviewNotice != null) Text(_requestPreviewNotice!),
-        if(_requestIdentitySuggestions.values.any((v)=>v is String&&v.isNotEmpty))
-          _section('Datos identificatorios sugeridos por el PDF',
-            'Son datos extraídos por coincidencia de rótulos. '
-            'Coteja el documento original antes de aceptarlos.',
-            Icons.badge_outlined,[
-              for(final field in <(String,String)>[
-                ('fullName','Nombre completo'),('identifier','RUT/RUN'),
-                ('birthDate','Fecha de nacimiento'),('email','Correo'),
-                ('phone','Teléfono'),('sex','Sexo'),
-              ])
-                if(_requestIdentitySuggestions[field.$1] case final String value)
-                  ListTile(
-                    dense:true,
-                    title:Text(field.$2),
-                    subtitle:SelectableText(value),
-                  ),
-            ]),
-        if (!_attachToExistingOrder) ...[
-          const Text('Prestaciones solicitadas'),
-          Wrap(spacing: 8, children: [
-            for (final (code,label) in _catalog)
-              FilterChip(
-                label: Text(label),
-                selected: _requestExams.contains(code),
-                onSelected: _busy ? null : (selected) => setState(() {
-                  if (selected) {
-                    _requestExams.add(code);
-                  } else {
-                    _requestExams.remove(code);
-                  }
-                }),
-              ),
-          ]),
-        ],
-        _field(_requestReference,'Referencia de solicitud'),
-        _field(_requestPrescriber,'Profesional solicitante'),
-        _field(_requestDate,'Fecha de solicitud (AAAA-MM-DD)'),
+      ]),
+      _section('4. Confirmación y registro',
+        'Confirma el cotejo para guardar la solicitud en una orden.',
+        Icons.fact_check_outlined, [
         CheckboxListTile(
           contentPadding:EdgeInsets.zero,
           controlAffinity:ListTileControlAffinity.leading,
@@ -1405,7 +1446,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             label:const Text('Crear orden con solicitud'),
           ),
         ),
-      ]);
+      ]),
+    ]),
+  );
 
   Widget _reportUpload() => _section('Adjuntar informe autorizado',
         'Solo se reciben PDF ya validados externamente. '
@@ -1623,77 +1666,98 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       if (_canReview)
         (_StationSection.review, Icons.fact_check_outlined, 'Revisión interna ($pending)'),
     ];
-    return SingleChildScrollView(
-      primary: false,
-      scrollDirection: Axis.horizontal,
-      child: Row(children: [
-        for (final (section, icon, label) in destinations)
-          Padding(
-            padding: const EdgeInsets.only(right: 3),
-            child: TextButton.icon(
-              onPressed: _busy ? null : () => _openSection(section),
-              style: TextButton.styleFrom(
-                foregroundColor: section == _activeSection
-                    ? const Color(0xFF11263C) : const Color(0xFF415367),
-                backgroundColor: section == _activeSection
-                    ? const Color(0xFFE5F5F3) : Colors.transparent,
-                padding: EdgeInsets.symmetric(horizontal: compact ? 9 : 12, vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              icon: compact ? const SizedBox.shrink() : Icon(icon, size: 18),
-              label: Text(label, maxLines: 1),
+    final buttons = [
+      for (final (section, icon, label) in destinations)
+        Semantics(
+          selected: section == _activeSection,
+          child: TextButton(
+            onPressed: _busy ? null : () => _openSection(section),
+            style: TextButton.styleFrom(
+              minimumSize: const Size(48, 44),
+              foregroundColor: section == _activeSection
+                  ? ColoresVitalia.azulActivo : ColoresVitalia.textoSecundario,
+              backgroundColor: section == _activeSection
+                  ? ColoresVitalia.azulSuave : Colors.transparent,
+              padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Row(
+              mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
+              children: [
+                Icon(icon, size: 18),
+                const SizedBox(width: 8),
+                Flexible(child: Text(label)),
+              ],
             ),
           ),
-      ]),
-    );
+        ),
+    ];
+    return compact
+        ? Wrap(spacing: 4, runSpacing: 4, children: buttons)
+        : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: buttons);
   }
 
   Widget _dashboard() {
     final pending = _orders.where(_isReviewable).length;
-    final published = _orders.where((order) => order['status'] == 'report_published').length;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _section('Trabajo del operador', 'Accesos del laboratorio seleccionado. '
-          'Los recuentos corresponden a las órdenes cargadas.', Icons.space_dashboard_outlined, [
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _openSection(_StationSection.requests),
-            icon: const Icon(Icons.note_add_outlined),
-            label: const Text('Recibir solicitud de exámenes'),
-          ),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _openSection(_StationSection.orders),
-            icon: const Icon(Icons.assignment_outlined),
-            label: Text('Órdenes visibles · ${_orders.length}'),
-          ),
-          if (_canReview)
-            OutlinedButton.icon(
-              onPressed: _busy ? null : () => _openSection(_StationSection.review),
-              icon: const Icon(Icons.fact_check_outlined),
-              label: Text('Informes por revisar · $pending'),
-            ),
-          Chip(label: Text('Informes publicados · $published')),
-        ]),
-      ]),
-      _ordersPanel(recent: true),
+      PortalHeroSil(
+        eyebrow: 'Estación de laboratorio',
+        title: 'Bandeja de trabajo',
+        subtitle: 'Inicia una recepción o retoma las tareas de tu laboratorio.',
+        icon: Icons.space_dashboard_outlined,
+        compact: true,
+        showLaboratoryArt: false,
+        action: FilledButton.tonalIcon(
+          onPressed: _busy ? null : () => _openSection(_StationSection.requests),
+          icon: const Icon(Icons.note_add_outlined),
+          label: const Text('Recibir solicitud de exámenes'),
+        ),
+      ),
+      const SizedBox(height: 12),
+      SilWorkspaceColumns(
+        primary: _ordersPanel(recent: true),
+        primaryFlex: 7,
+        secondaryFlex: 4,
+        secondary: _section(
+          'Cola operativa', 'Recuentos de las listas cargadas.',
+          Icons.work_outline, [
+            _queueLink(Icons.pending_actions_outlined, 'Derivaciones pendientes',
+              _pendingRequests.length, _StationSection.requests),
+            _queueLink(Icons.assignment_outlined, 'Órdenes consultadas',
+              _orders.length, _StationSection.orders),
+            if (_canReview)
+              _queueLink(Icons.fact_check_outlined, 'Informes por revisar',
+                pending, _StationSection.review),
+          ],
+        ),
+      ),
     ]);
   }
+
+  Widget _queueLink(IconData icon, String title, int count, _StationSection section) =>
+    ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, color: ColoresVitalia.azul),
+      title: Text(title),
+      subtitle: Text('$count en la lista'),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: _busy ? null : () => _openSection(section),
+    );
 
   Widget _station() {
     if (_labId == null) return const SizedBox.shrink();
     return switch (_activeSection) {
       _StationSection.dashboard => _dashboard(),
-      _StationSection.orders => LayoutBuilder(builder: (context, constraints) {
-          final forms = Column(children: [_newOrder(), _reportUpload()]);
-          final list = _ordersPanel();
-          if (constraints.maxWidth < 860) return Column(children: [forms, list]);
-          return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(flex: 6, child: forms),
-            const SizedBox(width: 14),
-            Expanded(flex: 4, child: list),
-          ]);
-        }),
+      _StationSection.orders => SilWorkspaceColumns(
+        primary: _ordersPanel(),
+        secondary: Column(children: [_newOrder(), _reportUpload()]),
+        primaryFlex: 6, secondaryFlex: 5,
+      ),
       _StationSection.requests => _requestIntake(),
-      _StationSection.patients => Column(children: [_patientDirectory(), _patientLink()]),
+      _StationSection.patients => SilWorkspaceColumns(
+        primary: _patientDirectory(), secondary: _patientLink(),
+        primaryFlex: 6, secondaryFlex: 5,
+      ),
       _StationSection.clinical => _section(
         'Muestras y resultados', 'Registra la recepción y revisa los analitos de la orden.',
         Icons.science_outlined, [
@@ -1710,115 +1774,149 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     };
   }
 
+  String get _sectionTitle => switch (_activeSection) {
+    _StationSection.dashboard => 'Panel del laboratorio',
+    _StationSection.orders => 'Gestión de órdenes',
+    _StationSection.requests => 'Recepción de derivaciones',
+    _StationSection.patients => 'Pacientes del laboratorio',
+    _StationSection.clinical => 'Seguimiento de muestras',
+    _StationSection.review => 'Revisión y publicación',
+  };
+
+  Widget _labSelector() {
+    if (_labs.isEmpty) {
+      if (_busy) return const SizedBox.shrink();
+      return Text(_admin
+          ? 'Registra un laboratorio para comenzar.'
+          : 'No tienes laboratorios asociados. Solicita acceso a administración.');
+    }
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 320),
+      child: DropdownButtonFormField<String>(
+        value: _labId,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          border: OutlineInputBorder(), labelText: 'Laboratorio', isDense: true,
+        ),
+        items: [
+          for (final lab in _labs)
+            DropdownMenuItem<String>(
+              value: lab['id'] as String,
+              child: Text(lab['displayName'] as String, overflow: TextOverflow.ellipsis),
+            ),
+        ],
+        onChanged: _busy ? null : _selectLab,
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context){
-    final roleName=_admin?'Administración':'Panel del laboratorio';
-    final compact = MediaQuery.sizeOf(context).width < 900;
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF2F6FA),
-      appBar:AppBar(
+      appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        title: Row(children: [
-          Image.asset('assets/branding/vitalia-simbolo.png',
-            width: 31, height: 31, excludeFromSemantics: true),
-          const SizedBox(width: 8),
-          const Flexible(child: Text('Vitalia Health', overflow: TextOverflow.ellipsis)),
-        ]),
-        bottom: _operator ? PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              child: _navigation(compact),
-            ),
-          ),
-        ) : null,
-        actions:[
+        title: const SilWorkspaceBrand(),
+        actions: [
           IconButton(
-            onPressed:widget.onLogout,
-            tooltip:'Cerrar sesión',
-            icon:const Icon(Icons.logout),
+            onPressed: widget.onLogout,
+            tooltip: 'Cerrar sesión',
+            icon: const Icon(Icons.logout),
           ),
         ],
       ),
-      body:SafeArea(
-        child:SingleChildScrollView(
-          padding:const EdgeInsets.all(18),
-          child:Center(
-            child:ConstrainedBox(
-              constraints:const BoxConstraints(maxWidth:1160),
-              child:Column(
-                crossAxisAlignment:CrossAxisAlignment.stretch,
-                children:[
-                  PortalHeroSil(
-                    eyebrow:'Vitalia Health · Sistema postanalítico',
-                    title:roleName,
-                    subtitle:'Órdenes, informes autorizados y publicación '
-                      'en un mismo espacio. La identidad y los permisos '
-                      'se verifican desde el backend de Vitalia.',
-                    compact:true,
-                    showLaboratoryArt:false,
-                  ),
-                  const SizedBox(height:18),
-                  if(_busy)const LinearProgressIndicator(),
-                  if(_error!=null)
-                    Padding(
-                      padding:const EdgeInsets.only(bottom:10),
-                      child:Text(_error!,
-                        style:const TextStyle(color:Colors.red)),
+      body: SafeArea(
+        child: LayoutBuilder(builder: (context, constraints) {
+          final desktopNavigation = _operator && constraints.maxWidth >= 1080;
+          final workspace = SingleChildScrollView(
+            key: ValueKey(_activeSection),
+            padding: EdgeInsets.symmetric(
+              horizontal: constraints.maxWidth < 600 ? 12 : 24,
+              vertical: 20,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1480),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_operator && !desktopNavigation) ...[
+                      _navigation(true),
+                      const SizedBox(height: 16),
+                    ],
+                    Wrap(
+                      spacing: 24,
+                      runSpacing: 14,
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Semantics(header: true, child: Text(
+                          _admin ? 'Administración' : _sectionTitle,
+                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: ColoresVitalia.texto,
+                          ),
+                        )),
+                        _labSelector(),
+                      ],
                     ),
-                  if(_notice!=null)
-                    Padding(
-                      padding:const EdgeInsets.only(bottom:10),
-                      child:Text(_notice!,
-                        style:const TextStyle(color:ColoresVitalia.verde)),
+                    const SizedBox(height: 14),
+                    if (_busy) const LinearProgressIndicator(
+                      semanticsLabel: 'Cargando operación',
                     ),
-                  _section('Laboratorio activo',
-                    'Las operaciones solo afectan al laboratorio seleccionado.',
-                    Icons.local_hospital_outlined,[
-                    if(_labs.isEmpty)
-                      const Text('No tienes laboratorios asociados. '
-                        'Solicita autorización a la administración.')
-                    else
-                      DropdownButtonFormField<String>(
-                        value:_labId,
-                        isExpanded:true,
-                        decoration:const InputDecoration(
-                          border:OutlineInputBorder(),labelText:'Laboratorio',
+                    if (_error != null || _notice != null)
+                      Semantics(
+                        liveRegion: true,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            _error ?? _notice!,
+                            style: TextStyle(color: _error != null
+                                ? Theme.of(context).colorScheme.error
+                                : ColoresVitalia.verde),
+                          ),
                         ),
-                        items:[
-                          for(final lab in _labs)
-                            DropdownMenuItem<String>(
-                              value:lab['id'] as String,
-                              child:Text(lab['displayName'] as String,
-                                overflow:TextOverflow.ellipsis),
-                            ),
-                        ],
-                        onChanged:_busy?null:_selectLab,
                       ),
-                  ]),
-                  if (_operator) _station(),
-                  if (_admin) ...[
-                    _adminPanel(),
-                    if (_labId != null) _ordersPanel(),
-                  ],
-                  const SizedBox(height:14),
-                  const Text(
-                    'Vitalia Health · Entorno de integración. '
-                    'No utilizar datos clínicos reales antes de aprobar '
-                    'seguridad, procedimientos y cumplimiento.',
-                    textAlign:TextAlign.center,
-                    style:TextStyle(
-                      fontSize:12,color:ColoresVitalia.textoSecundario,
+                    if (_operator) _station(),
+                    if (_admin)
+                      if (_labId == null)
+                        _adminPanel()
+                      else
+                        SilWorkspaceColumns(
+                          primary: _adminPanel(), secondary: _ordersPanel(),
+                          primaryFlex: 5, secondaryFlex: 6,
+                        ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Vitalia Health · Entorno de integración. '
+                      'No utilizar datos clínicos reales antes de aprobar '
+                      'seguridad, procedimientos y cumplimiento.',
+                      style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+          if (!desktopNavigation) return workspace;
+          return Row(children: [
+            SizedBox(
+              width: 226,
+              child: ColoredBox(
+                color: Colors.white,
+                child: SizedBox.expand(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(12, 24, 12, 12),
+                    child: _navigation(false),
+                  ),
+                ),
+              ),
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(child: workspace),
+          ]);
+        }),
       ),
     );
   }

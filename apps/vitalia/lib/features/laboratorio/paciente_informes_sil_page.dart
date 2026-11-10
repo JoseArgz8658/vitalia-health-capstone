@@ -6,6 +6,7 @@ import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
 import 'clave_recuperacion_sil_dialog.dart';
 import 'resumen_informes_sil_page.dart';
+import 'sil_workspace.dart';
 import 'portal_visual_sil.dart';
 import 'portal_ayuda_sil.dart';
 
@@ -1202,62 +1203,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             ),
           ),
         ),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(9),
-              decoration: BoxDecoration(
-                color: ColoresVitalia.azulSuave,
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: const Icon(
-                Icons.favorite_outline,
-                color: ColoresVitalia.azul,
-                size: 24,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Text(
-                narrow ? 'Vitalia' : 'Vitalia Health',
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: narrow ? 18 : 21,
-                  color: ColoresVitalia.texto,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-            if (width >= 1700) ...[
-              const SizedBox(width: 16),
-              Container(width: 1, height: 27, color: ColoresVitalia.borde),
-              const SizedBox(width: 16),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'PORTAL PRIVADO',
-                    style: TextStyle(
-                      color: ColoresVitalia.azul,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1,
-                    ),
-                  ),
-                  Text(
-                    'Paciente',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: ColoresVitalia.textoSecundario,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
+        title: const SilWorkspaceBrand(),
         actions: [
           if (fullAccountActions || mediumAccountActions) ...[
             TextButton.icon(
