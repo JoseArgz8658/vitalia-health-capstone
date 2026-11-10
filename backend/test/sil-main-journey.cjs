@@ -141,8 +141,8 @@ async function reach(page, locator, description) {
 async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
   const name='VH-'+String(order.orderNumber).padStart(6,'0');
   const endpoint='/api/sil/main'+base+'/orders/'+order.id+'/report';
-  const stage=async (account, task)=>{
-    const page=await browser.newPage({viewport:{width:1440,height:1150}});
+  const stage=async (account, task, viewport={width:1440,height:1150})=>{
+    const page=await browser.newPage({viewport});
     try {
       await signIn(page,account,'#/laboratorio');
       await page.getByRole('button',{name:'Cerrar sesión'}).waitFor();
@@ -189,26 +189,27 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
     }
   };
 
-  return stage('uploader',async ({page,id,button,click,select,confirm})=>{
-    const captures=process.env.VITALIA_JOURNEY_SCREENSHOTS;
+  const captures=process.env.VITALIA_JOURNEY_SCREENSHOTS;
+  await stage('uploader',async ({page,button})=>{
     const receive=button('Recibir solicitud');
     await receive.waitFor();
-    const desktop=await receive.boundingBox();
-    assert.ok(desktop.x+desktop.width<=226,'Navegación lateral visible en escritorio');
-    if(captures)await page.screenshot({path:resolve(captures,'operador-escritorio.png')});
-
-    await page.setViewportSize({width:390,height:844});
-    await receive.waitFor();
     const mobile=await receive.boundingBox();
-    assert.ok(mobile.x>=0 && mobile.x+mobile.width<=390,'Recepción visible en móvil');
+    assert.ok(mobile && mobile.x>=0 && mobile.x+mobile.width<=390,'Recepción visible en móvil');
     await receive.click();
     const pdfReader=button('Leer PDF y sugerir datos');
-    const patientSection=page.getByText('3. Identificación del paciente',{exact:true});
     await pdfReader.waitFor();
     assert.equal(await pdfReader.isEnabled(),false,'Primero se debe seleccionar un PDF');
     if(captures)await page.screenshot({path:resolve(captures,'recepcion-movil.png')});
-    await page.setViewportSize({width:1440,height:1150});
-    await patientSection.waitFor();
+  },{width:390,height:844});
+
+  return stage('uploader',async ({page,id,button,click,select,confirm})=>{
+    const receive=button('Recibir solicitud');
+    await receive.waitFor();
+    const desktop=await receive.boundingBox();
+    assert.ok(desktop && desktop.x+desktop.width<=226,'Navegación lateral visible en escritorio');
+    if(captures)await page.screenshot({path:resolve(captures,'operador-escritorio.png')});
+    await click(receive,'Recibir solicitud');
+    await page.getByText('3. Identificación del paciente',{exact:true}).waitFor();
     if(captures)await page.screenshot({path:resolve(captures,'recepcion-escritorio.png')});
     console.log('Microsoft Edge: navegación y recepción verificadas a 390 y 1440 px.');
     await click(button('Órdenes'),'Órdenes');
