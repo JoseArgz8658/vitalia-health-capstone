@@ -1333,6 +1333,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             ),
               ),
             ),
+            ),
           ],
         ),
       ),
