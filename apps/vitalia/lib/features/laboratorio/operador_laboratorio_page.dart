@@ -7,6 +7,7 @@ import '../../core/tema_vitalia.dart';
 import 'directorio_pacientes_sil.dart';
 import 'acceso_portal_paciente_demo.dart';
 import 'nuevo_paciente_sil_dialog.dart';
+import 'operator_design.dart';
 
 enum _OperatorSection {
   dashboard,
@@ -1223,48 +1224,40 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     });
   }
 
-  Widget _dashboardHeader() {
-    final text = Theme.of(context).textTheme;
-    return Container(
-      padding: const EdgeInsets.all(21),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEAF3F5),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFD6E6EA)),
+  Widget _dashboardHeader() => OperatorHero(
+    eyebrow: 'Estación del operador',
+    title: 'Panel del laboratorio',
+    subtitle: 'Gestiona solicitudes, sigue las órdenes y prepara informes de forma segura desde un solo lugar.',
+    actions: [
+      FilledButton.icon(
+        onPressed: _busy ? null : () => _goTo(_OperatorSection.request),
+        icon: const Icon(Icons.note_add_outlined),
+        label: const Text('Recibir solicitud de exámenes'),
+        style: FilledButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: OperatorPalette.navy,
+        ),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('ESTACIÓN DEL OPERADOR',
-          style: text.labelMedium?.copyWith(
-            color: ColoresVitalia.verde,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.2,
-          )),
-        const SizedBox(height: 7),
-        Text('Panel del laboratorio',
-          style: text.headlineMedium?.copyWith(
-            color: _navy, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 6),
-        Text('Recepción, órdenes y revisión interna en un mismo espacio de trabajo.',
-          style: text.bodyMedium?.copyWith(
-            color: ColoresVitalia.textoSecundario)),
-        const SizedBox(height: 16),
-        Wrap(spacing: 10, runSpacing: 8, children: [
-          FilledButton.icon(
-            onPressed: _busy ? null : () => _goTo(_OperatorSection.request),
-            icon: const Icon(Icons.note_add_outlined),
-            label: const Text('Recibir solicitud de exámenes'),
-          ),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _openQueue('results_recorded'),
-            icon: const Icon(Icons.fact_check_outlined),
-            label: Text(_canReview
-                ? 'Por revisar · $_pendingReviews'
-                : 'Pendientes de revisión · $_pendingReviews'),
-          ),
-        ]),
-      ]),
-    );
-  }
+      OutlinedButton.icon(
+        onPressed: _busy ? null : () => _goTo(_OperatorSection.manualOrder),
+        icon: const Icon(Icons.post_add_outlined),
+        label: const Text('Crear orden manual'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          side: const BorderSide(color: Color(0xFFA5D0DC)),
+        ),
+      ),
+      OutlinedButton.icon(
+        onPressed: _busy ? null : () => _openQueue(null),
+        icon: const Icon(Icons.view_list_outlined),
+        label: const Text('Ver órdenes'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          side: const BorderSide(color: Color(0xFFA5D0DC)),
+        ),
+      ),
+    ],
+  );
 
   /// Una ruta visual que hace reconocible la secuencia de trabajo.
   /// Ningún estado posterior se habilita automáticamente por extracción IA.
@@ -1349,79 +1342,237 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
     if (summary == null) {
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _dashboardHeader(),
-        const SizedBox(height: 16),
+        const SizedBox(height: 18),
         Text(_loading
             ? 'Cargando indicadores del laboratorio…'
-            : 'Actualiza los datos para consultar la bandeja del laboratorio.'),
+            : 'Actualiza los datos para consultar la estación de trabajo.'),
       ]);
     }
     int count(String key) => (summary[key] as num?)?.toInt() ?? 0;
-    final queues = [
+    final metrics = <({
+      IconData icon, String label, String key,
+      String? status, Color accent, Color tint,
+    })>[
       (
-        Icons.undo_outlined,
-        'Devueltas para corregir',
-        'returned',
-        'review_rejected'
+        icon: Icons.undo_outlined, label: 'Devueltas para corregir',
+        key: 'returned', status: 'review_rejected',
+        accent: const Color(0xFFB54B5D), tint: ColoresVitalia.errorSuave,
       ),
       (
-        Icons.inventory_2_outlined,
-        'Pendientes de muestra',
-        'pendingSample',
-        'registered'
+        icon: Icons.inventory_2_outlined, label: 'Pendientes de muestra',
+        key: 'pendingSample', status: 'registered',
+        accent: const Color(0xFF99630F), tint: ColoresVitalia.advertenciaSuave,
       ),
       (
-        Icons.science_outlined,
-        'Pendientes de resultados',
-        'pendingResults',
-        'sampled'
+        icon: Icons.biotech_outlined, label: 'Pendientes de resultados',
+        key: 'pendingResults', status: 'sampled',
+        accent: OperatorPalette.blue, tint: ColoresVitalia.azulSuave,
       ),
       (
-        Icons.picture_as_pdf_outlined,
-        'Informes por publicar',
-        'attached',
-        'report_attached'
+        icon: Icons.fact_check_outlined, label: 'Pendientes de revisión',
+        key: 'pendingReview', status: 'results_recorded',
+        accent: const Color(0xFF7454A8), tint: ColoresVitalia.pendienteSuave,
+      ),
+      (
+        icon: Icons.picture_as_pdf_outlined, label: 'Informes por publicar',
+        key: 'attached', status: 'report_attached',
+        accent: OperatorPalette.teal, tint: ColoresVitalia.verdeSuave,
+      ),
+      (
+        icon: Icons.check_circle_outline, label: 'Informes disponibles',
+        key: 'published', status: 'report_published',
+        accent: OperatorPalette.teal, tint: ColoresVitalia.verdeSuave,
       ),
     ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _dashboardHeader(),
-        const SizedBox(height: 16),
-        _workflowMap(summary),
-        const SizedBox(height: 16),
-        _panel(
-          'Trabajo del operador',
-          'Abre una bandeja para ver las órdenes que requieren esa acción.',
-          LayoutBuilder(builder: (context, constraints) {
-            final columns = constraints.maxWidth >= 860
-                ? 4
-                : constraints.maxWidth >= 300
-                    ? 2
-                    : 1;
-            final width = (constraints.maxWidth - (columns - 1) * 12) / columns;
-            return Wrap(spacing: 12, runSpacing: 12, children: [
-              for (final (icon, title, key, status) in queues)
-                SizedBox(
-                    width: width,
-                    child: _queueCard(icon, title, count(key), status)),
-            ]);
-          }),
-          icon: Icons.pending_actions,
+    Widget metricGrid() => LayoutBuilder(builder: (context, constraints) {
+      final columns = constraints.maxWidth >= 1130 ? 6
+          : constraints.maxWidth >= 760 ? 3
+          : constraints.maxWidth >= 450 ? 2 : 1;
+      const gap = 11.0;
+      final tileWidth = (constraints.maxWidth - (columns - 1) * gap) / columns;
+      return Wrap(spacing: gap, runSpacing: gap, children: [
+        for (final item in metrics)
+          SizedBox(
+            width: tileWidth,
+            child: OperatorMetricCard(
+              icon: item.icon,
+              label: item.label,
+              count: count(item.key),
+              accent: item.accent,
+              tint: item.tint,
+              onTap: _busy ? null : () => _openQueue(item.status),
+            ),
+          ),
+      ]);
+    });
+    final total = count('total');
+    final activity = _panel(
+      'Distribución de órdenes',
+      'Estado actual de las órdenes registradas en el laboratorio.',
+      Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        for (final item in metrics)
+          OperatorDistributionBar(
+            label: item.label,
+            count: count(item.key),
+            total: total,
+            color: item.accent,
+          ),
+        const SizedBox(height: 3),
+        Row(children: [
+          const Icon(Icons.assignment_outlined, size: 18,
+              color: OperatorPalette.blue),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Total de órdenes')),
+          Text('$total', style: const TextStyle(
+            fontWeight: FontWeight.w800,
+            color: OperatorPalette.navy,
+          )),
+        ]),
+      ]),
+      icon: Icons.bar_chart_outlined,
+    );
+    final queue = _panel(
+      'Colas de trabajo',
+      'Abre las tareas que requieren atención.',
+      Column(children: [
+        OperatorActionTile(
+          icon: Icons.fact_check_outlined,
+          label: 'Revisar resultados',
+          subtitle: _canReview
+              ? 'Cotejo y decisión del operador autorizado'
+              : 'Consulta de órdenes pendientes de revisión',
+          count: count('pendingReview'),
+          onTap: _busy ? null : () => _openQueue('results_recorded'),
+        ),
+        const SizedBox(height: 9),
+        OperatorActionTile(
+          icon: Icons.inventory_2_outlined,
+          label: 'Recibir muestras',
+          subtitle: 'Continúa las órdenes registradas',
+          count: count('pendingSample'),
+          accent: const Color(0xFF99630F),
+          background: ColoresVitalia.advertenciaSuave,
+          onTap: _busy ? null : () => _openQueue('registered'),
+        ),
+        const SizedBox(height: 9),
+        OperatorActionTile(
+          icon: Icons.picture_as_pdf_outlined,
+          label: 'Gestionar informes',
+          subtitle: 'PDF externos pendientes de publicación',
+          count: count('attached'),
+          accent: OperatorPalette.teal,
+          background: ColoresVitalia.verdeSuave,
+          onTap: _busy ? null : () => _openQueue('report_attached'),
+        ),
+      ]),
+      icon: Icons.layers_outlined,
+    );
+    final shortcuts = _panel(
+      'Acciones rápidas',
+      'Continúa donde lo necesites.',
+      Column(children: [
+        OperatorActionTile(
+          icon: Icons.note_add_outlined,
+          label: 'Recibir solicitud',
+          subtitle: 'Adjunta un PDF y coteja la identidad',
+          onTap: _busy ? null : () => _goTo(_OperatorSection.request),
+        ),
+        const SizedBox(height: 9),
+        OperatorActionTile(
+          icon: Icons.post_add_outlined,
+          label: 'Crear orden manual',
+          subtitle: 'Vincula prestaciones y un paciente',
+          onTap: _busy ? null : () => _goTo(_OperatorSection.manualOrder),
+        ),
+        const SizedBox(height: 9),
+        OperatorActionTile(
+          icon: Icons.people_outline,
+          label: 'Directorio de pacientes',
+          subtitle: 'Busca y consulta cuentas DEMO',
+          onTap: _busy ? null : () => _goTo(_OperatorSection.patient),
+        ),
+      ]),
+      icon: Icons.bolt_outlined,
+    );
+    final operations = _panel(
+      'Estado operativo',
+      'Indicadores recibidos desde el servicio SIL.',
+      Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        OperatorInfoNote(
+          icon: Icons.cloud_done_outlined,
+          title: 'Indicadores actualizados',
+          description: 'La información corresponde al último resultado recibido del servidor.',
+          color: OperatorPalette.teal,
+          background: ColoresVitalia.verdeSuave,
         ),
         const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 4, children: [
-          ActionChip(
-            label: Text('Informes disponibles · ${count('published')}'),
-            avatar: const Icon(Icons.check_circle_outline, size: 17),
-            onPressed: _busy ? null : () => _openQueue('report_published'),
-          ),
-          ActionChip(
-            label: Text('Total de órdenes · ${count('total')}'),
-            avatar: const Icon(Icons.assignment_outlined, size: 17),
-            onPressed: _busy ? null : () => _openQueue(null),
-          ),
-        ]),
-        const SizedBox(height: 16),
+        OperatorInfoNote(
+          icon: Icons.verified_user_outlined,
+          title: 'Revisión humana obligatoria',
+          description: 'La extracción automática no autoriza resultados ni publica informes.',
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: _busy || _loading ? null : () => _run(_refreshAll),
+          icon: const Icon(Icons.refresh_outlined),
+          label: const Text('Actualizar indicadores'),
+        ),
+      ]),
+      icon: Icons.health_and_safety_outlined,
+    );
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      _dashboardHeader(),
+      const SizedBox(height: 14),
+      metricGrid(),
+      const SizedBox(height: 16),
+      LayoutBuilder(builder: (context, constraints) {
+        if (constraints.maxWidth < 1000) {
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            activity,
+            const SizedBox(height: 13),
+            queue,
+            const SizedBox(height: 13),
+            shortcuts,
+            const SizedBox(height: 13),
+            operations,
+          ]);
+        }
+        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(flex: 7, child: Column(children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: activity),
+              const SizedBox(width: 13),
+              Expanded(child: queue),
+            ]),
+            const SizedBox(height: 13),
+            _panel(
+              'Actividad reciente',
+              'Últimas órdenes ingresadas al laboratorio.',
+              Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                _orderList(recent: true),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _busy ? null : () => _openQueue(null),
+                    icon: const Icon(Icons.arrow_forward_outlined),
+                    label: const Text('Ver todas las órdenes'),
+                  ),
+                ),
+              ]),
+              icon: Icons.history_outlined,
+            ),
+          ])),
+          const SizedBox(width: 14),
+          Expanded(flex: 3, child: Column(children: [
+            shortcuts,
+            const SizedBox(height: 13),
+            operations,
+          ])),
+        ]);
+      }),
+      if (MediaQuery.sizeOf(context).width < 1000) ...[
+        const SizedBox(height: 13),
         _panel(
           'Actividad reciente',
           'Últimas órdenes ingresadas al laboratorio.',
@@ -1436,10 +1587,10 @@ class _OperadorLaboratorioPageState extends State<OperadorLaboratorioPage> {
               ),
             ),
           ]),
-          icon: Icons.history,
+          icon: Icons.history_outlined,
         ),
       ],
-    );
+    ]);
   }
 
   Widget _ordersView() {
