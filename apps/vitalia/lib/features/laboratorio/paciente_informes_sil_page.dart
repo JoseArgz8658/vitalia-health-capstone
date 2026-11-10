@@ -44,11 +44,14 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
   String? _chatError;
   late Future<Map<String, dynamic>> _profileRequest;
   final _reportsAnchor = GlobalKey();
+  final _pageScroll = ScrollController();
+  bool _reportsTabSelected = false;
 
   @override
   void dispose() {
     _question.dispose();
     _filter.dispose();
+    _pageScroll.dispose();
     super.dispose();
   }
 
@@ -1093,7 +1096,17 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         },
       );
 
+  void _scrollToTop() {
+    if (mounted) setState(() => _reportsTabSelected = false);
+    if (_pageScroll.hasClients) {
+      _pageScroll.animateTo(0,
+        duration: const Duration(milliseconds: 330),
+        curve: Curves.easeOutCubic);
+    }
+  }
+
   void _scrollToReports() {
+    if (mounted) setState(() => _reportsTabSelected = true);
     final destination = _reportsAnchor.currentContext;
     if (destination != null) {
       Scrollable.ensureVisible(
@@ -1166,10 +1179,6 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     final theme = Theme.of(context);
     final width = MediaQuery.sizeOf(context).width;
     final narrow = width < 600;
-    // El AppBar tiene menos espacio útil que el ancho total de pantalla.
-    // Evitamos mostrar todas las etiquetas en escritorios intermedios.
-    final fullAccountActions = width >= 1700;
-    final mediumAccountActions = width >= 1120 && !fullAccountActions;
     final query = _filter.text.trim().toLowerCase();
     final visibleReports = _reports
         .where((report) =>
@@ -1205,51 +1214,51 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         ),
         title: const SilWorkspaceBrand(),
         actions: [
-          if (fullAccountActions || mediumAccountActions) ...[
-            TextButton.icon(
-              onPressed: _openProfile,
-              icon: const Icon(Icons.person_outline, size: 18),
-              label: const Text('Mi perfil'),
-            ),
-            TextButton.icon(
-              onPressed: _loading ? null : _refresh,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Actualizar informes'),
-            ),
-          ],
-          if (fullAccountActions) ...[
-            TextButton.icon(
-                onPressed: _openRecovery,
-                icon: const Icon(Icons.key_outlined, size: 18),
-                label: const Text('Recuperación'),
-              ),
-            TextButton.icon(
-              onPressed: () => PortalAyudaSil.preguntasFrecuentes(context),
-              icon: const Icon(Icons.help_outline, size: 18),
-              label: const Text('Ayuda'),
-            ),
-          ] else
-            _accountMenu(
-              includeProfileAndRefresh: !mediumAccountActions,
-            ),
+          IconButton(
+            tooltip: 'Actualizar informes',
+            onPressed: _loading ? null : _refresh,
+            icon: const Icon(Icons.refresh_outlined),
+          ),
+          _accountMenu(),
+          IconButton(
+            tooltip: 'Cerrar sesión',
+            onPressed: widget.onLogout,
+            icon: const Icon(Icons.logout_outlined),
+          ),
           const SizedBox(width: 6),
-          if (fullAccountActions)
-            TextButton.icon(
-              onPressed: widget.onLogout,
-              icon: const Icon(Icons.logout_outlined, size: 18),
-              label: const Text('Cerrar sesión'),
-            )
-          else
-            IconButton(
-              tooltip: 'Cerrar sesión',
-              onPressed: widget.onLogout,
-              icon: const Icon(Icons.logout_outlined),
-            ),
-          const SizedBox(width: 10),
         ],
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
+        child: Column(
+          children: [
+            SilWorkspaceTopNavigation(
+              label: 'Navegación del paciente',
+              tabs: [
+                SilWorkspaceTab(
+                  label: 'Inicio', icon: Icons.home_outlined,
+                  selected: !_reportsTabSelected,
+                  onPressed: _scrollToTop,
+                ),
+                SilWorkspaceTab(
+                  label: 'Mis informes', icon: Icons.description_outlined,
+                  selected: _reportsTabSelected,
+                  onPressed: _scrollToReports,
+                ),
+                SilWorkspaceTab(
+                  label: 'Explorar resultados', icon: Icons.query_stats_outlined,
+                  selected: false,
+                  onPressed: _reports.isEmpty ? null : () => _openOverview(),
+                ),
+                SilWorkspaceTab(
+                  label: 'Ayuda', icon: Icons.help_outline,
+                  selected: false,
+                  onPressed: () => PortalAyudaSil.preguntasFrecuentes(context),
+                ),
+              ],
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                controller: _pageScroll,
           padding: EdgeInsets.symmetric(
             horizontal: narrow ? 14 : 25,
             vertical: narrow ? 17 : 26,
@@ -1322,7 +1331,9 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 ],
               ),
             ),
-          ),
+              ),
+            ),
+          ],
         ),
       ),
     );
