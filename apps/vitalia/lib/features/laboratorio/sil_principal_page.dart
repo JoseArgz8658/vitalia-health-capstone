@@ -7,6 +7,7 @@ import '../../core/tema_vitalia.dart';
 import 'sil_workspace.dart';
 import 'sil_main_clinical_panel.dart';
 import 'operator_design.dart';
+import 'operator_guided_flow.dart';
 
 /// Estación de trabajo integrada a Vitalia original.
 /// Sin simuladores ni entidades ficticias de laboratorio.
@@ -42,9 +43,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   int _patientOffset = 0;
   bool _morePatients = false;
   String _activePatientSearch = '';
-  final _patientAccount = TextEditingController();
   final _evidence = TextEditingController();
   final _orderPatient = TextEditingController();
+  final _orderPatientSearch = TextEditingController();
+  Map<String,dynamic>? _manualPatient;
+  String? _patientInviteStatus;
   final _requestPatient = TextEditingController();
   final _requestInviteEmail = TextEditingController();
   final _requestIdentityEvidence = TextEditingController();
@@ -127,7 +130,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   @override
   void dispose(){
     for(final ctrl in [
-      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_patientAccount,_evidence,_orderPatient,
+      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_evidence,_orderPatient,_orderPatientSearch,
       _requestPatient,_requestInviteEmail,_requestIdentityEvidence,
       _requestPrescriber,_requestReference,_requestDate,
       _reportProfessional,_reportReference,_reportDate,
@@ -300,12 +303,16 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _clinicalOrder = null;
     _ordersPatient = null;
     _orderSearch.clear();
+    _orderPatient.clear();
+    _orderPatientSearch.clear();
+    _manualPatient = null;
+    _patientInviteStatus = null;
     _activeOrderSearch = '';
     _orderStatus = '';
     _orderOffset = 0;
     _moreOrders = false;
     for (final controller in [
-      _patientAccount, _invitedPatientEmail, _evidence, _orderPatient, _requestPatient,
+      _invitedPatientEmail, _evidence, _orderPatient, _requestPatient,
       _requestInviteEmail, _requestIdentityEvidence, _requestPrescriber,
       _requestReference, _requestDate, _reportProfessional, _reportReference, _reportDate,
     ]) {
@@ -470,7 +477,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       } else {
         _verifiedPatient = false;
         _evidence.clear();
-        _invitedPatientEmail.clear();
+        _patientInviteStatus = 'Invitación generada. Entrega el código por un canal verificado. La cuenta estará disponible cuando el paciente la active.';
       }
     });
     await showDialog<void>(
@@ -486,8 +493,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             SelectableText(invite['code'] as String),
             if (fromRequest) ...[
               const SizedBox(height: 12),
-              const Text('El paciente se activa en /#/activar-portal. '
-                  'Después vuelve a esta derivación y pulsa «Buscar paciente activado».'),
+              const Text('El paciente debe abrir «Activar cuenta de paciente», ingresar su correo y código, y crear una contraseña personal. Después vuelve aquí y pulsa «Buscar paciente activado». El código no se envía automáticamente por correo.'),
             ],
           ]),
         ),
@@ -525,9 +531,16 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         .where((row) => (row['email'] as String?)?.toLowerCase() == email)
         .toList();
     if (matches.length != 1 || matches.single['id'] is! String) {
-      throw const AuthFailure('No aparece una cuenta activada y vinculada a '
-          'este laboratorio. Comprueba la activación o usa Pacientes '
-          'para vincular una cuenta existente.');
+      setState(() {
+        _requestPatient.clear();
+        _requestPatientStatus =
+            'Aún no encontramos una cuenta activa para ese correo en este laboratorio. '
+            'Si es un paciente nuevo, verifica su identidad, entrega una invitación y conserva el PDF pendiente. '
+            'Cuando termine la activación, vuelve a buscarlo aquí.';
+        _requestIdentityChecked = false;
+        _requestHumanChecked = false;
+      });
+      return;
     }
     setState(() {
       _requestPatient.text = matches.single['id'] as String;
@@ -536,24 +549,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _requestIdentityChecked = false;
       _requestHumanChecked = false;
     });
-  }
-
-  Future<void> _linkPatient() async {
-    final lab=_labId,patientId=_requireUuid(_patientAccount.text);
-    final evidence=_evidence.text.trim();
-    if(lab==null||patientId==null||evidence.length<6||!_verifiedPatient){
-      throw const AuthFailure('Confirma la identidad por un medio oficial y registra su referencia.');
-    }
-    await widget.api.silMainRequest('/labs/$lab/patients',body:{
-      'patientId':patientId,
-      'identityEvidenceReference':evidence,
-      'identityVerified':true,
-    });
-    if (!mounted) return;
-    _patientAccount.clear();
-    _evidence.clear();
-    setState(()=>_verifiedPatient=false);
-    await _loadPatients(offset: 0);
   }
 
   Future<void> _createOrder() async {
@@ -566,6 +561,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       'examCodes':_codes.toList(),
     });
     _orderPatient.clear();
+    if (mounted) setState(() => _manualPatient = null);
     await _loadOrders();
   }
 
@@ -986,10 +982,21 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           ),
           const SizedBox(height: 8),
         ],
-        if(list.isEmpty)
-          const Padding(
-            padding:EdgeInsets.only(bottom:12),
-            child:Text('No hay órdenes para mostrar.'),
+        if (list.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: OperatorNextStep(
+              icon: Icons.assignment_outlined,
+              title: 'No hay órdenes para mostrar',
+              message: recent
+                  ? 'Todavía no aparecen órdenes recientes en este laboratorio. Al completar una solicitud, podrás consultarla aquí.'
+                  : 'No hay órdenes que coincidan con los filtros. Prueba otra búsqueda o comienza recibiendo una solicitud médica.',
+              action: OutlinedButton.icon(
+                onPressed: _busy ? null : () => _openSection(_StationSection.requests),
+                icon: const Icon(Icons.note_add_outlined),
+                label: const Text('Recibir una solicitud'),
+              ),
+            ),
           )
         else
           for(final order in list.take(50))
@@ -1165,49 +1172,232 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ]);
   }
 
-  Widget _patientLink() => _section('Vincular paciente verificado',
-        'Primero comprueba la identidad por el procedimiento autorizado '
-        'del laboratorio. Un correo coincidente no es verificación suficiente.',
-        Icons.person_add_alt_1_outlined,[
-        _field(_patientAccount,'UUID de la cuenta del paciente'),
-        _field(_evidence,'Referencia de verificación de identidad'),
-        CheckboxListTile(
-          contentPadding:EdgeInsets.zero,
-          value:_verifiedPatient,
-          onChanged:_busy?null:(v)=>setState(()=>_verifiedPatient=v??false),
-          title:const Text('Identidad contrastada con evidencia externa'),
-          subtitle:const Text('No almacenes datos sensibles en este campo.'),
-          controlAffinity:ListTileControlAffinity.leading,
+  Future<void> _checkPatientActivation() async {
+    final lab = _labId;
+    final email = _invitedPatientEmail.text.trim().toLowerCase();
+    if (lab == null || !email.contains('@')) {
+      throw const AuthFailure('Escribe el correo que utilizó el paciente para activar su cuenta.');
+    }
+    final query = Uri(queryParameters: {
+      'limit': '20', 'offset': '0', 'search': email,
+    }).query;
+    final data = await widget.api.silMainRequest('/labs/$lab/patients?$query');
+    if (!mounted || lab != _labId) return;
+    final found = (data['patients'] as List? ?? [])
+        .whereType<Map>()
+        .any((row) => (row['email'] as String?)?.toLowerCase() == email);
+    setState(() => _patientInviteStatus = found
+        ? 'Cuenta activa y asociada al laboratorio. Ya puedes crear una orden para este paciente.'
+        : 'Todavía no se encuentra una cuenta activada para este correo. El paciente debe ingresar su código y configurar una contraseña.');
+    if (found) await _loadPatients(offset: 0, search: email);
+  }
+
+  Widget _patientLink() => _section(
+    'Registrar paciente nuevo',
+    'El personal verifica la identidad y entrega una invitación. El paciente activa su propia cuenta.',
+    Icons.person_add_alt_1_outlined, [
+      const OperatorNextStep(
+        icon: Icons.info_outline,
+        title: '¿Cuándo se crea la cuenta?',
+        message: 'Al activar el código, el paciente configura su contraseña y Vitalia crea su cuenta vinculada a este laboratorio. No debes ingresar números internos ni crear contraseñas por él.',
+      ),
+      const SizedBox(height: 14),
+      _field(_invitedPatientEmail, 'Correo electrónico del paciente',
+          onChanged: (_) => setState(() {
+            _verifiedPatient = false;
+            _patientInviteStatus = null;
+          })),
+      _field(_evidence, 'Referencia del procedimiento de verificación',
+          onChanged: (_) => setState(() => _verifiedPatient = false)),
+      const Padding(
+        padding: EdgeInsets.only(bottom: 8),
+        child: Text('Usa un folio o referencia no sensible que permita auditar la verificación de identidad. No escribas diagnósticos ni datos clínicos aquí.'),
+      ),
+      CheckboxListTile(
+        contentPadding: EdgeInsets.zero,
+        value: _verifiedPatient,
+        onChanged: _busy ? null : (value) =>
+          setState(() => _verifiedPatient = value ?? false),
+        title: const Text('He verificado la identidad del paciente'),
+        subtitle: const Text('La coincidencia del correo por sí sola no confirma la identidad.'),
+        controlAffinity: ListTileControlAffinity.leading,
+      ),
+      FilledButton.icon(
+        onPressed: _busy || !_verifiedPatient || _evidence.text.trim().length < 6 ||
+            !_invitedPatientEmail.text.contains('@')
+            ? null : () => _execute(() => _invitePatient(), showNotice: false),
+        icon: const Icon(Icons.mark_email_read_outlined),
+        label: const Text('Emitir código de activación'),
+      ),
+      const SizedBox(height: 12),
+      if (_patientInviteStatus != null) ...[
+        OperatorNextStep(
+          icon: Icons.mark_email_read_outlined,
+          title: 'Estado de la invitación',
+          message: _patientInviteStatus!,
+          accent: OperatorPalette.teal,
+          background: ColoresVitalia.verdeSuave,
         ),
-        _action('Vincular paciente',Icons.verified_outlined,_linkPatient),
-        const Divider(),
-        _field(_invitedPatientEmail, 'Correo de un paciente nuevo'),
-        _action('Emitir código de activación', Icons.person_add_alt_1_outlined,
-          () => _invitePatient()),
-      ]);
+        const SizedBox(height: 12),
+      ],
+      OutlinedButton.icon(
+        onPressed: _busy ? null : () => _execute(_checkPatientActivation, showNotice: false),
+        icon: const Icon(Icons.person_search_outlined),
+        label: const Text('Comprobar si activó su cuenta'),
+      ),
+      const Divider(height: 28),
+      const Text('Instrucciones que puedes entregar al paciente',
+        style: TextStyle(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 8),
+      const Text('1. Abre la página «Activar cuenta de paciente» de Vitalia.'),
+      const Text('2. Ingresa el correo y el código entregado por el laboratorio.'),
+      const Text('3. Crea y confirma tu contraseña personal.'),
+      const Text('4. Informa al laboratorio que terminaste la activación.'),
+      const SizedBox(height: 8),
+      const Text('En la DEMO local, la activación está en localhost:5173/#/activar-portal. El código vence a las 24 horas y debe entregarse por un canal verificado.',
+        style: TextStyle(color: ColoresVitalia.textoSecundario, fontSize: 12)),
+    ],
+  );
 
-  Widget _newOrder() => _section('Crear orden postanalítica',
-        'Selecciona prestaciones del catálogo para un paciente '
-        'previamente vinculado al laboratorio.',
-        Icons.note_add_outlined,[
-        _field(_orderPatient,'UUID del paciente vinculado'),
-        Wrap(spacing:7,runSpacing:4,children:[
-          for(final (code,label) in _catalog)
-            FilterChip(
-              label:Text(label),
-              selected:_codes.contains(code),
-              onSelected:_busy?null:(v)=>setState((){
-                if(v){_codes.add(code);}else{_codes.remove(code);}
-              }),
+  Widget _newOrder() => _section(
+    'Crear orden sin derivación PDF',
+    'Usa esta opción solo cuando corresponda al procedimiento del laboratorio. Si recibiste una solicitud médica, comienza en «Recibir solicitud».',
+    Icons.note_add_outlined, [
+      const OperatorNextStep(
+        title: 'Antes de registrar la orden',
+        message: 'Selecciona una cuenta activa del laboratorio y verifica las prestaciones solicitadas. Nunca necesitas copiar un identificador técnico.',
+      ),
+      const SizedBox(height: 13),
+      _field(_orderPatientSearch, 'Buscar paciente por nombre o correo'),
+      OutlinedButton.icon(
+        onPressed: _busy ? null : () => _execute(
+          () => _loadPatients(offset: 0, search: _orderPatientSearch.text.trim()),
+          showNotice: false,
+        ),
+        icon: const Icon(Icons.search_outlined),
+        label: const Text('Buscar paciente'),
+      ),
+      const SizedBox(height: 12),
+      DropdownButtonFormField<String>(
+        key: ValueKey((_labId, _manualPatient?['id'], _activePatientSearch)),
+        initialValue: _manualPatient?['id'] as String?,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: 'Paciente con cuenta activada',
+          border: OutlineInputBorder(),
+        ),
+        items: [
+          if (_manualPatient != null &&
+              !_patients.any((p) => p['id'] == _manualPatient?['id']))
+            DropdownMenuItem<String>(
+              value: _manualPatient!['id'] as String,
+              child: Text(_patientName(_manualPatient!),
+                  overflow: TextOverflow.ellipsis),
             ),
-        ]),
-        const SizedBox(height:12),
-        _action('Registrar orden',Icons.add_circle_outline,_createOrder),
-      ]);
+          for (final patient in _patients)
+            DropdownMenuItem<String>(
+              value: patient['id'] as String,
+              child: Text(
+                _patientName(patient) + ' · ' + (patient['email'] as String),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+        onChanged: _busy ? null : (value) => setState(() {
+          _manualPatient = [
+            ..._patients,
+            if (_manualPatient != null) _manualPatient!,
+          ].where((p) => p['id'] == value).firstOrNull;
+          _orderPatient.text = value ?? '';
+        }),
+      ),
+      if (_patients.isEmpty)
+        const Padding(
+          padding: EdgeInsets.only(top: 9),
+          child: Text('No aparecen pacientes activos en la lista. Puedes buscar por correo o iniciar una invitación desde «Pacientes».'),
+        ),
+      const SizedBox(height: 14),
+      const Text('Seleccionar exámenes',
+          style: TextStyle(fontWeight: FontWeight.w700)),
+      const SizedBox(height: 7),
+      Wrap(spacing: 7, runSpacing: 4, children: [
+        for (final (code, label) in _catalog)
+          FilterChip(
+            label: Text(label),
+            selected: _codes.contains(code),
+            onSelected: _busy ? null : (selected) => setState(() {
+              if (selected) {
+                _codes.add(code);
+              } else {
+                _codes.remove(code);
+              }
+            }),
+          ),
+      ]),
+      const SizedBox(height: 14),
+      FilledButton.icon(
+        onPressed: _busy || _orderPatient.text.isEmpty || _codes.isEmpty
+            ? null
+            : () => _execute(_createOrder),
+        icon: const Icon(Icons.add_circle_outline),
+        label: const Text('Registrar orden'),
+      ),
+    ],
+  );
 
-  Widget _requestIntake() => SilWorkspaceColumns(
-    primary: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _section('1. Documento de derivación',
+  Widget _requestGuide() {
+    final documentReady = _medicalRequestFile != null || _pendingRequestId != null;
+    final patientReady = _attachToExistingOrder
+        ? _requestOrderId != null
+        : _requestPatient.text.isNotEmpty;
+    final reviewed = _requestIdentityChecked && _requestHumanChecked &&
+        (_attachToExistingOrder || _requestExams.isNotEmpty);
+    final current = !documentReady ? 0 : !patientReady ? 1 : !reviewed ? 2 : 3;
+    final message = !documentReady
+        ? 'Comienza cargando un PDF médico. Si existe una solicitud guardada, selecciónala en «Derivaciones pendientes».'
+        : !_attachToExistingOrder && _pendingRequestId == null
+        ? 'Archivo seleccionado. Guárdalo como derivación pendiente: así no se perderá mientras identificas al paciente o esperas que active su cuenta.'
+        : !patientReady && !_attachToExistingOrder
+        ? 'Busca al paciente por correo. Si no tiene cuenta, verifica su identidad, entrega un código de activación y conserva la derivación pendiente. Cuando active su cuenta, búscalo de nuevo.'
+        : !patientReady
+        ? 'Selecciona la orden registrada que corresponde al documento original.'
+        : !reviewed
+        ? 'Compara los datos del paciente, los exámenes, la fecha y el profesional con el PDF original; después confirma el cotejo.'
+        : 'Los datos esenciales están confirmados. Comprueba nuevamente el documento original y completa el registro.';
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      OperatorStepGuide(
+        current: current,
+        steps: const [
+          (title: 'Recibir solicitud', detail: 'Cargar o recuperar PDF',
+              icon: Icons.upload_file_outlined),
+          (title: 'Identificar paciente', detail: 'Buscar o activar cuenta',
+              icon: Icons.person_search_outlined),
+          (title: 'Revisar exámenes', detail: 'Cotejo con el original',
+              icon: Icons.fact_check_outlined),
+          (title: 'Crear orden', detail: 'Confirmar y registrar',
+              icon: Icons.assignment_turned_in_outlined),
+        ],
+      ),
+      const SizedBox(height: 11),
+      OperatorNextStep(
+        title: '¿Qué debo hacer ahora?',
+        message: message,
+        icon: documentReady ? Icons.tips_and_updates_outlined
+            : Icons.upload_file_outlined,
+      ),
+    ]);
+  }
+
+  Widget _requestIntake() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _requestGuide(),
+      const SizedBox(height: 14),
+      SilWorkspaceColumns(
+        primary: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+      _section('1. Recibir la solicitud médica',
         'Carga una solicitud o retoma un PDF guardado en el laboratorio.',
         Icons.description_outlined, [
         SwitchListTile(
@@ -1308,33 +1498,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             ],
           ),
       ]),
-      _section('2. Datos de la solicitud',
-        'Coteja y ajusta los datos y las prestaciones antes de registrar.',
-        Icons.playlist_add_check_outlined, [
-        if (!_attachToExistingOrder) ...[
-          const Text('Prestaciones solicitadas'),
-          Wrap(spacing: 8, children: [
-            for (final (code,label) in _catalog)
-              FilterChip(
-                label: Text(label),
-                selected: _requestExams.contains(code),
-                onSelected: _busy ? null : (selected) => setState(() {
-                  if (selected) {
-                    _requestExams.add(code);
-                  } else {
-                    _requestExams.remove(code);
-                  }
-                }),
-              ),
-          ]),
-        ],
-        _field(_requestReference,'Referencia de solicitud'),
-        _field(_requestPrescriber,'Profesional solicitante'),
-        _field(_requestDate,'Fecha de solicitud (AAAA-MM-DD)'),
-      ]),
-    ]),
-    secondary: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _section('3. Identificación del paciente',
+      _section('2. Identificar al paciente',
         'Comprueba a quién pertenece la solicitud.',
         Icons.badge_outlined, [
         if (_attachToExistingOrder)
@@ -1389,8 +1553,13 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           OutlinedButton.icon(
             // La invitación debe estar disponible tanto para un PDF local
             // como para una derivación pendiente recuperada de PostgreSQL.
-            onPressed:_busy||(_medicalRequestFile==null&&_pendingRequestId==null)
-              ?null:()=>_execute(()=>_invitePatient(fromRequest:true),showNotice:false),
+            onPressed: _busy ||
+                (_medicalRequestFile == null && _pendingRequestId == null) ||
+                !_requestPatientVerified ||
+                _requestIdentityEvidence.text.trim().length < 6 ||
+                !_requestInviteEmail.text.contains('@')
+                ? null : () => _execute(
+                    () => _invitePatient(fromRequest: true), showNotice: false),
             icon:const Icon(Icons.mark_email_read_outlined),
             label:const Text('Emitir invitación de paciente'),
           ),
@@ -1406,20 +1575,46 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               child:Text(_requestPatientStatus!,
                 style:const TextStyle(color:ColoresVitalia.azul)),
             ),
-          ExpansionTile(
-            tilePadding:EdgeInsets.zero,
-            title:const Text('Seleccionar paciente por identificador (avanzado)'),
-            children:[
-              _field(_requestPatient,'UUID del paciente vinculado',
-                onChanged: (_) => setState(() {
-                  _requestIdentityChecked=false;
-                  _requestHumanChecked=false;
-                })),
-            ],
-          ),
+          if (_requestPatient.text.isNotEmpty)
+            const OperatorNextStep(
+              icon: Icons.verified_user_outlined,
+              title: 'Paciente encontrado en este laboratorio',
+              message: 'Ya puedes cotejar la identidad del paciente con la derivación y continuar.',
+              accent: OperatorPalette.teal,
+              background: ColoresVitalia.verdeSuave,
+            ),
         ],
       ]),
-      _section('4. Confirmación y registro',
+          ],
+        ),
+        secondary: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+      _section('3. Revisar la solicitud y los exámenes',
+        'Coteja y ajusta los datos y las prestaciones antes de registrar.',
+        Icons.playlist_add_check_outlined, [
+        if (!_attachToExistingOrder) ...[
+          const Text('Prestaciones solicitadas'),
+          Wrap(spacing: 8, children: [
+            for (final (code,label) in _catalog)
+              FilterChip(
+                label: Text(label),
+                selected: _requestExams.contains(code),
+                onSelected: _busy ? null : (selected) => setState(() {
+                  if (selected) {
+                    _requestExams.add(code);
+                  } else {
+                    _requestExams.remove(code);
+                  }
+                }),
+              ),
+          ]),
+        ],
+        _field(_requestReference,'Referencia de solicitud'),
+        _field(_requestPrescriber,'Profesional solicitante'),
+        _field(_requestDate,'Fecha de solicitud (AAAA-MM-DD)'),
+      ]),
+      _section('4. Confirmar y crear la orden',
         'Confirma el cotejo para guardar la solicitud en una orden.',
         Icons.fact_check_outlined, [
         CheckboxListTile(
@@ -1442,14 +1637,19 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         else SizedBox(
           width:double.infinity,
           child:FilledButton.icon(
-            onPressed:_busy||_pendingRequestId==null?null:
-              ()=>_execute(_completePendingRequest),
+            onPressed: _busy || _pendingRequestId == null ||
+                _requestPatient.text.isEmpty || _requestExams.isEmpty ||
+                !_requestIdentityChecked || !_requestHumanChecked
+                ? null : () => _execute(_completePendingRequest),
             icon:const Icon(Icons.post_add_outlined),
             label:const Text('Crear orden con solicitud'),
           ),
         ),
       ]),
-    ]),
+          ],
+        ),
+      ),
+    ],
   );
 
   Widget _reportUpload() => _section('Adjuntar informe autorizado',
@@ -1593,7 +1793,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if (section == _StationSection.patients) {
       _execute(() => _loadPatients(offset: 0), showNotice: false);
     } else if (section == _StationSection.orders) {
-      _execute(() => _loadOrderPage(offset: _orderOffset), showNotice: false);
+      _execute(() async {
+        await _loadOrderPage(offset: _orderOffset);
+        await _loadPatients(offset: 0, search: _orderPatientSearch.text.trim());
+      }, showNotice: false);
     }
   }
 
@@ -1603,14 +1806,20 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   }
 
   Widget _patientDirectory() => _section(
-    'Directorio de pacientes', 'Pacientes vinculados al laboratorio activo.',
+    'Directorio de pacientes', 'Busca por nombre o correo. Aquí solo aparecen cuentas activas y asociadas al laboratorio.',
     Icons.badge_outlined, [
       _field(_patientSearch, 'Buscar por nombre o correo'),
       _action('Buscar pacientes', Icons.search,
         () => _loadPatients(offset: 0, search: _patientSearch.text.trim())),
       if (_patients.isEmpty)
-        const Padding(padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text('No hay pacientes para mostrar.')),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 12),
+          child: OperatorNextStep(
+            icon: Icons.person_search_outlined,
+            title: 'Sin pacientes en esta búsqueda',
+            message: 'Prueba otro nombre o correo. Para un paciente nuevo, utiliza «Registrar paciente nuevo»: primero se emite un código y después el paciente activa su cuenta.',
+          ),
+        ),
       for (final patient in _patients)
         ListTile(
           contentPadding: EdgeInsets.zero,
@@ -1626,11 +1835,13 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               }
               if (section == _StationSection.requests) {
                 _requestPatient.text = patient['id'] as String;
+                _requestInviteEmail.text = patient['email'] as String;
                 _attachToExistingOrder = false;
                 _requestIdentityChecked = false;
                 _requestHumanChecked = false;
               } else {
                 _orderPatient.text = patient['id'] as String;
+                _manualPatient = patient;
               }
               _openSection(section);
             },
@@ -1964,13 +2175,30 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _StationSection.dashboard => _dashboard(),
       _StationSection.orders => _operatorSubpage(
         title: 'Órdenes',
-        description: 'Encuentra una orden y continúa su seguimiento en el laboratorio activo.',
-        support: _operatorMetrics(),
-        child: SilWorkspaceColumns(
-          primary: _ordersPanel(),
-          secondary: Column(children: [_newOrder(), _reportUpload()]),
-          primaryFlex: 6, secondaryFlex: 5,
+        description: 'Busca órdenes existentes, consulta su estado y continúa con la siguiente tarea.',
+        support: OperatorNextStep(
+          icon: Icons.note_add_outlined,
+          title: '¿Recibiste una derivación médica?',
+          message: 'Comienza en «Recibir solicitud»: desde ahí se conserva el PDF, se identifica al paciente y se crea la orden. Esta pantalla sirve para buscar órdenes ya registradas.',
+          action: OutlinedButton.icon(
+            onPressed: _busy ? null : () => _openSection(_StationSection.requests),
+            icon: const Icon(Icons.upload_file_outlined),
+            label: const Text('Recibir solicitud médica'),
+          ),
         ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _ordersPanel(),
+          const SizedBox(height: 12),
+          ExpansionTile(
+            initiallyExpanded: false,
+            title: const Text('Crear orden sin derivación PDF'),
+            subtitle: const Text('Opción para casos autorizados, con un paciente ya activado'),
+            leading: const Icon(Icons.post_add_outlined),
+            children: [_newOrder()],
+          ),
+          const SizedBox(height: 12),
+          _reportUpload(),
+        ]),
       ),
       _StationSection.requests => _operatorSubpage(
         title: 'Recibir solicitud',
@@ -1983,8 +2211,13 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         child: _requestIntake(),
       ),
       _StationSection.patients => _operatorSubpage(
-        title: 'Pacientes',
-        description: 'Consulta cuentas asociadas al laboratorio y continúa sus órdenes.',
+        title: 'Pacientes y activación de cuentas',
+        description: 'Busca a un paciente que ya tiene acceso o invita a uno nuevo para que active su cuenta.',
+        support: const OperatorNextStep(
+          icon: Icons.manage_accounts_outlined,
+          title: 'Dos situaciones distintas',
+          message: 'Paciente existente: búscalo en el directorio. Paciente nuevo: verifica su identidad, genera un código y entrégaselo. La cuenta se crea cuando el paciente activa ese código.',
+        ),
         child: SilWorkspaceColumns(
           primary: _patientDirectory(),
           secondary: _patientLink(),
@@ -1993,7 +2226,19 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       ),
       _StationSection.clinical => _operatorSubpage(
         title: 'Control de muestras y resultados',
-        description: 'Consulta una orden y registra su información postanalítica.',
+        description: 'Selecciona una orden registrada para continuar con muestras y resultados.',
+        support: _workflowOrders.isEmpty
+            ? OperatorNextStep(
+                icon: Icons.science_outlined,
+                title: 'No hay órdenes disponibles',
+                message: 'Primero recibe una solicitud médica y registra su orden. Después aparecerá aquí para continuar con el trabajo del laboratorio.',
+                action: OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _openSection(_StationSection.requests),
+                  icon: const Icon(Icons.upload_file_outlined),
+                  label: const Text('Recibir solicitud médica'),
+                ),
+              )
+            : null,
         child: _section(
           'Muestras y resultados',
           'Registra la recepción y revisa los analitos de la orden.',
@@ -2114,7 +2359,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                                   _AdminSection.laboratories => 'Administración de laboratorios',
                                   _AdminSection.operators => 'Operadores y permisos',
                                   _AdminSection.activity => 'Actividad del laboratorio',
-                                } : 'Área operativa',
+                                } : 'Laboratorio activo',
                                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                                   fontWeight: FontWeight.w800,
                                   color: ColoresVitalia.texto,

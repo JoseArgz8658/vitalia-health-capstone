@@ -147,16 +147,13 @@ void main() {
     expect(find.text('Datos identificatorios sugeridos por el PDF'),findsOneWidget);
     expect(find.text('Ana Prueba'),findsOneWidget);
     expect(find.text('Descargar derivación pendiente original'),findsOneWidget);
-    final invite=find.widgetWithText(OutlinedButton,'Emitir invitación de paciente');
-    expect(tester.widget<OutlinedButton>(invite).onPressed,isNotNull,
-      reason:'Se puede invitar sin volver a cargar el PDF ya guardado.');
-    final button=find.widgetWithText(FilledButton,'Crear orden con solicitud');
-    expect(tester.widget<FilledButton>(button).onPressed,isNotNull);
-    await tester.ensureVisible(button);
-    await tester.tap(button);
-    await tester.pumpAndSettle();
-    expect(api.pendingCompletions,isEmpty,
-      reason:'La orden no se registra sin paciente activado y cotejo humano.');
+    final invite = find.widgetWithText(OutlinedButton,'Emitir invitación de paciente');
+    expect(tester.widget<OutlinedButton>(invite).onPressed, isNull,
+      reason: 'Antes de invitar debe cotejarse la identidad.');
+    final button = find.widgetWithText(FilledButton,'Crear orden con solicitud');
+    expect(tester.widget<FilledButton>(button).onPressed, isNull,
+      reason: 'La cuenta debe estar activada y el PDF cotejado.');
+    expect(api.pendingCompletions, isEmpty);
     expect(tester.takeException(),isNull);
   });
 
@@ -195,14 +192,36 @@ void main() {
     await tester.tap(search);
     await tester.pumpAndSettle();
     expect(find.textContaining('Cuenta activada y vinculada'),findsOneWidget);
-    final advanced=find.text('Seleccionar paciente por identificador (avanzado)');
-    await tester.ensureVisible(advanced);
-    await tester.tap(advanced);
-    await tester.pumpAndSettle();
-    final uuidField=find.byWidgetPredicate((widget)=>
-      widget is TextField && widget.decoration?.labelText=='UUID del paciente vinculado');
-    expect(tester.widget<TextField>(uuidField).controller?.text,_StationApi.ownOrder);
+    // El identificador técnico queda en el estado del programa, no en el formulario.
+    expect(find.text('Paciente encontrado en este laboratorio'), findsOneWidget);
+    expect(find.text('Seleccionar paciente por identificador (avanzado)'), findsNothing);
+    expect(find.text('UUID del paciente vinculado'), findsNothing);
     expect(tester.takeException(),isNull);
+  });
+
+  testWidgets('órdenes manuales seleccionan paciente activo por nombre, nunca por UUID', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1050));
+    addTearDown(()=>tester.binding.setSurfaceSize(null));
+    final api = _StationApi();
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home: SilPrincipalPage(
+      api: api, role: 'operador_laboratorio',
+      onExpired: (){}, onLogout: (){},
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton,'Órdenes'));
+    await tester.pumpAndSettle();
+    expect(find.text('UUID del paciente vinculado'), findsNothing);
+    final expansion = find.text('Crear orden sin derivación PDF');
+    await tester.ensureVisible(expansion);
+    await tester.tap(expansion);
+    await tester.pumpAndSettle();
+    final patientSelection = find.byWidgetPredicate((widget) =>
+        widget is DropdownButtonFormField<String> &&
+        widget.decoration.labelText == 'Paciente con cuenta activada');
+    expect(patientSelection, findsOneWidget);
+    expect(find.text('Buscar paciente por nombre o correo'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('administración muestra operadores y autoriza revisión desde un botón', (tester) async {
