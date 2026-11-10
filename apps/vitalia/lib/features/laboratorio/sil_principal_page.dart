@@ -649,8 +649,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _pendingRequestId=saved['id'] as String;
       _useMedicalSuggestions(Map<String,dynamic>.from(saved['suggestions'] as Map)
         ..['state']=saved['extractionStatus']);
-      _requestPatientStatus='Derivación guardada en LaboMed u otro laboratorio '
-        'seleccionado. Puedes retomarla después de activar al paciente.';
+      _requestPatientStatus='Derivación guardada en el laboratorio seleccionado. '
+        'Puedes retomarla después de activar al paciente.';
     });
     await _loadPendingRequests();
   }
@@ -1190,13 +1190,66 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             _attachToExistingOrder = value;
             _requestIdentityChecked = false;
             _requestHumanChecked = false;
+            if(value)_pendingRequestId=null;
           }),
         ),
+        if(!_attachToExistingOrder)...[
+          OutlinedButton.icon(
+            onPressed:_busy?null:()=>_execute(_loadPendingRequests,showNotice:false),
+            icon:const Icon(Icons.refresh_outlined),
+            label:const Text('Actualizar derivaciones pendientes'),
+          ),
+          if(_pendingRequests.isNotEmpty)...[
+            const SizedBox(height:9),
+            DropdownButtonFormField<String>(
+              key:ValueKey((_labId,_pendingRequestId,'pending-referrals')),
+              value:_pendingRequestId,
+              isExpanded:true,
+              decoration:const InputDecoration(
+                border:OutlineInputBorder(),labelText:'Derivación pendiente guardada',
+              ),
+              items:[
+                for(final pending in _pendingRequests)
+                  DropdownMenuItem<String>(
+                    value:pending['id'] as String,
+                    child:Text(
+                      '${pending['fileName']} · '
+                      '${pending['patientEmail'] ?? 'Paciente por identificar'}',
+                      overflow:TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged:_busy?null:_selectPendingRequest,
+            ),
+          ],
+        ],
+        const SizedBox(height:10),
         OutlinedButton.icon(
           onPressed:_busy?null:_pickMedicalRequest,
           icon:const Icon(Icons.picture_as_pdf_outlined),
-          label:Text(_medicalRequestFile?.name??'Seleccionar solicitud PDF'),
+          label:Text(_medicalRequestFile?.name ??
+            (_pendingRequestId==null?'Seleccionar solicitud PDF':
+              'Seleccionar un PDF distinto')),
         ),
+        if(!_attachToExistingOrder)...[
+          const SizedBox(height:8),
+          OutlinedButton.icon(
+            onPressed:_busy||_medicalRequestFile==null||_pendingRequestId!=null
+              ?null:()=>_execute(_savePendingRequest),
+            icon:const Icon(Icons.save_outlined),
+            label:const Text('Guardar derivación pendiente'),
+          ),
+          if(_pendingRequestId!=null)...[
+            const SizedBox(height:8),
+            OutlinedButton.icon(
+              onPressed:_busy?null:()=>_execute(_downloadPendingRequest,showNotice:false),
+              icon:const Icon(Icons.download_outlined),
+              label:const Text('Descargar derivación pendiente original'),
+            ),
+            const SizedBox(height:6),
+            const Text('El archivo está guardado en Vitalia. '
+              'Puede retomar su recepción aunque cierre la sesión.'),
+          ],
+        ],
         const SizedBox(height:12),
         if (_attachToExistingOrder)
           DropdownButtonFormField<String>(
@@ -1287,6 +1340,23 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           label: const Text('Leer PDF y sugerir datos'),
         ),
         if (_requestPreviewNotice != null) Text(_requestPreviewNotice!),
+        if(_requestIdentitySuggestions.values.any((v)=>v is String&&v.isNotEmpty))
+          _section('Datos identificatorios sugeridos por el PDF',
+            'Son datos extraídos por coincidencia de rótulos. '
+            'Coteja el documento original antes de aceptarlos.',
+            Icons.badge_outlined,[
+              for(final field in <(String,String)>[
+                ('fullName','Nombre completo'),('identifier','RUT/RUN'),
+                ('birthDate','Fecha de nacimiento'),('email','Correo'),
+                ('phone','Teléfono'),('sex','Sexo'),
+              ])
+                if(_requestIdentitySuggestions[field.$1] case final String value)
+                  ListTile(
+                    dense:true,
+                    title:Text(field.$2),
+                    subtitle:SelectableText(value),
+                  ),
+            ]),
         if (!_attachToExistingOrder) ...[
           const Text('Prestaciones solicitadas'),
           Wrap(spacing: 8, children: [
@@ -1322,8 +1392,17 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           value:_requestHumanChecked,
           onChanged:_busy?null:(v)=>setState(()=>_requestHumanChecked=v??false),
         ),
-        _action(_attachToExistingOrder ? 'Registrar solicitud' : 'Crear orden con solicitud',
-          Icons.post_add_outlined,_attachMedicalRequest),
+        if(_attachToExistingOrder)
+          _action('Registrar solicitud',Icons.post_add_outlined,_attachMedicalRequest)
+        else SizedBox(
+          width:double.infinity,
+          child:FilledButton.icon(
+            onPressed:_busy||_pendingRequestId==null?null:
+              ()=>_execute(_completePendingRequest),
+            icon:const Icon(Icons.post_add_outlined),
+            label:const Text('Crear orden con solicitud'),
+          ),
+        ),
       ]);
 
   Widget _reportUpload() => _section('Adjuntar informe autorizado',
