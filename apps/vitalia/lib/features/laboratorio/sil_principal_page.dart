@@ -1340,9 +1340,57 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ],
   );
 
-  Widget _requestIntake() => SilWorkspaceColumns(
-    primary: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _section('1. Documento de derivación',
+  Widget _requestGuide() {
+    final documentReady = _medicalRequestFile != null || _pendingRequestId != null;
+    final patientReady = _attachToExistingOrder
+        ? _requestOrderId != null
+        : _requestPatient.text.isNotEmpty;
+    final reviewed = _requestIdentityChecked && _requestHumanChecked &&
+        (_attachToExistingOrder || _requestExams.isNotEmpty);
+    final current = !documentReady ? 0 : !patientReady ? 1 : !reviewed ? 2 : 3;
+    final message = !documentReady
+        ? 'Comienza cargando un PDF médico. Si existe una solicitud guardada, selecciónala en «Derivaciones pendientes».'
+        : !patientReady && !_attachToExistingOrder
+        ? 'Busca al paciente por correo. Si no tiene cuenta, verifica su identidad, entrega un código de activación y conserva la derivación pendiente. Cuando active su cuenta, búscalo de nuevo.'
+        : !patientReady
+        ? 'Selecciona la orden registrada que corresponde al documento original.'
+        : !reviewed
+        ? 'Compara los datos del paciente, los exámenes, la fecha y el profesional con el PDF original; después confirma el cotejo.'
+        : 'Los datos esenciales están confirmados. Comprueba nuevamente el documento original y completa el registro.';
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      OperatorStepGuide(
+        current: current,
+        steps: const [
+          (title: 'Recibir solicitud', detail: 'Cargar o recuperar PDF',
+              icon: Icons.upload_file_outlined),
+          (title: 'Identificar paciente', detail: 'Buscar o activar cuenta',
+              icon: Icons.person_search_outlined),
+          (title: 'Revisar exámenes', detail: 'Cotejo con el original',
+              icon: Icons.fact_check_outlined),
+          (title: 'Crear orden', detail: 'Confirmar y registrar',
+              icon: Icons.assignment_turned_in_outlined),
+        ],
+      ),
+      const SizedBox(height: 11),
+      OperatorNextStep(
+        title: '¿Qué debo hacer ahora?',
+        message: message,
+        icon: documentReady ? Icons.tips_and_updates_outlined
+            : Icons.upload_file_outlined,
+      ),
+    ]);
+  }
+
+  Widget _requestIntake() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _requestGuide(),
+      const SizedBox(height: 14),
+      SilWorkspaceColumns(
+        primary: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+      _section('1. Recibir la solicitud médica',
         'Carga una solicitud o retoma un PDF guardado en el laboratorio.',
         Icons.description_outlined, [
         SwitchListTile(
@@ -1443,33 +1491,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             ],
           ),
       ]),
-      _section('2. Datos de la solicitud',
-        'Coteja y ajusta los datos y las prestaciones antes de registrar.',
-        Icons.playlist_add_check_outlined, [
-        if (!_attachToExistingOrder) ...[
-          const Text('Prestaciones solicitadas'),
-          Wrap(spacing: 8, children: [
-            for (final (code,label) in _catalog)
-              FilterChip(
-                label: Text(label),
-                selected: _requestExams.contains(code),
-                onSelected: _busy ? null : (selected) => setState(() {
-                  if (selected) {
-                    _requestExams.add(code);
-                  } else {
-                    _requestExams.remove(code);
-                  }
-                }),
-              ),
-          ]),
-        ],
-        _field(_requestReference,'Referencia de solicitud'),
-        _field(_requestPrescriber,'Profesional solicitante'),
-        _field(_requestDate,'Fecha de solicitud (AAAA-MM-DD)'),
-      ]),
-    ]),
-    secondary: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _section('3. Identificación del paciente',
+      _section('2. Identificar al paciente',
         'Comprueba a quién pertenece la solicitud.',
         Icons.badge_outlined, [
         if (_attachToExistingOrder)
@@ -1541,20 +1563,46 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               child:Text(_requestPatientStatus!,
                 style:const TextStyle(color:ColoresVitalia.azul)),
             ),
-          ExpansionTile(
-            tilePadding:EdgeInsets.zero,
-            title:const Text('Seleccionar paciente por identificador (avanzado)'),
-            children:[
-              _field(_requestPatient,'UUID del paciente vinculado',
-                onChanged: (_) => setState(() {
-                  _requestIdentityChecked=false;
-                  _requestHumanChecked=false;
-                })),
-            ],
-          ),
+          if (_requestPatient.text.isNotEmpty)
+            const OperatorNextStep(
+              icon: Icons.verified_user_outlined,
+              title: 'Paciente encontrado en este laboratorio',
+              message: 'Ya puedes cotejar la identidad del paciente con la derivación y continuar.',
+              accent: OperatorPalette.teal,
+              background: ColoresVitalia.verdeSuave,
+            ),
         ],
       ]),
-      _section('4. Confirmación y registro',
+          ],
+        ),
+        secondary: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+      _section('3. Revisar la solicitud y los exámenes',
+        'Coteja y ajusta los datos y las prestaciones antes de registrar.',
+        Icons.playlist_add_check_outlined, [
+        if (!_attachToExistingOrder) ...[
+          const Text('Prestaciones solicitadas'),
+          Wrap(spacing: 8, children: [
+            for (final (code,label) in _catalog)
+              FilterChip(
+                label: Text(label),
+                selected: _requestExams.contains(code),
+                onSelected: _busy ? null : (selected) => setState(() {
+                  if (selected) {
+                    _requestExams.add(code);
+                  } else {
+                    _requestExams.remove(code);
+                  }
+                }),
+              ),
+          ]),
+        ],
+        _field(_requestReference,'Referencia de solicitud'),
+        _field(_requestPrescriber,'Profesional solicitante'),
+        _field(_requestDate,'Fecha de solicitud (AAAA-MM-DD)'),
+      ]),
+      _section('4. Confirmar y crear la orden',
         'Confirma el cotejo para guardar la solicitud en una orden.',
         Icons.fact_check_outlined, [
         CheckboxListTile(
@@ -1584,7 +1632,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           ),
         ),
       ]),
-    ]),
+          ],
+        ),
+      ),
+    ],
   );
 
   Widget _reportUpload() => _section('Adjuntar informe autorizado',
