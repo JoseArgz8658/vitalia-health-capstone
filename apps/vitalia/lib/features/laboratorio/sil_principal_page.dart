@@ -1303,8 +1303,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               ()=>_requestPatientVerified=value??false),
           ),
           OutlinedButton.icon(
-            onPressed:_busy||_medicalRequestFile==null?null:
-              ()=>_execute(()=>_invitePatient(fromRequest:true),showNotice:false),
+            // La invitación debe estar disponible tanto para un PDF local
+            // como para una derivación pendiente recuperada de PostgreSQL.
+            onPressed:_busy||(_medicalRequestFile==null&&_pendingRequestId==null)
+              ?null:()=>_execute(()=>_invitePatient(fromRequest:true),showNotice:false),
             icon:const Icon(Icons.mark_email_read_outlined),
             label:const Text('Emitir invitación de paciente'),
           ),
