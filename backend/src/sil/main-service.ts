@@ -567,6 +567,128 @@ export function createSilMainService(db:Pool) {
       }
     },
 
+    // La derivación se conserva antes de que el paciente active la cuenta.
+    // Los datos del PDF son sugerencias, nunca validación de identidad.
+    async savePendingMedicalRequest(labId:string,operatorId:string,
+      fileName:string,bytes:Buffer,patientEmail:string|null){
+      await operator(labId,operatorId);
+      identifyDocument(bytes,'application/pdf',fileName);
+      if(bytes.length<8||bytes.length>2*1024*1024||readingPdf)
+        throw new SilMainConflict();
+      readingPdf=true;
+      let suggestions:Record<string,unknown>;
+      let extractionStatus:'text_ready'|'needs_ocr'|'rejected';
+      try {
+        const reading=await readPdfText(bytes);
+        extractionStatus=reading.status;
+        const catalog=await db.query<{code:string;name:string}>(
+          'SELECT code,name FROM public.vitalia_sil_exam_catalog WHERE active ORDER BY name');
+        suggestions={
+          ...suggestMedicalRequestFields(reading.text??'',catalog.rows),
+          suggestedPatient:suggestReferralIdentity(reading.text??''),
+        };
+      } finally {
+        readingPdf=false;
+      }
+      const suggestedEmail=(suggestions.suggestedPatient as {email:string|null}).email;
+      const email=patientEmail??suggestedEmail;
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx);
+        const id=randomUUID();
+        const saved=await tx.query<{createdAt:Date}>(
+          `INSERT INTO public.vitalia_sil_main_pending_requests
+           (id,lab_id,uploaded_by,patient_email,file_name,pdf_data,
+            pdf_sha256,extraction_status,suggestions_json)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+           ON CONFLICT(lab_id,pdf_sha256) DO NOTHING
+           RETURNING created_at AS "createdAt"`,
+          [id,labId,operatorId,email,fileName,bytes,
+           createHash('sha256').update(bytes).digest('hex'),
+           extractionStatus,JSON.stringify(suggestions)]);
+        if(!saved.rows.length)throw new SilMainConflict();
+        await audit(tx,labId,operatorId,'pending_request_saved',null,{pendingId:id});
+        return {pending:{
+          id,fileName,patientEmail:email,extractionStatus,status:'pending',
+          suggestions,createdAt:saved.rows[0].createdAt,
+        }};
+      });
+    },
+
+    async listPendingMedicalRequests(labId:string,operatorId:string,
+      limit:number,offset:number){
+      await operator(labId,operatorId);
+      const found=await db.query(
+        `SELECT id,file_name AS "fileName",
+                patient_email AS "patientEmail",
+                extraction_status AS "extractionStatus",
+                suggestions_json AS suggestions,
+                created_at AS "createdAt",status
+         FROM public.vitalia_sil_main_pending_requests
+         WHERE lab_id=$1 AND status='pending'
+         ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`,
+        [labId,limit,offset]);
+      return {pending:found.rows};
+    },
+
+    async downloadPendingMedicalRequest(labId:string,pendingId:string,operatorId:string){
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx);
+        const response=await tx.query<{fileName:string;bytes:Buffer;sha256:string}>(
+          `SELECT file_name AS "fileName",pdf_data AS bytes,pdf_sha256 AS sha256
+           FROM public.vitalia_sil_main_pending_requests
+           WHERE id=$1 AND lab_id=$2 AND status='pending'`,[pendingId,labId]);
+        const file=response.rows[0];
+        if(!file)throw new SilMainNotFound();
+        if(file.bytes.length>2*1024*1024||
+          createHash('sha256').update(file.bytes).digest('hex')!==file.sha256)
+          throw new SilMainConflict();
+        await audit(tx,labId,operatorId,'pending_request_downloaded',null,{pendingId});
+        return {fileName:file.fileName,bytes:file.bytes};
+      });
+    },
+
+    // El paciente activado debe estar vinculado a ESTE laboratorio.
+    // Orden, PDF y cierre del pendiente se confirman en una sola transacción.
+    async completePendingMedicalRequest(labId:string,pendingId:string,
+      operatorId:string,patientId:string,patientEmail:string,
+      examCodes:string[],input:Omit<MedicalRequestInput,'fileName'>){
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx);
+        const response=await tx.query<{fileName:string;bytes:Buffer;sha256:string}>(
+          `SELECT file_name AS "fileName",pdf_data AS bytes,pdf_sha256 AS sha256
+           FROM public.vitalia_sil_main_pending_requests
+           WHERE id=$1 AND lab_id=$2 AND status='pending'
+           FOR UPDATE`,[pendingId,labId]);
+        const pending=response.rows[0];
+        if(!pending)throw new SilMainNotFound();
+        if(createHash('sha256').update(pending.bytes).digest('hex')!==pending.sha256)
+          throw new SilMainConflict();
+        checkMedicalRequest({...input,fileName:pending.fileName},pending.bytes);
+        const verified=await tx.query(
+          `SELECT 1 FROM public.vitalia_accounts a
+           JOIN public.vitalia_account_roles ar
+             ON ar.account_id=a.id AND ar.role_code='paciente' AND ar.active
+           JOIN public.vitalia_sil_main_patients p
+             ON p.patient_id=a.id AND p.active
+           WHERE a.id=$1 AND p.lab_id=$2 AND a.email=$3
+           FOR SHARE OF a,ar,p`,[patientId,labId,patientEmail]);
+        if(!verified.rows.length)throw new SilMainNotFound();
+        const {order}=await insertOrder(tx,labId,patientId,examCodes,operatorId);
+        const {request}=await insertMedicalRequest(
+          tx,labId,order.id,patientId,operatorId,
+          {...input,fileName:pending.fileName},pending.bytes);
+        await tx.query(
+          `UPDATE public.vitalia_sil_main_pending_requests
+           SET status='completed',order_id=$1,completed_by=$2,
+               completed_at=CURRENT_TIMESTAMP
+           WHERE id=$3 AND lab_id=$4 AND status='pending'`,
+          [order.id,operatorId,pendingId,labId]);
+        await audit(tx,labId,operatorId,'pending_request_completed',order.id,
+          {pendingId,requestId:request.id});
+        return {order,request,pending:{id:pendingId,status:'completed'}};
+      });
+    },
+
     async createOrderFromMedicalRequest(labId:string,patientId:string,examCodes:string[],
       operatorId:string,input:MedicalRequestInput,bytes:Buffer){
       checkMedicalRequest(input,bytes);
