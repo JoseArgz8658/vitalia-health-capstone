@@ -147,6 +147,9 @@ void main() {
     expect(find.text('Datos identificatorios sugeridos por el PDF'),findsOneWidget);
     expect(find.text('Ana Prueba'),findsOneWidget);
     expect(find.text('Descargar derivación pendiente original'),findsOneWidget);
+    final invite=find.widgetWithText(OutlinedButton,'Emitir invitación de paciente');
+    expect(tester.widget<OutlinedButton>(invite).onPressed,isNotNull,
+      reason:'Se puede invitar sin volver a cargar el PDF ya guardado.');
     final button=find.widgetWithText(FilledButton,'Crear orden con solicitud');
     expect(tester.widget<FilledButton>(button).onPressed,isNotNull);
     await tester.ensureVisible(button);
