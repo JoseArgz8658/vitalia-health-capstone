@@ -85,6 +85,17 @@ jobs:
           export VITALIA_JOURNEY_SCREENSHOTS="$RUNNER_TEMP/vitalia-sil-visual"
           mkdir -p "$VITALIA_JOURNEY_SCREENSHOTS"
           node test/sil-main-journey.cjs
+      - name: Validar configuración Nginx para proxy interno de API
+        working-directory: .
+        run: |
+          docker run --rm --add-host api:127.0.0.1 \
+            -v "$GITHUB_WORKSPACE/deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:1.28-alpine nginx -t
+      - name: Compilar web con API del mismo origen (Tailscale privado)
+        run: >-
+          flutter build web --no-web-resources-cdn
+          --dart-define=VITALIA_SIL_MAIN_MODE=true
+          --dart-define=VITALIA_API_SAME_ORIGIN=true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

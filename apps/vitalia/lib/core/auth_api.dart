@@ -21,12 +21,19 @@ class ProfessionalPasswordSetupRequired extends AuthFailure {
 class AuthApi {
   AuthApi({http.Client? client, String? baseUrl})
     : _client = client ?? http.Client(),
+      // Con VITALIA_API_SAME_ORIGIN=true el navegador envía /api al mismo
+      // dominio HTTPS servido por Tailscale, sin llamar al localhost del
+      // computador remoto. La DEMO local anterior conserva su configuración.
       _base = Uri.parse(
         baseUrl ??
-            const String.fromEnvironment(
-              'VITALIA_API_URL',
-              defaultValue: 'http://127.0.0.1:3000',
-            ),
+            (const bool.fromEnvironment('VITALIA_API_SAME_ORIGIN',
+                        defaultValue: false) &&
+                    (Uri.base.scheme == 'https' || Uri.base.scheme == 'http')
+                ? Uri.base.origin
+                : const String.fromEnvironment(
+                    'VITALIA_API_URL',
+                    defaultValue: 'http://127.0.0.1:3000',
+                  )),
       );
   final http.Client _client;
   final Uri _base;
