@@ -7,6 +7,7 @@ import '../../core/tema_vitalia.dart';
 import 'sil_workspace.dart';
 import 'sil_main_clinical_panel.dart';
 import 'operator_design.dart';
+import 'operator_guided_flow.dart';
 
 /// Estación de trabajo integrada a Vitalia original.
 /// Sin simuladores ni entidades ficticias de laboratorio.
@@ -45,6 +46,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _patientAccount = TextEditingController();
   final _evidence = TextEditingController();
   final _orderPatient = TextEditingController();
+  final _orderPatientSearch = TextEditingController();
+  Map<String,dynamic>? _manualPatient;
+  String? _patientInviteStatus;
   final _requestPatient = TextEditingController();
   final _requestInviteEmail = TextEditingController();
   final _requestIdentityEvidence = TextEditingController();
@@ -127,7 +131,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   @override
   void dispose(){
     for(final ctrl in [
-      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_patientAccount,_evidence,_orderPatient,
+      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_patientAccount,_evidence,_orderPatient,_orderPatientSearch,
       _requestPatient,_requestInviteEmail,_requestIdentityEvidence,
       _requestPrescriber,_requestReference,_requestDate,
       _reportProfessional,_reportReference,_reportDate,
@@ -300,6 +304,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _clinicalOrder = null;
     _ordersPatient = null;
     _orderSearch.clear();
+    _orderPatient.clear();
+    _orderPatientSearch.clear();
+    _manualPatient = null;
+    _patientInviteStatus = null;
     _activeOrderSearch = '';
     _orderStatus = '';
     _orderOffset = 0;
@@ -470,7 +478,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       } else {
         _verifiedPatient = false;
         _evidence.clear();
-        _invitedPatientEmail.clear();
+        _patientInviteStatus = 'Invitación generada. Entrega el código por un canal verificado. La cuenta estará disponible cuando el paciente la active.';
       }
     });
     await showDialog<void>(
@@ -566,6 +574,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       'examCodes':_codes.toList(),
     });
     _orderPatient.clear();
+    if (mounted) setState(() => _manualPatient = null);
     await _loadOrders();
   }
 
@@ -1593,7 +1602,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if (section == _StationSection.patients) {
       _execute(() => _loadPatients(offset: 0), showNotice: false);
     } else if (section == _StationSection.orders) {
-      _execute(() => _loadOrderPage(offset: _orderOffset), showNotice: false);
+      _execute(() async {
+        await _loadOrderPage(offset: _orderOffset);
+        await _loadPatients(offset: 0, search: _orderPatientSearch.text.trim());
+      }, showNotice: false);
     }
   }
 
