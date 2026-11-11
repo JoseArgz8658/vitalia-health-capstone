@@ -460,7 +460,18 @@ async function main() {
       ...confirmation.headers,'x-request-patient-id':ids.other,
     }});
     const created=await call('uploader','POST',intake,201,confirmation);
-    const orderId=(await created.json()).order.id;
+    const registered=await created.json();
+    const orderId=registered.order.id;
+    assert.match(registered.request.documentReference,
+      /^SOL-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    assert.equal(registered.request.documentReference, 'SOL-'+registered.request.id);
+    assert.notEqual(registered.request.documentReference,'SOL-1002',
+      'El backend debe generar una referencia interna, no aceptar la del cliente.');
+    const storedRequestReference=await db.query(
+      'SELECT document_reference FROM public.vitalia_sil_main_medical_requests WHERE id=$1',
+      [registered.request.id]);
+    assert.equal(storedRequestReference.rows[0].document_reference,
+      registered.request.documentReference);
     await call('uploader','POST',intake,409,confirmation);
     assert.equal((await (await call('uploader','GET',base+'/orders',200)).json()).orders.length,1);
     const requestPath='/orders/'+orderId+'/medical-request/file';
@@ -652,7 +663,7 @@ async function main() {
     const pendingData={
       patientId:pendingPatient.id,patientEmail:pendingEmail,
       examCodes:['glicemia'],
-      documentReference:'SOL-PEND-0042',
+      // Sin documentReference: el servidor asigna una ID única.
       prescriberName:'Persona Ficticia',
       requestDate:'2024-01-01',
       patientIdentityConfirmed:true,humanReviewConfirmed:true,
@@ -673,6 +684,8 @@ async function main() {
     })).json();
     assert.equal(completed.pending.status,'completed');
     assert.equal(completed.order.patientId,pendingPatient.id);
+    assert.equal(completed.request.documentReference,'SOL-'+completed.request.id);
+    assert.notEqual(completed.request.documentReference,registered.request.documentReference);
     await call('uploader','POST',pendingComplete,404,{json:pendingData});
     const pendingAfter=await (await call('uploader','GET',pendingPath,200)).json();
     assert.ok(!pendingAfter.pending.some(item=>item.id===pendingId));

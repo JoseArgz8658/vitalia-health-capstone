@@ -15,7 +15,7 @@ export class SilMainNotFound extends Error {}
 export class SilMainConflict extends Error {}
 
 type MedicalRequestInput={
-  fileName:string;prescriberName:string;documentReference:string;
+  fileName:string;prescriberName:string;documentReference?:string;
   requestDate:string;patientIdentityConfirmed:true;humanReviewConfirmed:true;
 };
 
@@ -108,6 +108,9 @@ export function createSilMainService(db:Pool) {
   async function insertMedicalRequest(tx:PoolClient,labId:string,orderId:string,patientId:string,
     operatorId:string,input:MedicalRequestInput,bytes:Buffer){
     const id=randomUUID();
+    // Referencia administrativa propia de Vitalia. No procede del médico
+    // ni debe ser digitada por el operador: identifica esta solicitud recibida.
+    const reference='SOL-'+id;
     const saved=await tx.query(
       `INSERT INTO public.vitalia_sil_main_medical_requests(
         id,order_id,lab_id,patient_id,document_reference,
@@ -115,11 +118,11 @@ export function createSilMainService(db:Pool) {
         patient_identity_confirmed,human_review_confirmed,received_by
       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true,true,$11)
       ON CONFLICT DO NOTHING RETURNING id`,
-      [id,orderId,labId,patientId,input.documentReference,input.prescriberName,
+      [id,orderId,labId,patientId,reference,input.prescriberName,
         input.requestDate,input.fileName,bytes,createHash('sha256').update(bytes).digest('hex'),operatorId]);
     if(!saved.rows.length)throw new SilMainConflict();
     await audit(tx,labId,operatorId,'medical_request_received',orderId,{requestId:id});
-    return {request:{id,orderId,status:'received'}};
+    return {request:{id,orderId,documentReference:reference,status:'received'}};
   }
 
   async function clinicalOrder(tx:PoolClient,labId:string,orderId:string){

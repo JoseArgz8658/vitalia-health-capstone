@@ -60,7 +60,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   bool _attachToExistingOrder = false;
   String? _requestPreviewNotice;
   final _requestPrescriber = TextEditingController();
-  final _requestReference = TextEditingController();
   final _requestDate = TextEditingController();
   final _reportProfessional = TextEditingController();
   final _reportReference = TextEditingController();
@@ -132,7 +131,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     for(final ctrl in [
       _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_evidence,_orderPatient,_orderPatientSearch,
       _requestPatient,_requestInviteEmail,_requestIdentityEvidence,
-      _requestPrescriber,_requestReference,_requestDate,
+      _requestPrescriber,_requestDate,
       _reportProfessional,_reportReference,_reportDate,
     ]){ctrl.dispose();}
     super.dispose();
@@ -314,7 +313,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     for (final controller in [
       _invitedPatientEmail, _evidence, _orderPatient, _requestPatient,
       _requestInviteEmail, _requestIdentityEvidence, _requestPrescriber,
-      _requestReference, _requestDate, _reportProfessional, _reportReference, _reportDate,
+      _requestDate, _reportProfessional, _reportReference, _reportDate,
     ]) {
       controller.clear();
     }
@@ -587,7 +586,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _requestIdentityEvidence.clear();
       _requestPatientVerified = false;
       _requestPatientStatus = null;
-      _requestReference.clear();
       _requestPrescriber.clear();
       _requestDate.clear();
       _requestExams.clear();
@@ -597,10 +595,15 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     });
   }
 
+  // Usar la fecha del documento cuando se lee; en caso contrario, sugerir
+  // la fecha local actual sin ocultar la obligación del cotejo humano.
+  String _todayLocalDate() => DateTime.now().toIso8601String().substring(0, 10);
+
   void _useMedicalSuggestions(Map<String,dynamic> preview){
-    _requestReference.text=preview['suggestedDocumentReference'] as String? ?? '';
     _requestPrescriber.text=preview['suggestedPrescriberName'] as String? ?? '';
-    _requestDate.text=preview['suggestedRequestDate'] as String? ?? '';
+    final suggestedDate=preview['suggestedRequestDate'] as String?;
+    _requestDate.text=suggestedDate != null && suggestedDate.isNotEmpty
+      ? suggestedDate : _todayLocalDate();
     _requestExams
       ..clear()
       ..addAll((preview['suggestedExams'] as List? ?? [])
@@ -697,17 +700,20 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       throw const AuthFailure('Selecciona una cuenta activada, las prestaciones '
         'y confirma que cotejaste la identidad y el PDF original.');
     }
-    await widget.api.silMainRequest('/labs/$lab/medical-requests/pending/$id/complete',
-      body:{
+    final completion=await widget.api.silMainRequest(
+      '/labs/$lab/medical-requests/pending/$id/complete',body:{
         'patientId':patientId,'patientEmail':email,
         'examCodes':_requestExams.toList(),
-        'documentReference':_requestReference.text.trim(),
         'prescriberName':_requestPrescriber.text.trim(),
         'requestDate':_requestDate.text.trim(),
         'patientIdentityConfirmed':true,'humanReviewConfirmed':true,
       });
     if(!mounted)return;
+    final reference=(completion['request'] as Map?)?['documentReference'] as String?;
     setState((){
+      _notice=reference==null
+        ? 'Orden y solicitud registradas correctamente.'
+        : 'Orden creada. Identificador de solicitud: $reference';
       _pendingRequestId=null;
       _medicalRequestFile=null;
       _requestPatient.clear();
@@ -720,7 +726,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _requestPreviewNotice=null;
       _requestIdentityChecked=false;
       _requestHumanChecked=false;
-      _requestReference.clear();
       _requestPrescriber.clear();
       _requestDate.clear();
     });
@@ -738,15 +743,18 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         !_requestIdentityChecked || !_requestHumanChecked) {
       throw const AuthFailure('Completa la orden o el paciente y las prestaciones. Confirma la identidad y la revisión del PDF.');
     }
-    await widget.api.silMainAttachMedicalRequest(
+    final attached=await widget.api.silMainAttachMedicalRequest(
       labId: lab, orderId: orderId, patientId: patientId, examCodes: _requestExams.toList(),
       fileName: file.name, bytes: await file.readAsBytes(),
       prescriberName: _requestPrescriber.text,
-      documentReference: _requestReference.text,
       requestDate: _requestDate.text.trim(),
     );
     if (!mounted) return;
+    final reference=(attached['request'] as Map?)?['documentReference'] as String?;
     setState(() {
+      _notice=reference==null
+        ? 'Solicitud registrada correctamente.'
+        : 'Solicitud registrada. Identificador: $reference';
       _medicalRequestFile = null;
       _requestOrderId = null;
       _requestPatient.clear();
@@ -759,7 +767,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _requestIdentityChecked = false;
       _requestHumanChecked = false;
       _requestPrescriber.clear();
-      _requestReference.clear();
       _requestDate.clear();
     });
     await _loadOrders();
@@ -898,10 +905,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ),
   );
 
-  Widget _action(String text,IconData icon,Future<void> Function() task)=>SizedBox(
+  Widget _action(String text,IconData icon,Future<void> Function() task,
+      {bool showNotice=true})=>SizedBox(
     width:double.infinity,
     child:FilledButton.icon(
-      onPressed:_busy?null:()=>_execute(task),
+      onPressed:_busy?null:()=>_execute(task,showNotice:showNotice),
       icon:Icon(icon),
       label:Text(text),
     ),
@@ -1607,9 +1615,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               ),
           ]),
         ],
-        _field(_requestReference,'Referencia de solicitud'),
+        const Text('Identificador administrativo: Vitalia lo asigna automáticamente al registrar la solicitud.'),
+        const SizedBox(height:8),
         _field(_requestPrescriber,'Profesional solicitante'),
-        _field(_requestDate,'Fecha de solicitud (AAAA-MM-DD)'),
+        _field(_requestDate,'Fecha de solicitud médica (AAAA-MM-DD)'),
+        const Text('Fecha sugerida desde el PDF o, si falta, la de hoy. Coteja siempre con la orden médica.',
+          style:TextStyle(fontSize:12,color:ColoresVitalia.textoSecundario)),
       ]),
         secondary: _section('4. Confirmar y crear la orden',
         'Confirma el cotejo para guardar la solicitud en una orden.',
@@ -1630,14 +1641,15 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           onChanged:_busy?null:(v)=>setState(()=>_requestHumanChecked=v??false),
         ),
         if(_attachToExistingOrder)
-          _action('Registrar solicitud',Icons.post_add_outlined,_attachMedicalRequest)
+          _action('Registrar solicitud',Icons.post_add_outlined,_attachMedicalRequest,
+            showNotice:false)
         else SizedBox(
           width:double.infinity,
           child:FilledButton.icon(
             onPressed: _busy || _pendingRequestId == null ||
                 _requestPatient.text.isEmpty || _requestExams.isEmpty ||
                 !_requestIdentityChecked || !_requestHumanChecked
-                ? null : () => _execute(_completePendingRequest),
+                ? null : () => _execute(_completePendingRequest,showNotice:false),
             icon:const Icon(Icons.post_add_outlined),
             label:const Text('Crear orden con solicitud'),
           ),

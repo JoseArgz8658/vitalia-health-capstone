@@ -310,14 +310,14 @@ class AuthApi {
     List<String> examCodes = const [],
     required String fileName,
     required Uint8List bytes,
-    required String documentReference,
+    String? documentReference, // Compatibilidad: ya no se envía al backend.
     required String prescriberName,
     required String requestDate,
   }) {
     final id=RegExp(r'^[a-f0-9-]{36}$');
     if((orderId != null ? !id.hasMatch(orderId)
           : patientId == null || !id.hasMatch(patientId) || examCodes.isEmpty) ||
-       documentReference.trim().length<6||prescriberName.trim().length<3||
+       prescriberName.trim().length<3||
        !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(requestDate)){
       throw const AuthFailure('Revisa el PDF y los datos de la solicitud.');
     }
@@ -328,7 +328,7 @@ class AuthApi {
       bytes:bytes,
       headers:{
         'x-request-prescriber':Uri.encodeComponent(prescriberName.trim()),
-        'x-request-reference':Uri.encodeComponent(documentReference.trim()),
+        // ID administrativo: lo genera el servidor al registrar la derivación.
         'x-request-date':requestDate,
         'x-request-identity-confirmed':'true',
         'x-request-reviewed':'true',

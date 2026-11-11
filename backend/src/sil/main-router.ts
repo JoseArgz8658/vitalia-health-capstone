@@ -18,17 +18,20 @@ const pdfFileName=z.string().trim().min(5).max(120).regex(/[.]pdf$/i)
 const medicalRequest=z.object({
   fileName:pdfFileName,
   prescriberName:z.string().trim().min(3).max(150),
-  documentReference:z.string().trim().min(6).max(150),
+  // Compatibilidad con clientes anteriores. La referencia administrativa se
+  // asigna siempre en el servidor al persistir el PDF, nunca desde este valor.
+  documentReference:z.string().trim().min(6).max(150).optional(),
   requestDate:z.iso.date(),
   patientIdentityConfirmed:z.literal(true),
   humanReviewConfirmed:z.literal(true),
 });
 function medicalRequestHeaders(req:express.Request){
   try {
+    const legacyReference=req.get('x-request-reference');
     return {
       fileName:decodeURIComponent(req.get('x-request-filename')??''),
       prescriberName:decodeURIComponent(req.get('x-request-prescriber')??''),
-      documentReference:decodeURIComponent(req.get('x-request-reference')??''),
+      documentReference:legacyReference?decodeURIComponent(legacyReference):undefined,
       requestDate:req.get('x-request-date'),
       patientIdentityConfirmed:req.get('x-request-identity-confirmed')==='true',
       humanReviewConfirmed:req.get('x-request-reviewed')==='true',
