@@ -1,0 +1,75 @@
+{
+  "schema": "vitalia.evidencias.ci.v1",
+  "corte_utc": "2026-11-11T03:08:05Z",
+  "branch_code": "feat/sil-integracion-vitalia-principal",
+  "commit_code": "15741b45915ae893c28aa57d80d90171f278db79",
+  "data": "sinteticos",
+  "source": {
+    "platform": "GitHub Actions",
+    "workflow": "SIL principal - pruebas de integracion",
+    "run_id": 42950144149,
+    "run_url": "https://github.com/JoseArgz8658/vitalia-health-capstone/actions/runs/42950144149",
+    "started_at_utc": "2026-11-11T03:03:19Z",
+    "completed_at_utc": "2026-11-11T03:08:05Z",
+    "conclusion": "success"
+  },
+  "jobs": [
+    {
+      "job_id": 130292268131,
+      "name": "Backend TypeScript y Jest",
+      "conclusion": "success",
+      "commands": [
+        "npm ci",
+        "npm run check",
+        "npm test"
+      ],
+      "test_suites": {
+        "passed": 72,
+        "total": 72
+      },
+      "tests": {
+        "passed": 970,
+        "total": 970,
+        "failed": 0
+      },
+      "warnings": "Advertencias de pruebas negativas controladas y deprecación de dependencias; no fallas finales."
+    },
+    {
+      "job_id": 130292267808,
+      "name": "Flutter y recorrido web del SIL principal",
+      "conclusion": "success",
+      "flutter_general": {
+        "passed": 199,
+        "skipped": 2
+      },
+      "flutter_sil_specific": {
+        "passed": 2,
+        "skipped": 0
+      },
+      "web_builds": 2,
+      "nginx_config": "success",
+      "playwright_edge_postgres_isolated": "success",
+      "screenshots_original": [
+        "operador-escritorio.png",
+        "recepcion-escritorio.png",
+        "recepcion-movil.png"
+      ]
+    }
+  ],
+  "artifact": {
+    "name": "vitalia-sil-edge",
+    "id": 13823744194,
+    "run_id": 42950144149,
+    "sha256_gitHub_archive": "5cd2065f5e552b2a421aa9a2e29a6fdf817997ee48256bb214eabae8cf54beed",
+    "expires_at_utc": "2027-02-09T03:03:20Z",
+    "download_from_run": "https://github.com/JoseArgz8658/vitalia-health-capstone/actions/runs/42950144149"
+  },
+  "limitations": [
+    "No pruebas contra PostgreSQL de Beowulf",
+    "No datos clínicos reales",
+    "No prueba de conexión Tailscale desde un equipo externo en CI",
+    "No cobertura universal de OCR o exactitud clínica",
+    "No auditoría normativa ni pentest",
+    "No correo automático ni firma clínica digital"
+  ]
+}
