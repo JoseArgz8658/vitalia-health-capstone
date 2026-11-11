@@ -184,12 +184,12 @@ describe('asistente SIL principal: alcance de los analitos del informe publicado
     const response=await service.ask(patient,report,
       'Explícame en palabras sencillas qué miden todas las cifras detectadas');
     expect(response.source).toBe('catalogo');
-    const lines=response.answer.split('\\n').filter(line=>line.startsWith('• '));
+    const lines=response.answer.split('\n').filter(line=>line.startsWith('• '));
     expect(lines).toHaveLength(11);
     for(const label of mainRows.flatMap(row=>row.analytes)){
       expect(response.answer).toContain(label+':');
     }
-    expect(response.answer).not.toMatch(/(?:^|\\s)92\\s|\\b5[.,]3\\b/);
+    expect(response.answer).not.toMatch(/(?:^|\s)92\s|\b5[.,]3\b/);
     expect(model).not.toHaveBeenCalled();
   });
 
