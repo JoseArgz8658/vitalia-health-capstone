@@ -7,6 +7,7 @@ class _StationApi extends AuthApi {
   final reviewActions=<Map<String,dynamic>>[];
   final pendingCompletions=<Map<String,dynamic>>[];
   bool showPending=false;
+  bool pendingWithoutDate=false;
   static const allowedLab = '11111111-1111-4111-8111-111111111111';
   static const restrictedLab = '22222222-2222-4222-8222-222222222222';
   static const ownOrder = '33333333-3333-4333-8333-333333333333';
@@ -28,7 +29,7 @@ class _StationApi extends AuthApi {
         'suggestions':{
           'suggestedDocumentReference':'SOL-2001',
           'suggestedPrescriberName':'Persona Solicitante',
-          'suggestedRequestDate':'2024-01-01',
+          'suggestedRequestDate':pendingWithoutDate?null:'2024-01-01',
           'suggestedExams':[{'code':'glicemia','name':'Glicemia'}],
           'suggestedPatient':{
             'fullName':'Ana Prueba','identifier':null,
@@ -147,6 +148,10 @@ void main() {
     expect(find.text('Datos identificatorios sugeridos por el PDF'),findsOneWidget);
     expect(find.text('Ana Prueba'),findsOneWidget);
     expect(find.text('Descargar derivación pendiente original'),findsOneWidget);
+    expect(find.text('Referencia de solicitud'),findsNothing);
+    final date=find.byWidgetPredicate((widget)=>widget is TextField &&
+        widget.decoration?.labelText=='Fecha de solicitud médica (AAAA-MM-DD)');
+    expect(tester.widget<TextField>(date).controller!.text,'2024-01-01');
     final invite = find.widgetWithText(OutlinedButton,'Emitir invitación de paciente');
     expect(tester.widget<OutlinedButton>(invite).onPressed, isNull,
       reason: 'Antes de invitar debe cotejarse la identidad.');
@@ -154,6 +159,35 @@ void main() {
     expect(tester.widget<FilledButton>(button).onPressed, isNull,
       reason: 'La cuenta debe estar activada y el PDF cotejado.');
     expect(api.pendingCompletions, isEmpty);
+    expect(tester.takeException(),isNull);
+  });
+
+  testWidgets('fecha médica propone hoy cuando el PDF pendiente carece de fecha legible', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(()=>tester.binding.setSurfaceSize(null));
+    final api=_StationApi()..showPending=true..pendingWithoutDate=true;
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home:SilPrincipalPage(
+      api:api,role:'operador_laboratorio',
+      onExpired:(){},onLogout:(){},
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton,'Recibir solicitud'));
+    await tester.pumpAndSettle();
+    final stored=find.byWidgetPredicate((widget)=>
+      widget is DropdownButtonFormField<String> &&
+      widget.decoration.labelText=='Derivación pendiente guardada');
+    await tester.ensureVisible(stored);
+    await tester.tap(stored);
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('derivacion-ejemplo.pdf').last);
+    await tester.pumpAndSettle();
+    final date=find.byWidgetPredicate((widget)=>widget is TextField &&
+      widget.decoration?.labelText=='Fecha de solicitud médica (AAAA-MM-DD)');
+    final today=DateTime.now().toIso8601String().substring(0,10);
+    expect(tester.widget<TextField>(date).controller!.text,today);
+    expect(find.text('Referencia de solicitud'),findsNothing);
+    expect(find.textContaining('Vitalia lo asigna automáticamente'),findsOneWidget);
     expect(tester.takeException(),isNull);
   });
 
