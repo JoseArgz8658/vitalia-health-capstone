@@ -31,7 +31,11 @@ export function createSilPatientEducation(
     async ask(patientId:string,reportId:string,question:string,simple=false) {
       // Filtrar por cuenta propietaria y por publicación ANTES de invocar IA.
       const sql=source==='main'
-        ? `SELECT c.code,c.name,m.prescriber_name AS "prescriberName",
+        ? `SELECT c.code,c.name,
+             COALESCE((SELECT jsonb_agg(a.analyte ORDER BY a.analyte)
+               FROM public.vitalia_sil_exam_analytes a
+               WHERE a.exam_code=c.code), '[]'::jsonb) AS analytes,
+             m.prescriber_name AS "prescriberName",
              m.request_date::text AS "requestDate",
              m.document_reference AS "documentReference"
            FROM public.vitalia_sil_main_reports r
@@ -59,11 +63,21 @@ export function createSilPatientEducation(
              AND r.published_at IS NOT NULL AND o.status='report_published'
            ORDER BY c.name`;
       const rows=await db.query<{
-        name:string;code:string;prescriberName:string|null;
-        requestDate:string|null;documentReference:string|null
+        name:string;code:string;analytes?:string[];
+        prescriberName:string|null;requestDate:string|null;
+        documentReference:string|null
       }>(sql,[reportId,patientId]);
       if(!rows.rows.length)throw new SilEducationNotFound();
       const labels=rows.rows.map(item=>item.name);
+      // El informe SIL principal conoce sus analitos específicos, no solo
+      // sus prestaciones. No se leen otras órdenes ni documentos del paciente.
+      // Conservar los nombres de prestaciones en la respuesta administrativa.
+      const analyteLabels=source==='main'
+        ? [...new Set(rows.rows.flatMap(row=>Array.isArray(row.analytes)
+            ? row.analytes.filter((name):name is string=>typeof name==='string')
+            : []))].slice(0,20)
+        : [];
+      const educationLabels=analyteLabels.length?analyteLabels:labels;
       const normalized=normalize(question).trim()
         .replace(/^([¿¡]?\s*)q\s+/,'$1que ')
         .replace(/\bxq\b/g,'por que').replace(/\bpa q\b/g,'para que');
@@ -72,8 +86,8 @@ export function createSilPatientEducation(
       });
       const extraction:Extraction={
         examen:labels.join(', '),fecha:null,
-        resultados:rows.rows.slice(0,20).map(row=>({
-          nombre:row.name,valor:null,unidad:null,rango_referencia:null,
+        resultados:educationLabels.slice(0,20).map(name=>({
+          nombre:name,valor:null,unidad:null,rango_referencia:null,
         })),
       };
       if(/[^\s@]+@[^\s@]+|\b\d{1,2}\.?\d{3}\.?\d{3}-[\dk]\b|\b\d{8,}\b/.test(normalized)){
@@ -145,18 +159,32 @@ export function createSilPatientEducation(
           return result('Una unidad indica cómo se expresa una medición. Por ejemplo, puede indicar una cantidad por volumen o una proporción.','catalogo');
         }
       }
+      // Preguntas como «las plaquetas, ¿qué cantidad mide?» piden el
+      // significado de la medición, no el resultado numérico del paciente.
+      // Responder desde notas verificadas antes de la ruta de cifras, sin IA.
+      const targeted=questionIndices(normalized,extraction,[]);
+      const notes=educationalEvidence(extraction);
+      const conceptualTarget=/\b(?:que (?:es|son|mide[n]?|significa[n]?|cantidad mide)|para que (?:sirve[n]?|se mide[n]?)|explica(?:me)?(?: que (?:mide|es))?)\b/.test(normalized);
+      const numericPersonal=/\b(?:cuant[oa]s?|valor(?:es)?|cifra(?:s)?|resultado(?:s)?|salio|obtuve|tengo)\b/.test(normalized)
+        && !/\bque cantidad mide\b/.test(normalized);
+      if(targeted?.length && conceptualTarget && !numericPersonal) {
+        const selected=notes.filter(note=>targeted.includes(note.index));
+        if(selected.length===targeted.length){
+          return result(selected.map(note=>'• '+educationLabels[note.index]+': '+note.purpose).join('\n'),'catalogo');
+        }
+      }
       if(/\b(?:cuanto|cuantos|cuanta|valor|valores|numero|cifra|resultado numerico|resultado de mi|me salio|salio|porcentaje|nivel|rango|referencia|normal|anormal|alt[oa]s?|baj[oa]s?|elevad[oa]s?|grave|diabetes|diagnostic|tratamiento|dosis|medicamento|debo tomar|que hago|estoy bien|estoy mal)\b/.test(normalized)) {
         return result(
           'Las cifras de tu examen están en el PDF publicado. Aquí puedo explicar qué mide una prestación y qué significan las unidades o los intervalos de referencia.',
           'politica');
       }
       const plainRequest=/\b(?:no (?:lo )?entiendo|no entendi|palabras (?:simples|sencillas)|mas (?:simple|facil|sencillo)|paso a paso|lectura facil)\b/.test(normalized);
-      const known=educationalEvidence(extraction);
-      const targets=questionIndices(normalized,extraction,[]);
+      const known=notes;
+      const targets=targeted;
       if(plainRequest||(simple&&targets?.length)){
         const notes=targets?known.filter(note=>targets.includes(note.index)):known;
         if(notes.length&&(targets||plainRequest)){
-          const lines=notes.map(note=>'• '+labels[note.index]+': '+note.purpose.replace(/\bglucosa\b/g,'azúcar'));
+          const lines=notes.map(note=>'• '+educationLabels[note.index]+': '+note.purpose.replace(/\bglucosa\b/g,'azúcar'));
           if(notes.length<(targets?.length??extraction.resultados.length)){
             lines.push('Puedo explicar estas pruebas. Dime el nombre de otra si quieres preguntar por ella.');
           }
