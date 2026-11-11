@@ -6,7 +6,7 @@
 **Commit:** `15741b45915ae893c28aa57d80d90171f278db79`.  
 **SHA-256 declarado del ZIP por GitHub:** `5cd2065f5e552b2a421aa9a2e29a6fdf817997ee48256bb214eabae8cf54beed`.
 
-Las imágenes fueron generadas por Playwright/Edge en [`backend/test/sil-main-journey.cjs`](../../../backend/test/sil-main-journey.cjs). Se inspeccionó el ZIP real y se comprobaron estos archivos:
+Se contrastó el SHA-256 del ZIP descargado con el digest declarado por GitHub Actions: **coinciden**. Las imágenes fueron generadas por Playwright/Edge en [`backend/test/sil-main-journey.cjs`](../../../backend/test/sil-main-journey.cjs). Se inspeccionó el ZIP real y se comprobaron estos archivos:
 
 | Archivo original en el ZIP | Resolución | Evidencia visual |
 |---|---:|---|
