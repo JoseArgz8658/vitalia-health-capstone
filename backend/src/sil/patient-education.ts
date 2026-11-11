@@ -167,7 +167,7 @@ export function createSilPatientEducation(
       const conceptualTarget=/\b(?:que (?:es|son|mide[n]?|significa[n]?|cantidad mide)|para que (?:sirve[n]?|se mide[n]?)|explica(?:me)?(?: que (?:mide|es))?)\b/.test(normalized);
       const numericPersonal=/\b(?:cuant[oa]s?|valor(?:es)?|cifra(?:s)?|resultado(?:s)?|salio|obtuve|tengo)\b/.test(normalized)
         && !/\bque cantidad mide\b/.test(normalized);
-      if(targeted?.length && conceptualTarget && !numericPersonal) {
+      if(source==='main' && targeted?.length && conceptualTarget && !numericPersonal) {
         const selected=notes.filter(note=>targeted.includes(note.index));
         if(selected.length===targeted.length){
           return result(selected.map(note=>'• '+educationLabels[note.index]+': '+note.purpose).join('\n'),'catalogo');
