@@ -11,6 +11,7 @@
 - [Informe de estado funcional](./informe_estado_funcional.md): evaluación conservadora de alcance y brechas de 2.2/2.3.
 - [Matriz de trazabilidad CSV](./matriz_evidencias.csv): cada funcionalidad, prueba, ejecución, resultado y clasificación.
 - [Registro de ejecuciones](./pruebas/registro_ejecuciones.md): fechas, commit, conteos y enlaces comprobables.
+- [Manifiesto de CI en JSON](./pruebas/manifest_ci_42950144149.json): evidencia estructurada para importar a los documentos.
 - [Errores, limitaciones y reproducibilidad](./pruebas/errores_y_limitaciones.md).
 - [Índice de capturas reales de Edge](./integracion/capturas_actions.md): tres PNG originales disponibles en un artefacto descargable de GitHub Actions.
 - Respaldo por módulo: [autenticación](./autenticacion/README.md), [pacientes](./pacientes/README.md), [solicitudes](./solicitudes/README.md), [informes](./informes/README.md), [IA](./IA/README.md), [seguridad](./seguridad/README.md), [pruebas](./pruebas/README.md) e [integración](./integracion/README.md).
