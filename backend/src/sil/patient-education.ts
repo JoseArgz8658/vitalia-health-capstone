@@ -173,7 +173,7 @@ export function createSilPatientEducation(
           return result(selected.map(note=>'• '+educationLabels[note.index]+': '+note.purpose).join('\n'),'catalogo');
         }
       }
-      if(/\b(?:cuanto|cuantos|cuanta|valor|valores|numero|cifra|resultado numerico|resultado de mi|me salio|salio|porcentaje|nivel|rango|referencia|normal|anormal|alt[oa]s?|baj[oa]s?|elevad[oa]s?|grave|diabetes|diagnostic|tratamiento|dosis|medicamento|debo tomar|que hago|estoy bien|estoy mal)\b/.test(normalized)) {
+      if(/\b(?:cuanto|cuantos|cuanta|cuantas|valor|valores|numero|cifra|resultado numerico|resultado de mi|me salio|salio|porcentaje|nivel|rango|referencia|normal|anormal|alt[oa]s?|baj[oa]s?|elevad[oa]s?|grave|diabetes|diagnostic|tratamiento|dosis|medicamento|debo tomar|que hago|estoy bien|estoy mal)\b/.test(normalized)) {
         return result(
           'Las cifras de tu examen están en el PDF publicado. Aquí puedo explicar qué mide una prestación y qué significan las unidades o los intervalos de referencia.',
           'politica');
