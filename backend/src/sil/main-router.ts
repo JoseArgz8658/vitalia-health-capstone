@@ -18,7 +18,9 @@ const pdfFileName=z.string().trim().min(5).max(120).regex(/[.]pdf$/i)
 const medicalRequest=z.object({
   fileName:pdfFileName,
   prescriberName:z.string().trim().min(3).max(150),
-  documentReference:z.string().trim().min(6).max(150),
+  // Compatibilidad con clientes anteriores. La referencia administrativa se
+  // asigna siempre en el servidor al persistir el PDF, nunca desde este valor.
+  documentReference:z.string().trim().min(6).max(150).optional(),
   requestDate:z.iso.date(),
   patientIdentityConfirmed:z.literal(true),
   humanReviewConfirmed:z.literal(true),
