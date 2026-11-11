@@ -1,0 +1,118 @@
+[CmdletBinding()]
+param([switch]$Manual, [switch]$DemoAccounts)
+
+$ErrorActionPreference = 'Stop'
+if ($DemoAccounts -and -not $Manual) { throw 'Usa -DemoAccounts junto con -Manual.' }
+$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$backend = Join-Path $root 'backend'
+$app = Join-Path $root 'apps\vitalia'
+$container = 'vitalia-edge-qa-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
+$temp = Join-Path ([System.IO.Path]::GetTempPath()) $container
+$created = $false
+
+function Read-DemoPassword([string]$Email) {
+  $secret = Read-Host ('Clave DEMO de ' + $Email) -AsSecureString
+  $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
+  try {
+    return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+  } finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+    $secret.Dispose()
+  }
+}
+
+function Assert-Native([string]$Step) {
+  if ($LASTEXITCODE -ne 0) { throw ('Fallo: ' + $Step) }
+}
+
+$testEnv = @{
+  PGHOST = '127.0.0.1'
+  PGPORT = '55439'
+  PGDATABASE = 'vitalia_restored'
+  PGUSER = 'vitalia_restore'
+  PGPASSWORD = [guid]::NewGuid().ToString('N')
+  VITALIA_ISOLATED_REHEARSAL = 'YES'
+  VITALIA_JOURNEY_DB_CONTAINER = $container
+  VITALIA_JOURNEY_WEB = Join-Path $temp 'web'
+  VITALIA_JOURNEY_PLAYWRIGHT = Join-Path $temp 'node_modules\playwright'
+  VITALIA_JOURNEY_MANUAL = $(if ($Manual) { 'YES' } else { 'NO' })
+  VITALIA_JOURNEY_FIXTURE = Join-Path $temp 'informe-operador.pdf'
+}
+$previousEnv = @{
+  VITALIA_JOURNEY_DEMO_PASSWORDS = [Environment]::GetEnvironmentVariable('VITALIA_JOURNEY_DEMO_PASSWORDS', 'Process')
+}
+foreach ($key in $testEnv.Keys) {
+  $previousEnv[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
+}
+try {
+  & docker image inspect --format '{{.Id}}' postgres:16.15-bookworm vitalia-backend:local
+  Assert-Native 'comprobar las imagenes locales del ensayo'
+
+  $null = New-Item -ItemType Directory -Path $temp
+  & npm --prefix $backend run build
+  Assert-Native 'compilar el backend'
+  Push-Location $app
+  try {
+    & flutter pub get
+    Assert-Native 'resolver las dependencias de Flutter'
+    & flutter build web --target=lib/main.dart --output $testEnv.VITALIA_JOURNEY_WEB --no-web-resources-cdn --dart-define=VITALIA_SIL_MAIN_MODE=true --dart-define=VITALIA_API_URL=http://127.0.0.1:3119
+    Assert-Native 'compilar la web de prueba'
+  } finally {
+    Pop-Location
+  }
+
+  if (-not $Manual) {
+    & npm install --prefix $temp --no-save playwright@1.58.2
+    Assert-Native 'preparar Playwright para el Edge instalado'
+  }
+  foreach ($key in $testEnv.Keys) {
+    [Environment]::SetEnvironmentVariable($key, $testEnv[$key], 'Process')
+  }
+
+  # La API local usa un puerto de prueba. La migracion se ejecuta por loopback dentro del contenedor.
+  $dockerArgs = @(
+    'run', '--detach', '--rm', '--pull=never', '--name', $container,
+    '--publish', '127.0.0.1:55439:5432', '--env', 'POSTGRES_USER=vitalia_restore',
+    '--env', 'POSTGRES_DB=vitalia_restored', '--env', ('POSTGRES_PASSWORD=' + $testEnv.PGPASSWORD),
+    'postgres:16.15-bookworm'
+  )
+  & docker @dockerArgs
+  Assert-Native 'crear PostgreSQL temporal'
+  $created = $true
+
+  $ready = $false
+  for ($attempt = 0; $attempt -lt 45; $attempt++) {
+    & docker exec $container pg_isready -h 127.0.0.1 -U vitalia_restore -d vitalia_restored *> $null
+    if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+    Start-Sleep -Seconds 1
+  }
+  if (-not $ready) { throw 'PostgreSQL temporal no inicio.' }
+
+  if ($DemoAccounts) {
+    $demoPasswords = @{
+      uploader = Read-DemoPassword 'operador.sil@example.invalid'
+      admin = Read-DemoPassword 'admin.sil@example.invalid'
+      patient = Read-DemoPassword 'paciente.sil@example.invalid'
+    } | ConvertTo-Json -Compress
+    [Environment]::SetEnvironmentVariable('VITALIA_JOURNEY_DEMO_PASSWORDS', $demoPasswords, 'Process')
+    Remove-Variable demoPasswords
+  } else {
+    [Environment]::SetEnvironmentVariable('VITALIA_JOURNEY_DEMO_PASSWORDS', $null, 'Process')
+  }
+
+  & node (Join-Path $backend 'test\sil-main-journey.cjs')
+  Assert-Native 'ensayar el flujo del operador'
+} finally {
+  foreach ($key in $previousEnv.Keys) {
+    [Environment]::SetEnvironmentVariable($key, $previousEnv[$key], 'Process')
+  }
+  if ($created) {
+    & docker stop $container *> $null
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning ('Revisa el contenedor temporal ' + $container)
+    }
+  }
+  if (Test-Path -LiteralPath $temp) {
+    Remove-Item -LiteralPath $temp -Recurse -Force
+  }
+}

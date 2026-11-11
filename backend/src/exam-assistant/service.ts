@@ -15,7 +15,7 @@ interface Turn{id:string;mode:Mode;question:string;status:'pending'|'ready'|'fai
 async function authorize(tx:DB,account:AccountSummary,doc:string){
  const own=await tx.query(`SELECT id FROM public.vitalia_documents WHERE id=$1 AND patient_id=$2 AND status='stored' FOR SHARE`,[doc,account.id]);
  if(own.rows.length!==1)throw new AssistantAccessError(404);
- const found=await tx.query<Review>(`SELECT id,reviewed_extraction FROM public.vitalia_professional_reviews WHERE document_id=$1 AND patient_id=$2 AND approved=true`,[doc,account.id]);
+ const found=await tx.query<Review>(`SELECT id,reviewed_extraction FROM public.vitalia_current_approved_reviews WHERE document_id=$1 AND patient_id=$2 AND approved=true`,[doc,account.id]);
  const row=found.rows[0];
  if(row)return {id:row.id,reviewed_extraction:extractionSchema.parse(row.reviewed_extraction),source:'reviewed' as const};
  // Datos preliminares: acceso exclusivo al paciente dueño del documento.

@@ -22,7 +22,7 @@ test('login correcto entrega sesión sin hash y prohíbe caché', async () => {
   expect(response.body.token).toBe(token);
   expect(response.body.user).not.toHaveProperty('passwordHash');
   expect(response.headers['cache-control']).toBe('no-store');
-  expect(auth.issue).toHaveBeenCalledWith(user.id);
+  expect(auth.issue).toHaveBeenCalledWith(user.id,user.role);
 });
 
 test('credenciales incorrectas no generan sesión', async () => {

@@ -1,12 +1,13 @@
 import { Router } from 'express';
-import { type AccountSummary } from '../accounts/repository';
-import { CredentialCheckBusyError } from './credentials';
-import { type SessionGrant, isSessionToken } from './sessions';
+import { type AccountRole, type AccountSummary } from '../accounts/repository';
+import {professionalSetupStore} from './professional-setup';
+import { CredentialCheckBusyError, type CredentialResult } from './credentials';
+import { type SessionGrant, isSessionToken, SessionCredentialChangedError } from './sessions';
 import { createLoginAttemptLimiter } from './login-limit';
 
 export interface AuthServices {
-  authenticate(input: unknown): Promise<AccountSummary | null>;
-  issue(accountId: string): Promise<SessionGrant>;
+  authenticate(input: unknown): Promise<CredentialResult | null>;
+  issue(accountId: string, mode?: AccountRole, patientCredentialHash?:string): Promise<SessionGrant>;
   find(token: string): Promise<AccountSummary | null>;
   revoke(token: string): Promise<void>;
 }
@@ -30,7 +31,7 @@ export function createAuthRouter(services: AuthServices) {
       });
       return;
     }
-    let user: AccountSummary | null;
+    let user: CredentialResult | null;
     try { user = await services.authenticate(req.body); }
     catch (error) {
       if (!(error instanceof CredentialCheckBusyError)) throw error;
@@ -43,8 +44,20 @@ export function createAuthRouter(services: AuthServices) {
       res.status(401).json({ error: { code: 'INVALID_CREDENTIALS', message: 'Correo o contraseña incorrectos.' } });
       return;
     }
-    const grant = await services.issue(user.id);
-    res.status(200).json({ token: grant.token, expiresAt: grant.expiresAt, user: safeUser(user) });
+    if(user.professionalPasswordRequired){
+      const setup=professionalSetupStore.issue(user);
+      if(!setup){res.status(503).json({error:{code:'AUTH_BUSY',message:'Intenta nuevamente en unos momentos.'}});return;}
+      res.json({professionalPasswordSetup:setup});return;
+    }
+    try {
+      const grant=user.patientCredentialHash===undefined
+        ?await services.issue(user.id,user.role)
+        :await services.issue(user.id,user.role,user.patientCredentialHash);
+      res.status(200).json({token:grant.token,expiresAt:grant.expiresAt,user:safeUser(user)});
+    }catch(error){
+      if(!(error instanceof SessionCredentialChangedError))throw error;
+      res.status(401).json({error:{code:'INVALID_CREDENTIALS',message:'Correo o contraseña incorrectos.'}});
+    }
   });
   router.get('/me', async (req, res) => {
     const token = bearer(req.get('Authorization'));

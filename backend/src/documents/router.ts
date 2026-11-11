@@ -1,11 +1,9 @@
 import { Router, type ErrorRequestHandler, type RequestHandler } from 'express';
-import multer from 'multer';
 import { z } from 'zod';
 import { type AuthServices } from '../auth/router';
 import { isSessionToken } from '../auth/sessions';
-import { type AccountSummary } from '../accounts/repository';
 import { type DocumentServices, DocumentNotFoundError } from './service';
-import { DocumentInputError, MAX_FILE_BYTES } from './file-validation';
+import { DocumentInputError } from './file-validation';
 
 export function createDocumentRouter(auth: Pick<AuthServices, 'find'>, services: DocumentServices) {
   const router = Router();
@@ -37,16 +35,13 @@ export function createDocumentRouter(auth: Pick<AuthServices, 'find'>, services:
     res.once('finish', release); res.once('close', release);
     next();
   };
-  const parse = multer({ storage: multer.memoryStorage(), limits: {
-    fileSize: MAX_FILE_BYTES, files: 1, fields: 3, parts: 4, fieldSize: 1024,
-  } }).single('file');
-  router.post('/', capacity, parse, async (req, res) => {
-    if (!req.file) throw new DocumentInputError('Falta archivo.');
-    const item = await services.upload(res.locals.account as AccountSummary, {
-      metadata: req.body, name: req.file.originalname, contentType: req.file.mimetype,
-      body: req.file.buffer,
-    });
-    res.status(201).json({ document: item });
+  // SIL Simple: la carga de examenes corresponde exclusivamente al laboratorio.
+  // Rechazar antes de procesar multipart; conservar lectura y descarga del paciente.
+  router.post('/', (_req, res) => {
+    res.status(403).json({error:{
+      code:'PATIENT_UPLOAD_DISABLED',
+      message:'Los exámenes son incorporados por el laboratorio.',
+    }});
   });
   router.get('/', async (req, res) => {
     const parsed = z.object({
@@ -68,12 +63,8 @@ export function createDocumentRouter(auth: Pick<AuthServices, 'find'>, services:
   });
   const errors: ErrorRequestHandler = (error, _req, res, next) => {
     if (res.headersSent) { next(error); return; }
-    if (error instanceof multer.MulterError || error instanceof DocumentInputError) {
-      const large = error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE';
-      res.status(large ? 413 : 400).json({ error: {
-        code: large ? 'FILE_TOO_LARGE' : 'INVALID_DOCUMENT',
-        message: large ? 'El archivo supera 10 MiB.' : 'Revisa el archivo y los datos del examen.',
-      } }); return;
+    if (error instanceof DocumentInputError) {
+      res.status(400).json({error:{code:'INVALID_DOCUMENT',message:'Solicitud de documento inválida.'}});return;
     }
     if (error instanceof DocumentNotFoundError) {
       res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Documento no disponible.' } }); return;

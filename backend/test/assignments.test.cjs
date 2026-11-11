@@ -9,7 +9,7 @@ const input={patientEmail:'p@example.com',professionalEmail:'r@example.com'};
 function setup(){
  let row=null;const audit=[];
  const query=jest.fn(async(sql,args)=>{
-  if(sql.startsWith('SELECT id,role_code'))return {rows:[{id:pid,role_code:'paciente'},{id:rid,role_code:'profesional'}]};
+  if(sql.startsWith('SELECT a.id,g.role_code'))return {rows:[{id:pid,role_code:'paciente'},{id:rid,role_code:'profesional'}]};
   if(sql.startsWith('INSERT INTO public.vitalia_patient_assignments')){
    if(row?.active)return {rows:[]};
    if(!row)row={id:args[0],active:true,patient_email:input.patientEmail,professional_email:input.professionalEmail,created_at:new Date(),updated_at:new Date(),deactivated_at:null};
@@ -54,7 +54,7 @@ test('cuentas con roles incorrectos o inexistentes no insertan',async()=>{
 });
 test('SQL parametriza correos y usa roles, propiedad y restricción única',async()=>{
  const x=setup();await x.service.assign(admin,input);await x.service.listProfessional(professional);
- const lookup=x.db.query.mock.calls[0];expect(lookup[0]).toContain("role_code='paciente'");expect(lookup[0]).toContain("role_code='profesional'");expect(lookup[1]).toEqual(Object.values(input));
+ const lookup=x.db.query.mock.calls[0];expect(lookup[0]).toContain("role_code='paciente'");expect(lookup[0]).toContain("role_code='profesional'");expect(lookup[0]).toContain('vitalia_account_roles');expect(lookup[0]).toContain('g.active');expect(lookup[1]).toEqual(Object.values(input));
  expect(x.db.query.mock.calls.find(([sql])=>sql.startsWith('INSERT'))[0]).toContain('ON CONFLICT(professional_id,patient_id)');
  const query=x.db.query.mock.calls.at(-1);expect(query[0]).toContain('x.professional_id=$1 AND x.active=true');expect(query[1]).toEqual([rid,20,0]);
 });

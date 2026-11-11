@@ -88,7 +88,7 @@ test('persistencia, idempotencia y explicación nueva sin sobrescribir revisión
  const x=setup(),input=question(),first=await x.service.request(account,doc,input);expect(first.turn.status).toBe('ready');expect(first.turn.approved).toBe(false);
  await x.service.request(account,doc,input);expect(x.generator).toHaveBeenCalledTimes(1);expect((await x.service.get(account,doc)).turns).toHaveLength(1);
  expect((await x.service.explain(account,doc,{})).explanation.items[0].value).toBe('14,2');await x.service.explain(account,doc,{});expect(x.generator).toHaveBeenCalledTimes(2);
- expect(x.query.mock.calls.some(([sql])=>/UPDATE public.vitalia_professional_reviews|UPDATE public.vitalia_exam_explanations/.test(sql))).toBe(false);
+ expect(x.query.mock.calls.some(([sql])=>/UPDATE public.vitalia_current_approved_reviews|UPDATE public.vitalia_exam_explanations/.test(sql))).toBe(false);
 });
 test('pregunta o examen diferente no puede reutilizar requestId',async()=>{
  const x=setup(),input=question();await x.service.request(account,doc,input);

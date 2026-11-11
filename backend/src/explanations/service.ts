@@ -23,7 +23,7 @@ function identity(account:AccountSummary,documentId:string){
 async function owned(tx:DB,account:AccountSummary,documentId:string){
  const doc=await tx.query(`SELECT id FROM public.vitalia_documents WHERE id=$1 AND patient_id=$2 AND status='stored' FOR SHARE`,[documentId,account.id]);
  if(doc.rows.length!==1)throw new ExplanationNotFoundError();
- const found=await tx.query<ApprovedReview>(`SELECT id,reviewed_extraction FROM public.vitalia_professional_reviews
+ const found=await tx.query<ApprovedReview>(`SELECT id,reviewed_extraction FROM public.vitalia_current_approved_reviews
   WHERE document_id=$1 AND patient_id=$2 AND approved=true`,[documentId,account.id]);
  const row=found.rows[0];return row?{id:row.id,reviewed_extraction:extractionSchema.parse(row.reviewed_extraction)}:null;
 }

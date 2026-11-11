@@ -1,0 +1,112 @@
+name: SIL principal - pruebas de integracion
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/sil-integracion-vitalia-principal
+  pull_request:
+    paths:
+      - backend/**
+      - apps/vitalia/**
+      - .github/workflows/sil-main-integration.yml
+jobs:
+  backend:
+    name: Backend TypeScript y Jest
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+
+  flutter:
+    name: Flutter y recorrido web del SIL principal
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/vitalia
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze lib/app/vitalia_mvp_app.dart lib/core/auth_api.dart lib/features/laboratorio/sil_main_clinical_panel.dart
+      - run: flutter test
+      - name: Regresión del retorno a login tras activar paciente SIL
+        run: >-
+          flutter test
+          --dart-define=VITALIA_SIL_MAIN_MODE=true
+          test/activar_paciente_retorno_login_test.dart
+      - run: >-
+          flutter build web --no-web-resources-cdn
+          --dart-define=VITALIA_SIL_MAIN_MODE=true
+          --dart-define=VITALIA_API_URL=http://127.0.0.1:3119
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci && npm run build
+        working-directory: backend
+      - name: Preparar Microsoft Edge
+        working-directory: backend
+        run: |
+          npm install --prefix "$RUNNER_TEMP/vitalia-browser" --no-save playwright@1.58.2
+          "$RUNNER_TEMP/vitalia-browser/node_modules/.bin/playwright" install msedge
+      - name: Iniciar PostgreSQL temporal en loopback
+        run: |
+          docker run --detach --rm --name "vitalia-qa-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --network host -e POSTGRES_USER=vitalia_restore -e POSTGRES_DB=vitalia_restored \
+            -e POSTGRES_PASSWORD=isolated-ci-only postgres:16.15-bookworm -c listen_addresses=127.0.0.1
+          for attempt in {1..30}; do
+            if docker exec "vitalia-qa-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+              pg_isready -h 127.0.0.1 -U vitalia_restore -d vitalia_restored; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - name: Probar el flujo del operador y del paciente en Edge
+        working-directory: backend
+        env:
+          VITALIA_ISOLATED_REHEARSAL: 'YES'
+          PGHOST: 127.0.0.1
+          PGUSER: vitalia_restore
+          PGDATABASE: vitalia_restored
+          PGPASSWORD: isolated-ci-only
+        run: |
+          export VITALIA_JOURNEY_PLAYWRIGHT="$RUNNER_TEMP/vitalia-browser/node_modules/playwright"
+          export VITALIA_JOURNEY_WEB="$GITHUB_WORKSPACE/apps/vitalia/build/web"
+          export VITALIA_JOURNEY_SCREENSHOTS="$RUNNER_TEMP/vitalia-sil-visual"
+          mkdir -p "$VITALIA_JOURNEY_SCREENSHOTS"
+          node test/sil-main-journey.cjs
+      - name: Validar configuración Nginx para proxy interno de API
+        working-directory: .
+        run: |
+          docker run --rm --add-host api:127.0.0.1 \
+            -v "$GITHUB_WORKSPACE/deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:1.28-alpine nginx -t
+      - name: Compilar web con API del mismo origen (Tailscale privado)
+        run: >-
+          flutter build web --no-web-resources-cdn
+          --dart-define=VITALIA_SIL_MAIN_MODE=true
+          --dart-define=VITALIA_API_SAME_ORIGIN=true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitalia-sil-edge
+          path: ${{ runner.temp }}/vitalia-sil-visual
+          if-no-files-found: ignore
+      - name: Retirar PostgreSQL temporal
+        if: always()
+        run: docker stop "vitalia-qa-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" || true

@@ -12,7 +12,7 @@ export async function inspectManualDocument(db:Database,documentId:string){
  z.uuid().parse(documentId);
  const result=await db.query<{id:string;patient_id:string;content_type:string;size_bytes:number;created_at:Date}>(`SELECT d.id,d.patient_id,d.content_type,d.size_bytes,a.created_at
  FROM public.vitalia_documents d JOIN public.vitalia_accounts a ON a.id=d.patient_id
- WHERE d.id=$1 AND d.status='stored' AND a.role_code='paciente'`,[documentId]);
+ WHERE d.id=$1 AND d.status='stored' AND EXISTS(SELECT 1 FROM public.vitalia_account_roles g WHERE g.account_id=a.id AND g.role_code='paciente' AND g.active)`,[documentId]);
  const row=result.rows[0];if(!row)return null;
  const account:AccountSummary={id:row.patient_id,email:'',role:'paciente',createdAt:row.created_at};
  const existing=await findPatientProcessingStatus(db,account,documentId);

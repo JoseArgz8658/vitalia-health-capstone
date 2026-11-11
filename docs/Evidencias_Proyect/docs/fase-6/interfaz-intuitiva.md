@@ -16,7 +16,7 @@ Objetivo: convertir los flujos actuales en una interfaz comprensible para pacien
 
 La identidad visual usa azul #2867B2, verde #39A59A, fondo #EAF2FB, blanco #FFFFFF, texto #263238 y bordes #D7E0E5. El color no es el único medio para distinguir estados.
 
-## Retroalimentación docente aportada por el usuario
+## Retroalimentación docente
 Mejorar mockups e interfaz; justificar asignación administrativa provisional. Elección de médico por paciente, derivación clínica y multiclínica requieren diseño de datos y permisos posterior: no se presentan como implementados en esta fase.
 
 ## Pendientes conservados
@@ -24,8 +24,8 @@ Ver ../pendientes/ia-cobertura-rendimiento.md antes de retomar IA.
 Modelo relacional actual, ampliación de datos y documentación académica siguen pendientes; diferenciar realidad implementada de propuesta.
 
 ## Estado del avance
-Implementadas mejoras de acceso y registro, símbolo y fondo, historial, consulta dedicada del profesional, resultados del paciente, chat dedicado y acceso flotante a IA. El usuario informó que las vistas se ven más ordenadas. Esto no equivale a una prueba completa de accesibilidad.
+Se mejoraron las pantallas de acceso y registro, el símbolo y el fondo, el historial, la consulta del profesional y los resultados del paciente. También se incorporó una pantalla para el chat y un acceso flotante a la IA. En la revisión visual, las vistas se vieron más ordenadas. La prueba completa de accesibilidad quedó pendiente.
 
 Pendientes: iconos de instalación Android, comprobación sistemática de teclado/texto ampliado/tamaños, capturas para la entrega y ajustes derivados de las pruebas. El símbolo está preparado; no se declara completado el logo completo ni los iconos Android.
 
-Bloque CAM-068: avisos compartidos, márgenes adaptativos, estados de carga/listas vacías y tarjetas de explicación. Validación Flutter pendiente en el equipo del usuario.
+Bloque CAM-068: avisos compartidos, márgenes adaptativos, estados de carga/listas vacías y tarjetas de explicación. Quedó pendiente la validación local con Flutter.

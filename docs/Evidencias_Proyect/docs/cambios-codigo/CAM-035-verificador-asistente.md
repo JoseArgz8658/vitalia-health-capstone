@@ -1,7 +1,7 @@
 # CAM-035 — Corrección del verificador del asistente
 
 ## Alcance y autorización
-Corrección dentro del asistente ya autorizado, tras el fallo informado por el usuario. No modifica tablas, migración ni comportamiento productivo.
+Se corrigió el fallo reportado en el asistente. El cambio se limitó al verificador y no requirió cambios en las tablas ni en las migraciones.
 
 ## Corrección
 El modelo ficticio del verificador devuelve definiciones para explicación y respuesta sin definiciones para chat. Un indicador desconocido conserva su declaración de incertidumbre. Se verifica reutilización de la explicación y se compara el número de llamadas antes y después de la pregunta fuera de contexto.

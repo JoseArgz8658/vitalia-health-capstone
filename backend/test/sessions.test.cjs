@@ -12,7 +12,7 @@ test('cada sesión usa un token diferente y almacena solo su huella', async () =
   expect(first.token).toMatch(/^[a-f0-9]{64}$/);
   expect(first.expiresAt).toBe(expires);
   const [sql, values] = db.query.mock.calls[0];
-  expect(values).toEqual([createHash('sha256').update(first.token).digest('hex'), 'cuenta']);
+  expect(values).toEqual([createHash('sha256').update(first.token).digest('hex'), 'cuenta', 'paciente']);
   expect(sql).not.toContain(first.token);
   expect(sql).toContain("INTERVAL '30 minutes'");
 });
@@ -39,6 +39,13 @@ test('un token malformado no consulta ni elimina datos', async () => {
 test('una sesión no encontrada no acredita identidad', async () => {
   const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
   expect(await findSessionAccount(db, token)).toBeNull();
+});
+
+test('el rol retirado no acepta una sesión previa ni permite emitir otra', async () => {
+  const db = { query: jest.fn().mockResolvedValue({ rows: [{role_code:'validador_laboratorio'}] }) };
+  expect(await findSessionAccount(db, token)).toBeNull();
+  await expect(issueSession(db, 'cuenta', 'validador_laboratorio')).rejects.toThrow();
+  expect(db.query).toHaveBeenCalledTimes(1);
 });
 
 test('cerrar sesión elimina por huella y no por token original', async () => {

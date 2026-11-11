@@ -1,3 +1,14 @@
+import {createSilService} from './sil/service';
+import {createSilMainService} from './sil/main-service';
+import {createCareHistoryService} from './care/history';
+import {createCareInboxService} from './care/inbox';
+import {createCareUploadService} from './care/upload';
+import {createCareCatalogService} from './care/catalog';
+import {createCredentialVerificationService} from './professional-credentials/service';
+import {createTeamService} from './team/service';
+import {createOnboardingService} from './onboarding/service';
+import {createInstitutionService} from './institutions/service';
+import {createProfileService} from './profiles/service';
 import {createExamAssistantService} from './exam-assistant/service';
 import {createExamAssistant} from './exam-assistant/local-model';
 import {createExplanationService} from './explanations/service';
@@ -65,21 +76,44 @@ async function main(): Promise<void> {
        AND to_regclass('public.vitalia_explanation_audit') IS NOT NULL
        AND to_regclass('public.vitalia_exam_assistant_threads') IS NOT NULL
        AND to_regclass('public.vitalia_exam_assistant_turns') IS NOT NULL
-       AND to_regclass('public.vitalia_exam_assistant_audit') IS NOT NULL AS ready`,
+       AND to_regclass('public.vitalia_exam_assistant_audit') IS NOT NULL
+       AND to_regclass('public.vitalia_care_contacts') IS NOT NULL
+       AND to_regclass('public.vitalia_care_access_audit') IS NOT NULL
+       AND to_regclass('public.vitalia_approved_review_refs') IS NOT NULL
+       AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations WHERE version='025_preliminary_assistant') AS ready`,
     );
     if (schema.rows[0]?.ready !== true) throw new Error('Faltan migraciones de acceso.');
+    if (process.env.VITALIA_SIL_MAIN_MODE==='YES') {
+      const mainSchema=await database.query<{ready:boolean}>(
+        `SELECT to_regclass('public.vitalia_sil_main_laboratories') IS NOT NULL
+           AND to_regclass('public.vitalia_sil_main_staff') IS NOT NULL
+           AND to_regclass('public.vitalia_sil_main_patients') IS NOT NULL
+           AND to_regclass('public.vitalia_sil_main_orders') IS NOT NULL
+           AND to_regclass('public.vitalia_sil_main_reports') IS NOT NULL
+           AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
+             WHERE version='038_sil_main_postanalytical')
+           AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
+             WHERE version='040_sil_main_clinical_access')
+           AND to_regclass('public.vitalia_sil_main_pending_requests') IS NOT NULL
+           AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
+             WHERE version='041_sil_main_pending_referrals') AS ready`);
+      if(mainSchema.rows[0]?.ready!==true) {
+        throw new Error('SIL principal solicitado sin esquema 041: activación bloqueada.');
+      }
+    }
     const storageConfig = readStorageConfig(process.env);
     storage = createStorageClient(storageConfig);
     await checkPrivateBucket(storage, storageConfig);
-    const documents = createDocumentService(documentDatabase(database), s3DocumentStorage(storage, storageConfig));
-    const authenticate = await createCredentialAuthenticator(database);
+    const careUpload = createCareUploadService(documentDatabase(database));
+    const documents = createDocumentService(documentDatabase(database), s3DocumentStorage(storage, storageConfig), careUpload);
+    const authenticate = await createCredentialAuthenticator(database,{guardPatientSession:process.env.VITALIA_SIL_MAIN_MODE==='YES'});
     const register = createPatientRegistrar(database);
     server = createApp({
       authenticate,
-      issue: id => issueSession(database, id),
+      issue: (id,mode,hash) => issueSession(database, id,mode,hash),
       find: token => findSessionAccount(database, token),
       revoke: token => revokeSession(database, token),
-    }, register, documents, createProcessingService(database), createAssignmentService(documentDatabase(database)), createProfessionalService(documentDatabase(database), s3DocumentStorage(storage, storageConfig)), createReviewService(documentDatabase(database)), createExplanationService(documentDatabase(database), createExplanationGenerator()), createExamAssistantService(documentDatabase(database), createExamAssistant())).listen(config.PORT, config.HOST);
+    }, register, documents, createProcessingService(database), createAssignmentService(documentDatabase(database)), createProfessionalService(documentDatabase(database), s3DocumentStorage(storage, storageConfig)), createReviewService(documentDatabase(database)), createExplanationService(documentDatabase(database), createExplanationGenerator()), createExamAssistantService(documentDatabase(database), createExamAssistant()), createProfileService(documentDatabase(database)), createInstitutionService(documentDatabase(database)), createOnboardingService(documentDatabase(database)), createTeamService(documentDatabase(database)), createCredentialVerificationService(documentDatabase(database)), createCareCatalogService(database), careUpload, createCareInboxService(documentDatabase(database), s3DocumentStorage(storage, storageConfig)), createCareHistoryService(documentDatabase(database)), createSilService(database), createSilMainService(database)).listen(config.PORT, config.HOST);
     server.on('listening', () => console.info('Vitalia API iniciada en el entorno local.'));
     server.on('error', () => {
       console.error('No se pudo iniciar el servidor. Revisa el puerto y la dirección configurados.');

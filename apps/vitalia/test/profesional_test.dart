@@ -172,6 +172,8 @@ void main() {
       : {'documents': [doc()]}), 200));
     await tester.pumpWidget(MaterialApp(home: AsignacionesPage(auth: auth, email: 'r@example.com', role: 'profesional', onExpired: () {}, onLogout: () {})));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Ver exámenes'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Ver exámenes'));
     await tester.pumpAndSettle();
     expect(find.text('Exámenes del paciente'), findsOneWidget);

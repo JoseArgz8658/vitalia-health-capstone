@@ -15,8 +15,8 @@ function pagination(limit:number,offset:number){
 const columns=`x.id,x.active,x.created_at,x.updated_at,x.deactivated_at,
  p.email AS patient_email,r.email AS professional_email`;
 const join=`FROM public.vitalia_patient_assignments x
- JOIN public.vitalia_accounts p ON p.id=x.patient_id AND p.role_code='paciente'
- JOIN public.vitalia_accounts r ON r.id=x.professional_id AND r.role_code='profesional'`;
+ JOIN public.vitalia_accounts p ON p.id=x.patient_id AND EXISTS(SELECT 1 FROM public.vitalia_account_roles g WHERE g.account_id=p.id AND g.role_code='paciente' AND g.active)
+ JOIN public.vitalia_accounts r ON r.id=x.professional_id AND EXISTS(SELECT 1 FROM public.vitalia_account_roles g WHERE g.account_id=r.id AND g.role_code='profesional' AND g.active)`;
 interface Row {id:string;active:boolean;created_at:Date;updated_at:Date;deactivated_at:Date|null;patient_email:string;professional_email:string}
 function summary(row:Row){return {id:row.id,active:row.active,patientEmail:row.patient_email,
  professionalEmail:row.professional_email,createdAt:row.created_at,updatedAt:row.updated_at,deactivatedAt:row.deactivated_at};}
@@ -38,8 +38,8 @@ export function createAssignmentService(db:DocumentDatabase){
    role(account,'administrador');const parsed=inputSchema.safeParse(input);
    if(!parsed.success)throw new AssignmentInputError();
    return db.transaction(async tx=>{
-    const found=await tx.query<{id:string;role_code:string}>(`SELECT id,role_code FROM public.vitalia_accounts
-     WHERE (email=$1 AND role_code='paciente') OR (email=$2 AND role_code='profesional')`,
+    const found=await tx.query<{id:string;role_code:string}>(`SELECT a.id,g.role_code FROM public.vitalia_accounts a JOIN public.vitalia_account_roles g ON g.account_id=a.id AND g.active
+     WHERE (a.email=$1 AND g.role_code='paciente') OR (a.email=$2 AND g.role_code='profesional')`,
      [parsed.data.patientEmail,parsed.data.professionalEmail]);
     const patient=found.rows.find(row=>row.role_code==='paciente');
     const professional=found.rows.find(row=>row.role_code==='profesional');

@@ -8,7 +8,7 @@ function setup(user=account){
  const query=jest.fn(async(sql,args)=>{
   if(sql.startsWith('SELECT id FROM'))return {rows:args[0]===id&&args[1]===account.id?[{id}]:[]};
   if(sql.startsWith('INSERT INTO')){if(job)return {rows:[]};job={id:args[0],status:'queued',created_at:new Date(),started_at:null,finished_at:null};return {rows:[{id:job.id}]};}
-  if(sql.startsWith('SELECT created_at FROM public.vitalia_professional_reviews'))return {rows:[]};
+  if(sql.startsWith('SELECT created_at FROM public.vitalia_current_approved_reviews'))return {rows:[]};
   if(sql.startsWith('SELECT p.id'))return {rows:job?[job]:[]};
   throw new Error('unexpected SQL');
  });
