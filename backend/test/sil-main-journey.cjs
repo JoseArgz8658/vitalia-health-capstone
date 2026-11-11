@@ -467,10 +467,11 @@ async function main() {
     assert.equal(registered.request.documentReference, 'SOL-'+registered.request.id);
     assert.notEqual(registered.request.documentReference,'SOL-1002',
       'El backend debe generar una referencia interna, no aceptar la del cliente.');
-    const recorded=await db.query(
+    const storedRequestReference=await db.query(
       'SELECT document_reference FROM public.vitalia_sil_main_medical_requests WHERE id=$1',
       [registered.request.id]);
-    assert.equal(recorded.rows[0].document_reference,registered.request.documentReference);
+    assert.equal(storedRequestReference.rows[0].document_reference,
+      registered.request.documentReference);
     await call('uploader','POST',intake,409,confirmation);
     assert.equal((await (await call('uploader','GET',base+'/orders',200)).json()).orders.length,1);
     const requestPath='/orders/'+orderId+'/medical-request/file';
