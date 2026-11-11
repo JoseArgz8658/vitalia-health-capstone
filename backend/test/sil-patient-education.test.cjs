@@ -147,3 +147,66 @@ test('el asistente lee las cifras autorizadas sin enviarlas al modelo',async()=>
  expect(overview).toHaveBeenCalledWith(patient,[report]);
  expect(model).not.toHaveBeenCalled();
 });
+
+
+describe('asistente SIL principal: alcance de los analitos del informe publicado',()=>{
+  const mainRows=[
+    {code:'glicemia',name:'Glicemia',analytes:['Glucosa']},
+    {code:'hba1c',name:'Hemoglobina glicosilada (HbA1c)',analytes:['HbA1c']},
+    {code:'hemograma',name:'Hemograma',
+      analytes:['Eritrocitos','Hematocrito','Hemoglobina','Leucocitos','Plaquetas']},
+    {code:'perfil_lipidico',name:'Perfil lipídico',
+      analytes:['Colesterol HDL','Colesterol LDL','Colesterol total','Triglicéridos']},
+  ].map(row=>({...row,prescriberName:'Tomás Velasco Rojas',
+    requestDate:'2026-11-10',documentReference:'SOL-PRUEBA'}));
+  const mainDb=()=>({query:jest.fn(async(sql,args)=>{
+    expect(args).toEqual([report,patient]);
+    expect(sql).toContain('vitalia_sil_main_reports');
+    expect(sql).toContain('vitalia_sil_exam_analytes');
+    return {rows:mainRows};
+  })});
+  const noModel=()=>jest.fn(async()=>{throw new Error('No llamar al modelo para notas verificadas.');});
+
+  test('explica las plaquetas del hemograma, sin salir del informe ni consultar un modelo',async()=>{
+    const db=mainDb(),model=noModel();
+    const service=createSilPatientEducation(db,model,undefined,'main');
+    const response=await service.ask(patient,report,'las plaquetas, que cantidad mide?');
+    expect(response.source).toBe('catalogo');
+    expect(response.answer).toMatch(/Plaquetas.*cantidad de plaquetas en sangre/i);
+    expect(response.answer).not.toMatch(/Solo puedo responder sobre el examen abierto/);
+    expect(model).not.toHaveBeenCalled();
+    expect(db.query).toHaveBeenCalledTimes(1);
+  });
+
+  test('explica todos los 11 analitos y no solo dos prestaciones',async()=>{
+    const db=mainDb(),model=noModel();
+    const service=createSilPatientEducation(db,model,undefined,'main');
+    const response=await service.ask(patient,report,
+      'Explícame en palabras sencillas qué miden todas las cifras detectadas');
+    expect(response.source).toBe('catalogo');
+    const lines=response.answer.split('\\n').filter(line=>line.startsWith('• '));
+    expect(lines).toHaveLength(11);
+    for(const label of mainRows.flatMap(row=>row.analytes)){
+      expect(response.answer).toContain(label+':');
+    }
+    expect(response.answer).not.toMatch(/(?:^|\\s)92\\s|\\b5[.,]3\\b/);
+    expect(model).not.toHaveBeenCalled();
+  });
+
+  test('mantiene separadas preguntas sobre cifras y conceptos',async()=>{
+    const model=noModel();
+    const service=createSilPatientEducation(mainDb(),model,undefined,'main');
+    const response=await service.ask(patient,report,'¿Cuántas plaquetas tengo?');
+    expect(response.source).toBe('politica');
+    expect(response.answer).toMatch(/PDF/);
+    expect(response.answer).not.toMatch(/258|230/);
+    expect(model).not.toHaveBeenCalled();
+  });
+
+  test('no filtra los analitos de informes ajenos o no publicados',async()=>{
+    const db={query:jest.fn(async()=>({rows:[]}))};
+    const service=createSilPatientEducation(db,noModel(),undefined,'main');
+    await expect(service.ask(patient,report,'¿Qué miden las plaquetas?'))
+      .rejects.toBeInstanceOf(SilEducationNotFound);
+  });
+});
