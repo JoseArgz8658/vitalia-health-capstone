@@ -1,6 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- La aplicación instalada necesita conexión HTTPS con la API de Vitalia. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:label="vitalia_health"
+        android:label="Vitalia Health"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
