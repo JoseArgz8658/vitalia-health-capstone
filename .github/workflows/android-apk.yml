@@ -1,0 +1,55 @@
+name: Vitalia Android - APK de pruebas
+
+on:
+  push:
+    branches:
+      - feat/android-apk-sil-20261112
+  pull_request:
+    paths:
+      - apps/vitalia/**
+      - .github/workflows/android-apk.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-apk:
+    name: Compilar APK Android con SIL principal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/vitalia
+    steps:
+      - uses: actions/checkout@v4
+      - name: Java 17 para Android Gradle
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Flutter estable
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.9'
+          cache: true
+      - name: Instalar dependencias Flutter
+        run: flutter pub get
+      - name: Compilar APK instalable (pruebas internas)
+        run: >-
+          flutter build apk --debug
+          --dart-define=VITALIA_SIL_MAIN_MODE=true
+          --dart-define=VITALIA_API_URL=https://beowulf.tail5c0c9b.ts.net
+      - name: Publicar APK como artefacto de GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitalia-android-sil-apk-privada
+          path: apps/vitalia/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+# La APK usa por defecto Tailscale Serve privado (443).
+# El telefono necesita autorizacion Tailscale; NO utilizar Funnel para
+# publicar el PostgreSQL o la API de la instancia principal.
+# Pruebas internas: firma debug. Para distribucion formal, crear firma release propia.
