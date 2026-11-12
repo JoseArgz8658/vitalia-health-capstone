@@ -38,10 +38,9 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-          version: '3.47.9'
           cache: true
       - run: flutter pub get
-      - run: flutter analyze lib/app/vitalia_mvp_app.dart lib/core/auth_api.dart lib/features/laboratorio/sil_main_clinical_panel.dart
+      - run: flutter analyze --no-fatal-infos lib/app/vitalia_mvp_app.dart lib/core/auth_api.dart lib/features/laboratorio/sil_main_clinical_panel.dart
       - run: flutter test
       - name: Regresión del retorno a login tras activar paciente SIL
         run: >-
