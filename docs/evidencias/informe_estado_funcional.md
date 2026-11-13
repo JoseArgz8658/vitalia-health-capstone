@@ -36,8 +36,11 @@ El **workflow completo** terminó con éxito para la versión citada; también p
 | F20 | Verificación digital de autorización o firma clínica externa | **Pendiente de implementación** | Hoy sólo se registra la referencia y la declaración de autorización |
 | F21 | Restricción de Tailscale a HTTPS 443 y aislamiento efectivo de SMB/RDP desde equipo externo | **Implementada sin prueba suficiente** | Política informada, pero sin acta automatizada de prueba remota de puertos |
 | F22 | Ensayos de carga, accesibilidad integral y seguridad ofensiva | **Pendiente de implementación** | No están cubiertos por la ejecución CI citada |
+| F23 | Compilación TypeScript y pruebas automatizadas Jest, Flutter, Edge/PostgreSQL | **Implementada y verificada** | Corresponde a ejecución 42950144149 y casos automatizados, no a certificación clínica ni productiva |
 
 **Importante:** F19/F20/F22 son brechas para madurez operativa, **no** un compromiso de incorporarlas todas en la entrega académica. El docente/equipo debe decidir expresamente cuáles son requisitos de 2.2 y cuáles quedan diferidos en 2.3.
+
+**Actualización de trazabilidad (13/11/2026):** se incluye F23, presente en la matriz CSV, para que el informe y el índice utilicen la numeración íntegra F01–F23. No altera la fecha ni el resultado de la ejecución original.
 
 ## Evidencias verificables del flujo principal
 
