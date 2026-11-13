@@ -13,6 +13,7 @@ $protected = @(
   'docs/problemas-instalacion', 'fix/consolidacion-seguridad-sil'
 )
 $candidates = @(
+  'docs/indice-evidencias-fase2-20261113',
   'feat/android-apk-sil-20261112',
   'feat/sil-integracion-vitalia-principal',
   'feat/sil-operador-ux-postanalitica',
