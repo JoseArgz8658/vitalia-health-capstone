@@ -6,6 +6,10 @@
 **Tipo de evidencia:** pruebas automatizadas preexistentes, logs reales de GitHub Actions, artefactos de Edge y revisión de código.  
 **Entorno:** CI temporal con datos sintéticos, PostgreSQL aislado y Edge; no es una certificación clínica ni una prueba de producción.
 
+## Índice central para las entregas de Capstone
+
+**[Abrir índice de evidencias Fase 2 con URLs directas y verificadas](./INDICE_EVIDENCIAS_CAPSTONE_FASE2.md)**. Contiene la correspondencia entre documentos 2.2, 2.3, 2.6 y presentación, las pruebas F01–F23, el commit auditado, los jobs de CI y las advertencias sobre artefactos temporales. Consultarlo antes de enlazar una evidencia en Word.
+
 ## Entregables
 
 - [Informe de estado funcional](./informe_estado_funcional.md): evaluación conservadora de alcance y brechas de 2.2/2.3.
