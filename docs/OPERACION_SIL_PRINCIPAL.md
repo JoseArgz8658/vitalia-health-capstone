@@ -6,7 +6,7 @@ solicitudes, ordenes, revision y publicacion de informes ya autorizados, con dat
 
 ## 1. Condiciones antes de compilar o desplegar
 
-El backend usa la base principal `vitalia`, esquema postanalitico **043** una vez aplicado mediante el procedimiento controlado (la instalacion 041 existente no se modifica automaticamente)
+El backend usa la base principal `vitalia`, esquema postanalitico **044** una vez aplicado mediante el procedimiento controlado (la instalacion 041 existente no se modifica automaticamente)
 integrado mediante el procedimiento controlado. El codigo distingue:
 
 | Elemento | Configuracion esperada |
@@ -24,7 +24,7 @@ contiene estos valores hasta que se vuelva a compilar.
 
 **Importante:** `deploy/configurar.ps1` prepara variables generales pero
 **no** instala ni autoriza el SIL principal. En la base principal, el comando
-`migrate-all` solo verifica el esquema; **no aplica** las migraciones 041, 042 ni 043.
+`migrate-all` solo verifica el esquema; **no aplica** las migraciones 041 a 044.
 Si el esquema no esta preparado, detener el proceso. El procedimiento de
 migracion controlada exige respaldo, ensayo aislado y aprobacion explicita.
 No modificar una base existente para satisfacer esta guia.
@@ -54,7 +54,7 @@ docker compose exec api node dist/database/migrate-all.js
 ```
 
 En `vitalia` ese comando ejecuta una **consulta de solo lectura**: requiere
-las migraciones SIL hasta la 043 y la tabla de derivaciones pendientes con cierre administrativo.
+las migraciones SIL hasta la 044 y la tabla de derivaciones pendientes con cierre administrativo.
 No ejecutar el migrador general contra `vitalia_dev` para estas comprobaciones,
 porque ese entorno tiene una politica de migraciones diferente.
 
@@ -194,3 +194,9 @@ operaciones de laboratorio y operadores, con fecha y cuenta autora. Las consulta
 requieren una sesión de administrador y se limitan al laboratorio seleccionado.
 El recorrido automatizado usa cuentas ficticias para verificar paginación, separación
 entre laboratorios y la exclusión de códigos y datos de auditoría internos.
+
+
+En una invitación pendiente, **Revocar** pide confirmación y registra la acción en
+la auditoría. La migración **044** amplía el catálogo de auditoría. La revocación
+y su evento se guardan en la misma transacción. Si la base está en 041, el
+migrador controlado verifica el historial y aplica 042, 043 y 044 en orden.

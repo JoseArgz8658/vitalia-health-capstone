@@ -140,7 +140,7 @@ class AuthApi {
     }
     final candidate=Uri.tryParse(path);
     final allowed=RegExp(
-      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|summary|staff(?:/(?:review-permission|membership))?|patients|patient-invitations|operator-invitations|administrative-audit))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
+      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|summary|staff(?:/(?:review-permission|membership))?|patients|patient-invitations|operator-invitations(?:/revoke)?|administrative-audit))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
     );
     final pendingPath=RegExp(
       r'^/labs/[a-f0-9-]{36}/medical-requests/pending(?:/[a-f0-9-]{36}/(?:complete|cancel))?$',
@@ -1114,7 +1114,723 @@ class AuthApi {
               : code == 'PROFESSIONAL_PASSWORD_REQUIRED'
               ? 'Ingresa y confirma una nueva contraseña profesional de al menos 12 caracteres.'
               : code == 'PROFESSIONAL_PASSWORD_EXISTS'
-              ? 'Ya tienes contraseña profesional. Ingresa con tu perfil profesional para…77082 tokens truncated…'button',{name:'Cerrar',exact:true});
+              ? 'Ya tienes contraseña profesional. Ingresa con tu perfil profesional para aceptar otra clínica.'
+              : code == 'INVITATION_ACCOUNT_MISMATCH'
+              ? 'La invitación no corresponde a la cuenta con la que ingresaste.'
+              : code == 'EXISTING_ACCOUNT'
+              ? 'El correo ya tiene una cuenta. No se modificó su contraseña ni su rol. Solicita al equipo la incorporación de esa cuenta.'
+              : switch (response.statusCode) {
+                  400 =>
+                    activation
+                        ? 'Revisa el código, nombres y contraseña. El código puede estar vencido, revocado o utilizado.'
+                        : 'Revisa los datos y las sucursales o especialidades seleccionadas.',
+                  403 => 'Solo el administrador o el jefe autorizado de esta clínica pueden realizar esta operación.',
+                  409 => 'La autorización o invitación no está disponible. Actualiza antes de repetir; revoca la invitación anterior si necesitas emitir otra.',
+                  429 => 'Hay otra activación en curso. Espera un momento e intenta nuevamente.',
+                  503 => 'La incorporación institucional aún no está disponible. Revisa migración y permisos con el equipo.',
+                  _ => 'No se pudo completar la incorporación institucional.',
+                },
+          response.statusCode,
+        );
+      }
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } on AuthFailure {
+      rethrow;
+    } on TimeoutException {
+      throw const AuthFailure(
+        'La solicitud tardó demasiado. Actualiza antes de repetir. Si se creó una invitación y perdiste su código, revócala antes de emitir otra.',
+      );
+    } catch (_) {
+      throw const AuthFailure(
+        'No se pudo conectar. Actualiza antes de repetir la solicitud.',
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>> team(
+    String clinicId, {
+    String? memberId,
+    bool history = false,
+    int offset = 0,
+    Map<String, dynamic>? update,
+  }) async {
+    final clinic = _institutionId(clinicId);
+    final member = memberId == null ? null : _institutionId(memberId);
+    if ((history && member == null) ||
+        (update != null && (member == null || history)) ||
+        (member != null && !history && update == null)) {
+      throw const AuthFailure('Solicitud de equipo inválida.');
+    }
+    final token = _token;
+    if (token == null ||
+        expiresAt == null ||
+        !expiresAt!.isAfter(DateTime.now())) {
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+    }
+    try {
+      final path =
+          '/api/team/$clinic${member == null ? '' : '/$member'}${history ? '/history' : ''}';
+      final uri = _base
+          .resolve(path)
+          .replace(
+            queryParameters: update == null
+                ? {'limit': '20', 'offset': '$offset'}
+                : null,
+          );
+      final headers = {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      };
+      final response =
+          await (update == null
+                  ? _client.get(uri, headers: headers)
+                  : _client.post(
+                      uri,
+                      headers: headers,
+                      body: jsonEncode(update),
+                    ))
+              .timeout(const Duration(seconds: 15));
+      if (_token != token || response.statusCode == 401) {
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+      }
+      if (response.statusCode >= 400) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final code = (data['error'] as Map?)?['code'];
+        throw AuthFailure(
+          code == 'NO_MEMBERSHIP_CHANGE'
+              ? 'No hiciste cambios en la pertenencia.'
+              : switch (response.statusCode) {
+                  400 => 'Revisa el motivo y las sucursales o especialidades seleccionadas.',
+                  403 => 'Solo el jefe activo de esta clínica puede modificar pertenencias de profesionales ordinarios.',
+                  404 => 'La pertenencia no está disponible en esta clínica.',
+                  409 => 'La pertenencia cambió o la clínica no está disponible. Actualiza la lista antes de editar nuevamente.',
+                  503 => 'La gestión del equipo aún no está disponible. Revisa migración y permisos con el equipo.',
+                  _ => 'No se pudo completar la gestión del equipo.',
+                },
+          response.statusCode,
+        );
+      }
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } on AuthFailure {
+      rethrow;
+    } on TimeoutException {
+      throw const AuthFailure(
+        'La solicitud tardó demasiado. Reintenta el mismo formulario para comprobar el resultado sin duplicar cambios, o actualiza la lista.',
+      );
+    } catch (_) {
+      throw const AuthFailure(
+        'No se pudo conectar. Conserva el formulario para reintentar o actualiza la lista.',
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>> professionalCredentials(
+    String clinicId,
+    String memberId, {
+    String? requestId,
+    Map<String, dynamic>? body,
+  }) async {
+    final clinic = _institutionId(clinicId), member = _institutionId(memberId);
+    if (requestId != null) _institutionId(requestId);
+    if (requestId != null && body == null)
+      throw const AuthFailure('Solicitud inválida.');
+    final token = _token;
+    if (token == null ||
+        expiresAt == null ||
+        !expiresAt!.isAfter(DateTime.now())) {
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+    }
+    try {
+      final path =
+          '/api/professional-credentials/$clinic/$member${body == null
+              ? ''
+              : requestId == null
+              ? '/requests'
+              : '/requests/$requestId/decision'}';
+      final headers = {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      };
+      final response =
+          await (body == null
+                  ? _client.get(_base.resolve(path), headers: headers)
+                  : _client.post(
+                      _base.resolve(path),
+                      headers: headers,
+                      body: jsonEncode(body),
+                    ))
+              .timeout(const Duration(seconds: 20));
+      if (_token != token || response.statusCode == 401) {
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+      }
+      if (response.statusCode >= 400)
+        throw AuthFailure(switch (response.statusCode) {
+          400 =>
+            'Revisa las referencias, la fecha de consulta y la confirmación.',
+          403 => 'No tienes permiso para esta verificación. El jefe registra antecedentes y el administrador decide.',
+          404 =>
+            'La solicitud o pertenencia no está disponible en esta clínica.',
+          409 => 'El perfil cambió, existe una solicitud pendiente o ya fue resuelta. Actualiza antes de continuar.',
+          503 => 'La verificación profesional aún no está disponible. Revisa migración y permisos con el equipo.',
+          _ => 'No se pudo completar la verificación profesional.',
+        }, response.statusCode);
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } on AuthFailure {
+      rethrow;
+    } on TimeoutException {
+      throw const AuthFailure(
+        'La solicitud tardó demasiado. Reintenta sin cambiar los datos o actualiza para comprobar el resultado.',
+      );
+    } catch (_) {
+      throw const AuthFailure(
+        'No se pudo conectar. Conserva los datos para reintentar.',
+      );
+    }
+  }
+
+  Future<http.Response> careInboxRequest({
+    String? id,
+    String? action,
+    int offset = 0,
+    Map<String, dynamic>? body,
+  }) async {
+    if ((id != null && !RegExp(r'^[a-f0-9-]{36}$').hasMatch(id)) ||
+        (action != null &&
+            ![
+              'file',
+              'begin',
+              'review',
+              'referral-options',
+              'referrals',
+            ].contains(action)) ||
+        (action != null && id == null) ||
+        (['begin', 'referrals'].contains(action) && body == null) ||
+        (!['begin', 'review', 'referrals'].contains(action) && body != null)) {
+      throw const AuthFailure('Solicitud de atención inválida.');
+    }
+    final token = _token;
+    if (token == null ||
+        expiresAt == null ||
+        !expiresAt!.isAfter(DateTime.now())) {
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+    }
+    final uri = _base
+        .resolve(
+          '/api/care-inbox${id == null ? '' : '/$id'}${action == null ? '' : '/$action'}',
+        )
+        .replace(
+          queryParameters: id == null || action == 'referral-options'
+              ? {'offset': '$offset'}
+              : null,
+        );
+    try {
+      final response =
+          await (body == null
+                  ? _client.get(
+                      uri,
+                      headers: {'Authorization': 'Bearer $token'},
+                    )
+                  : _client.post(
+                      uri,
+                      headers: {
+                        'Authorization': 'Bearer $token',
+                        'Content-Type': 'application/json',
+                      },
+                      body: jsonEncode(body),
+                    ))
+              .timeout(const Duration(seconds: 60));
+      if (_token != token) throw const AuthFailure('La sesión cambió.', 401);
+      if (response.statusCode == 401) {
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+      }
+      if (response.statusCode >= 400)
+        throw AuthFailure(switch (response.statusCode) {
+          400 =>
+            action == 'referrals'
+                ? 'Revisa el destinatario, el motivo y la confirmación.'
+                : 'Revisa fechas, resultados, observaciones y confirmación del original.',
+          403 => 'Ingresa en modo profesional para consultar tus atenciones.',
+          404 => 'Esta atención ya no está disponible para tu cuenta. Actualiza la bandeja.',
+          409 => 'La atención cambió. Actualiza antes de continuar.',
+          503 =>
+            'La bandeja no está disponible temporalmente. Intenta nuevamente.',
+          _ => 'No se pudo consultar la atención.',
+        }, response.statusCode);
+      return response;
+    } on AuthFailure {
+      rethrow;
+    } catch (_) {
+      throw const AuthFailure(
+        'No se pudo completar la solicitud. Actualiza la atención antes de repetir.',
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>> careContext() => _careGet('context');
+
+  Future<Map<String, dynamic>> careCatalog(
+    String communeCode, {
+    int offset = 0,
+  }) => _careGet(
+    'catalog',
+    query: {'communeCode': communeCode, 'offset': '$offset'},
+  );
+
+  Future<Map<String, dynamic>> _careGet(
+    String path, {
+    Map<String, String>? query,
+  }) async {
+    final token = _token;
+    if (token == null ||
+        expiresAt == null ||
+        !expiresAt!.isAfter(DateTime.now())) {
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+    }
+    try {
+      final response = await _client
+          .get(
+            _base.resolve('/api/care/$path').replace(queryParameters: query),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 15));
+      if (_token != token) throw const AuthFailure('La sesión cambió.', 401);
+      if (response.statusCode == 401) {
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+      }
+      if (response.statusCode >= 400) {
+        throw AuthFailure(switch (response.statusCode) {
+          409 => 'Completa primero tus datos personales en Mi perfil.',
+          400 => 'Selecciona una comuna válida para consultar atención.',
+          403 => 'Ingresa en modo paciente para enviar un examen.',
+          _ => 'No se pudo consultar la atención. Intenta nuevamente.',
+        }, response.statusCode);
+      }
+      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
+    } on AuthFailure {
+      rethrow;
+    } catch (_) {
+      throw const AuthFailure(
+        'No se pudo consultar la atención. Intenta nuevamente.',
+      );
+    }
+  }
+
+  Uri documentUri([String suffix = '', Map<String, String>? query]) {
+    if (suffix.isNotEmpty &&
+        !RegExp(
+          r'^[a-f0-9-]{36}/(file|processing|review|care|explanation|assistant(?:/explanation)?)$',
+        ).hasMatch(suffix)) {
+      throw const AuthFailure('Documento inválido.');
+    }
+    return _base
+        .resolve('/api/documents${suffix.isEmpty ? '' : '/$suffix'}')
+        .replace(queryParameters: query);
+  }
+
+  Future<http.Response> sendDocumentRequest(http.BaseRequest request) async {
+    final token = _token;
+    if (token == null ||
+        expiresAt == null ||
+        !expiresAt!.isAfter(DateTime.now())) {
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+    }
+    if (request.url.origin != _base.origin ||
+        !(request.url.path == '/api/documents' ||
+            RegExp(
+              r'^/api/documents/[a-f0-9-]{36}/(file|processing|review|care|explanation|assistant(?:/explanation)?)$',
+            ).hasMatch(request.url.path))) {
+      throw const AuthFailure('Solicitud de documento inválida.');
+    }
+    if ((request.url.path.endsWith('/review') ||
+            request.url.path.endsWith('/care')) &&
+        request.method != 'GET') {
+      throw const AuthFailure('La revisión del paciente es solo de consulta.');
+    }
+    if ((request.url.path.endsWith('/explanation') ||
+            request.url.path.endsWith('/assistant')) &&
+        !['GET', 'POST'].contains(request.method)) {
+      throw const AuthFailure('Solicitud de explicación inválida.');
+    }
+    request.headers['Authorization'] = 'Bearer $token';
+    try {
+      final response =
+          await (() async {
+            final streamed = await _client.send(request);
+            return http.Response.fromStream(streamed);
+          })().timeout(
+            Duration(
+              seconds:
+                  (request.url.path.endsWith('/explanation') ||
+                      request.url.path.endsWith('/assistant'))
+                  ? 150
+                  : 60,
+            ),
+          );
+      if (_token != token)
+        throw const AuthFailure('La sesión cambió. Ingresa nuevamente.', 401);
+      if (response.statusCode == 401) {
+        clear();
+        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+      }
+      if (response.statusCode >= 400) {
+        final message = switch (response.statusCode) {
+          400 =>
+            request.url.path.contains('/assistant')
+                ? 'Pregunta o examen fuera de los límites del asistente.'
+                : 'Revisa el archivo y los datos del examen.',
+          403 => 'No tienes permiso para acceder a estos documentos.',
+          404 => 'Documento no disponible.',
+          409 =>
+            request.url.path.contains('/assistant')
+                ? 'Comprueba la revisión aprobada y el límite de treinta preguntas. Actualiza antes de repetir.'
+                : request.url.path == '/api/documents' &&
+                      request.method == 'POST'
+                ? 'La selección de atención o tu perfil cambió. Actualiza los datos antes de enviar.'
+                : 'Primero se requiere una revisión profesional aprobada.',
+          413 => 'El archivo supera 10 MiB.',
+          503 =>
+            request.url.path.contains('/assistant')
+                ? assistantFailureMessage(response.body)
+                : 'El servicio está ocupado. Intenta nuevamente.',
+          _ => 'No se pudo completar la solicitud.',
+        };
+        throw AuthFailure(message, response.statusCode);
+      }
+      return response;
+    } on AuthFailure {
+      rethrow;
+    } on TimeoutException {
+      throw AuthFailure(
+        request.url.path.contains('/assistant')
+            ? 'El asistente tardó demasiado. Actualiza la conversación antes de repetir.'
+            : 'La solicitud tardó demasiado. Actualiza el historial antes de repetir una carga.',
+      );
+    } catch (_) {
+      throw AuthFailure(
+        request.url.path.contains('/assistant')
+            ? 'No se pudo conectar con el asistente. Actualiza la conversación antes de repetir.'
+            : 'No se pudo conectar. Si estabas subiendo un archivo, actualiza el historial antes de repetir.',
+      );
+    }
+  }
+
+  Uri assignmentUri([String suffix = '', Map<String, String>? query]) {
+    if (suffix.isNotEmpty &&
+        !RegExp(r'^[a-f0-9-]{36}/deactivate$').hasMatch(suffix)) {
+      throw const AuthFailure('Asignación inválida.');
+    }
+    return _base
+        .resolve('/api/assignments${suffix.isEmpty ? '' : '/$suffix'}')
+        .replace(queryParameters: query);
+  }
+
+  Future<http.Response> sendAssignmentRequest(http.Request request) async {
+    final token = _token;
+    if (token == null ||
+        expiresAt == null ||
+        !expiresAt!.isAfter(DateTime.now())) {
+      clear();
+      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+    }
+    if (request.url.origin != _base.origin ||
+        !['GET', 'POST'].contains(request.method) ||
+        !(request.url.path == '/api/assignments' ||
+            RegExp(r'^/api/assignments/[a-f0-9-]{36}/deactivate$')
+       …73804 tokens truncated…wait page.close();
+    }
+  };
+
+  return stage('uploader',async ({page,id,button,click,select,confirm})=>{
+    const captures=process.env.VITALIA_JOURNEY_SCREENSHOTS;
+    const receive=button('Recibir solicitud');
+    await receive.waitFor();
+    const desktop=await receive.boundingBox();
+    assert.ok(desktop && desktop.x < 100 && desktop.y < 340 && desktop.width > 0,
+      'Navegación lateral visible en escritorio');
+    if(captures)await page.screenshot({path:resolve(captures,'operador-escritorio.png')});
+
+    // Una sesión sirve para ambos tamaños y mantiene disponible el cupo
+    // de autenticación de la cuenta paciente en el mismo proceso de prueba.
+    await page.setViewportSize({width:390,height:844});
+    await receive.click();
+    const pdfPicker = button('Seleccionar solicitud PDF');
+    await pdfPicker.waitFor();
+    const pickerPosition = await pdfPicker.boundingBox();
+    assert.ok(pickerPosition && pickerPosition.y >= 0 &&
+      pickerPosition.y + pickerPosition.height <= page.viewportSize().height,
+      'El selector de PDF debe quedar visible sin desplazarse en móvil.');
+    const pdfReader=button('Leer PDF y sugerir datos');
+    assert.equal(await pdfReader.count(),0,'La lectura aparece al seleccionar un PDF');
+    assert.equal(await button('Buscar paciente activado').count(),0);
+    if(captures)await page.screenshot({path:resolve(captures,'recepcion-movil.png')});
+    await page.setViewportSize({width:1440,height:1150});
+    const requestChooser = page.waitForEvent('filechooser');
+    await click(pdfPicker, 'Seleccionar solicitud PDF');
+    await (await requestChooser).setFiles({
+      name: 'solicitud-ensayo.pdf', mimeType: 'application/pdf', buffer: samplePdf,
+    });
+    await pdfReader.waitFor();
+    await button('Buscar paciente activado').waitFor();
+    assert.equal(await button('Crear orden con solicitud').count(),0);
+    if(captures)await page.screenshot({path:resolve(captures,'recepcion-escritorio.png')});
+    console.log('Microsoft Edge: navegación y recepción verificadas a 390 y 1440 px.');
+    await click(button('Órdenes'),'Órdenes');
+    const sampleFolio='VH-'+String(sampleOrder.orderNumber).padStart(6,'0');
+    await click(button('Abrir '+sampleFolio),'Abrir orden desde la lista');
+    const clinical='/api/sil/main'+base+'/orders/'+sampleOrder.id+'/clinical/results';
+    const chooseResults=page.waitForEvent('filechooser');
+    const preview=page.waitForResponse(r=>r.url().endsWith(clinical+'/preview') && r.request().method()==='POST');
+    await click(button('Leer PDF de resultados'),'Leer PDF de resultados');
+    await (await chooseResults).setFiles({
+      name:'resultados-ficticios.pdf',mimeType:'application/pdf',buffer:samplePdf,
+    });
+    assert.equal((await preview).status(),200);
+    await page.getByText('Sugerencia del PDF: 91.2',{exact:true}).waitFor();
+    await click(button('Cotejé el PDF. Completar campos vacíos'),'Completar sugerencias');
+    const saved=page.waitForResponse(r=>r.url().endsWith(clinical) && r.request().method()==='POST');
+    await click(button('Guardar resultados para revisión'),'Guardar resultados');
+    const recorded=await saved;
+    assert.equal(recorded.status(),201);
+    assert.equal(recorded.request().postDataJSON().values[0].numericValue,91.2);
+    console.log('Microsoft Edge: el operador cotejó y guardó la sugerencia del PDF.');
+    const requestDownload=page.waitForEvent('download');
+    await click(button('Descargar solicitud original'),'Descargar solicitud original');
+    const requestFile=await requestDownload;
+    assert.deepEqual(readFileSync(await requestFile.path()),browserRequestPdf);
+    assert.equal(requestFile.suggestedFilename(),
+      'solicitud-VH-'+String(sampleOrder.orderNumber).padStart(6,'0')+'.pdf');
+    await click(button('Ver historial de la orden'),'Ver historial de la orden');
+    const closeHistory=button('Cerrar historial');
+    await closeHistory.waitFor();
+    await page.getByText('Resultados registrados',{exact:true}).waitFor();
+    await page.getByText('Solicitud descargada',{exact:true}).waitFor();
+    await page.getByText(/uploader@example[.]invalid/).first().waitFor();
+    await closeHistory.click();
+    await closeHistory.waitFor({state:'hidden'});
+    console.log('Microsoft Edge: el operador consultó el evento real de la orden.');
+    await click(button('Órdenes'),'Órdenes');
+    assert.equal(await id('sil-upload-order').count(),0);
+    await click(page.getByText('Adjuntar informe autorizado',{exact:true}), 'Adjuntar informe autorizado');
+    await select('sil-upload-order');
+    const choose=page.waitForEvent('filechooser');
+    await click(button('Elegir archivo PDF (máx. 2 MiB)'),'Elegir archivo PDF');
+    await (await choose).setFiles({name:'informe-operador.pdf',mimeType:'application/pdf',buffer:pdf});
+    await button('informe-operador.pdf').waitFor({timeout:10000});
+    console.log('Microsoft Edge: orden y archivo seleccionados.');
+    for(const [key,value] of [
+      ['sil-report-professional','Profesional Ficticio'],
+      ['sil-report-reference','AUT-OPERADOR-EDGE'],
+    ]){
+      const input=id(key).locator('input[data-semantics-role="text-field"]');
+      await reach(page,input,key);
+      await input.focus();
+      const focused=input.and(page.locator(':focus'));
+      await focused.waitFor({timeout:7000});
+      // Flutter activa el editor web al finalizar el cambio de foco.
+      await focused.evaluate(()=>new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done))));
+      await focused.pressSequentially(value,{delay:18});
+      if(await focused.inputValue()!==value){
+        await focused.press('Control+a');
+        await focused.pressSequentially(value,{delay:18});
+      }
+      assert.equal(await focused.inputValue(),value,key);
+    }
+    await click(button('Elegir fecha de autorización'),'Elegir fecha de autorización');
+    await button('Usar fecha').click();
+    await confirm('El informe ya fue autorizado fuera de Vitalia');
+    await confirm('Confirmé que el PDF corresponde al paciente de la orden');
+    console.log('Microsoft Edge: datos de autorización y paciente comprobados.');
+    const response=page.waitForResponse(r=>r.url().endsWith(endpoint) && r.request().method()==='POST');
+    const refresh=page.waitForResponse(r=>new URL(r.url()).pathname===('/api/sil/main'+base+'/orders')
+      && r.request().method()==='GET');
+    const [uploaded]=await Promise.all([
+      response,click(button('Adjuntar para revisión'),'Adjuntar para revisión'),refresh,
+    ]);
+    assert.equal(uploaded.status(),201,'Carga del PDF desde la estación');
+    const reportId=(await uploaded.json()).report.id;
+    console.log('Microsoft Edge: se adjuntó el PDF desde la estación del operador.');
+
+    await page.getByRole('button',{name:/^Revisión interna/}).click();
+    await select('sil-review-order');
+    const publication=button('Publicar informe');
+    assert.equal(await publication.count(),0,'Se exige revisar antes de publicar');
+    const download=page.waitForEvent('download');
+    const reviewResponse=page.waitForResponse(r=>r.url().endsWith(endpoint+'/file') && r.request().method()==='GET');
+    await click(button('Descargar PDF para revisión'),'Descargar para revisión');
+    assert.equal((await reviewResponse).status(),200);
+    assert.deepEqual(readFileSync(await (await download).path()),pdf);
+    await publication.waitFor();
+    assert.equal(await publication.isEnabled(),false,'Se exige confirmar el cotejo');
+    await confirm('Confirmo que revisé el PDF y su autorización externa');
+    const posted=page.waitForResponse(r=>r.url().endsWith(endpoint+'/publish') && r.request().method()==='POST');
+    await click(publication,'Publicar informe');
+    assert.equal((await posted).status(),201);
+    console.log('Microsoft Edge: el mismo operador descargó, revisó y publicó el PDF.');
+    return reportId;
+  });
+}
+
+// La interfaz administrativa se comprueba con sesión real, no con mocks.
+// Solo se leen los datos sintéticos y las acciones ya autorizadas; no
+// se revocan permisos necesarios para el resto del recorrido.
+async function adminJourney(browser, base) {
+  const page=await browser.newPage({viewport:{width:1440,height:1050}});
+  try {
+    const responseLabs=page.waitForResponse(r=>
+      new URL(r.url()).pathname==='/api/sil/main/labs' &&
+      r.request().method()==='GET',{timeout:15000});
+    await signIn(page,'admin','#/administracion');
+    const labsHttp=await responseLabs;
+    const labData=await labsHttp.json();
+    console.log('Edge admin: GET /labs HTTP '+labsHttp.status()+
+      ' cantidad='+String(labData.laboratories?.length ?? 'invalida'));
+    assert.equal(labsHttp.status(),200);
+    assert.ok(Array.isArray(labData.laboratories) &&
+      labData.laboratories.length>=2,
+      'La sesión de administración debe recibir ambos laboratorios de ensayo.');
+    await page.getByText('Administración de laboratorios',{exact:true})
+      .waitFor({timeout:15000});
+    const nav=label=>page.getByRole('button',{name:label,exact:true});
+    await nav('Laboratorios').waitFor();
+    await nav('Operadores y permisos').waitFor();
+    await nav('Actividad').waitFor();
+    assert.equal(await nav('Recibir solicitud').count(),0,
+      'Administración no debe presentar acciones clínicas de operador.');
+    assert.equal(await nav('Publicar informe').count(),0,
+      'El administrador no puede publicar informes desde su estación.');
+    // Los resúmenes de la columna secundaria pueden estar fuera del
+    // viewport; comprobamos controles operativos de la administración.
+    await nav('Registrar laboratorio').waitFor({timeout:10000});
+    if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+      await page.screenshot({path:resolve(
+        process.env.VITALIA_JOURNEY_SCREENSHOTS, 'administrador-laboratorios.png')});
+    }
+
+    await nav('Operadores y permisos').click();
+    // Flutter Canvas muestra los textos en pantalla, pero no todos son
+    // localizadores HTML. Comprobar controles accesibles y la respuesta real.
+    const refreshStaff=nav('Actualizar operadores');
+    await refreshStaff.waitFor({timeout:10000});
+    const staffResponse=page.waitForResponse(r=>
+      new URL(r.url()).pathname==='/api/sil/main'+base+'/staff' &&
+      r.request().method()==='GET');
+    await refreshStaff.click();
+    const staffHttp=await staffResponse;
+    assert.equal(staffHttp.status(),200);
+    const staffBody=await staffHttp.json();
+    const entries=staffBody.staff ?? [];
+    assert.equal(entries.length,2,'La administración debe listar ambos operadores.');
+    assert.deepEqual(entries.map(m=>m.email).sort(),
+      ['reviewer@example.invalid','uploader@example.invalid']);
+    assert.ok(entries.every(m=>m.active && m.canReviewReports),
+      'Ambos operadores tienen revisión autorizada inicialmente.');
+    await nav('Retirar permiso de revisión').first().waitFor();
+    if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+      await page.screenshot({
+        path:resolve(process.env.VITALIA_JOURNEY_SCREENSHOTS,
+          'administrador-operadores.png'),
+      });
+      await page.setViewportSize({width:390,height:844});
+      await nav('Invitar operador').waitFor();
+      await page.screenshot({path:resolve(
+        process.env.VITALIA_JOURNEY_SCREENSHOTS, 'administrador-movil.png')});
+      await page.setViewportSize({width:1440,height:1050});
+    }
+    // En esta copia sintética ambos operadores tienen permiso concedido.
+    // Probar el ciclo de revocación y restitución, dejando el estado original
+    // para que el recorrido del operador continúe sin cambios.
+    const permissionPath='/api/sil/main'+base+'/staff/review-permission';
+    const permissionResponse=()=>page.waitForResponse(r=>
+      new URL(r.url()).pathname===permissionPath &&
+      r.request().method()==='POST');
+    const revoke=nav('Retirar permiso de revisión').first();
+    const revoked=permissionResponse();
+    await (await reach(page,revoke,'Revocar revisión')).click();
+    const revokedResult=await revoked;
+    assert.equal(revokedResult.status(),200);
+    const revokedInput=revokedResult.request().postDataJSON();
+    assert.equal(revokedInput.enabled,false);
+    const grant=nav('Autorizar revisión');
+    await (await reach(page,grant,'Restituir revisión')).waitFor();
+    const granted=permissionResponse();
+    await grant.click();
+    const grantedResult=await granted;
+    assert.equal(grantedResult.status(),200);
+    assert.deepEqual(grantedResult.request().postDataJSON(),{
+      accountId:revokedInput.accountId,enabled:true,
+    },'Solo se restituye el permiso que se revocó en el ensayo.');
+
+    await nav('Actividad').click();
+    await nav('Actualizar estado administrativo').waitFor({timeout:10000});
+    assert.equal(await nav('Descargar solicitud original').count(),0,
+      'La actividad administrativa no muestra documentos de órdenes.');
+    assert.equal(await nav('Descargar PDF').count(),0,
+      'El administrador no debe ver el portal privado del paciente.');
+    if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+      await page.screenshot({
+        path:resolve(process.env.VITALIA_JOURNEY_SCREENSHOTS,
+          'administrador-escritorio.png'),
+      });
+    }
+    console.log('Microsoft Edge: administración, laboratorios, permisos y actividad verificados.');
+  } finally {
+    await page.close();
+  }
+}
+
+async function browserJourney(order, base, sampleOrder, samplePdf) {
+  const {chromium}=require(process.env.VITALIA_JOURNEY_PLAYWRIGHT);
+  const browser=await chromium.launch({channel:'msedge'});
+  try {
+    await adminJourney(browser,base);
+    const publishedId=await operatorJourney(browser,order,base,sampleOrder,samplePdf);
+    const page=await browser.newPage({viewport:{width:390,height:844}});
+    try {
+      await signIn(page,'patient');
+      const patientNav=page.getByLabel('Navegación del paciente');
+      await patientNav.getByRole('button',
+        {name:'Mis informes',exact:true}).waitFor();
+      assert.equal(await page.getByRole('button',
+        {name:'Recibir solicitud',exact:true}).count(),0,
+        'El paciente no debe ver la estación interna del operador.');
+
+      const help=patientNav.getByRole('button',{name:'Ayuda',exact:true});
+      // La barra solo muestra flechas si realmente hay desbordamiento.
+      // No reservar espacio para una flecha inexistente: con menos pestañas
+      // el botón Ayuda puede caber íntegro a 390 px.
+      const forward=page.getByRole('button',
+        {name:'Mostrar más secciones',exact:true});
+      for(let attempt=0;attempt<4;attempt++){
+        const box=await help.boundingBox({timeout:500}).catch(()=>null);
+        const arrowsVisible=await forward.count()>0;
+        const rightEdge=page.viewportSize().width-(arrowsVisible?48:0);
+        if(box && box.x>=0 && box.x+box.width<=rightEdge){
+          break;
+        }
+        assert.ok(arrowsVisible && await forward.isEnabled(),
+          'La ayuda debe ser alcanzable desde la navegación móvil.');
+        await forward.click();
+      }
+      await help.click();
+      // La presencia del botón del diálogo verifica que abrió Ayuda.
+      const understood=page.getByRole('button',{name:'Entendido',exact:true});
+      await understood.waitFor({timeout:10000});
+      await understood.click();
+
+      await page.getByRole('button',{name:'Mi cuenta'}).click();
+      await page.getByRole('menuitem',{name:'Mi perfil'}).click();
+      // El diálogo Mi perfil expone un control de cierre accesible. El
+      // contenido se valida en el API real y en los tests de widgets.
+      const closeProfile=page.getByRole('button',{name:'Cerrar',exact:true});
       await closeProfile.waitFor({timeout:10000});
       await closeProfile.click();
 
@@ -1272,9 +1988,19 @@ async function main() {
     assert.equal(firstPage.hasMore,true);
     await call('admin','GET',invitationPath+'?limit=51',400);
     await call('uploader','GET',invitationPath,403);
+    const pendingInvitation=invitations.invitations.find(entry=>entry.status==='pending');
+    const revokePath=invitationPath+'/revoke';
+    const revoke={invitationId:pendingInvitation.id};
+    await call('uploader','POST',revokePath,403,{json:revoke});
+    await admin(otherLab+'/operator-invitations/revoke',404,revoke);
+    await admin(revokePath,200,revoke);
+    await admin(revokePath,404,revoke);
+    const afterRevocation=await (await call('admin','GET',invitationPath,200)).json();
+    assert.ok(afterRevocation.invitations.every(entry=>entry.status==='revoked'));
     const auditPath=base+'/administrative-audit';
     const northAudit=await (await call('admin','GET',auditPath,200)).json();
     assert.equal(northAudit.events.filter(event=>event.action==='operator_invited').length,2);
+    assert.equal(northAudit.events.filter(event=>event.action==='operator_invitation_revoked').length,1);
     assert.ok(northAudit.events.every(event=>Object.keys(event).sort().join(',')===
       'action,actorEmail,createdAt,id'));
     const southAudit=await (await call('admin','GET',otherLab+'/administrative-audit',200)).json();
