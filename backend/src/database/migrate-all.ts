@@ -41,6 +41,8 @@ async function main() {
           AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
             WHERE version='038_sil_main_postanalytical')
           AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
+            WHERE version='039_sil_main_operator_review')
+          AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
             WHERE version='040_sil_main_clinical_access')
           AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
             WHERE version='041_sil_main_pending_referrals')
