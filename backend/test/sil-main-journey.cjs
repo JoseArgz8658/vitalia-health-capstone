@@ -807,10 +807,21 @@ async function main() {
     await api('POST','/api/sil/main/patient/recovery/complete',204,{json:recovered});
     await api('POST','/api/sil/main/patient/recovery/complete',422,{json:recovered});
     await api('GET','/api/auth/me',401,{token:invited.token});
-    await api('POST','/api/auth/login',401,{json:{mode:'paciente',email:inviteEmail,password}});
-    await api('POST','/api/auth/login',200,{json:{
+    // Mantener el límite real de 10 intentos/IP. El ensayo ya autentica
+    // cinco cuentas iniciales, una invitada y tres roles en Edge. Verificar
+    // la clave anterior/nueva con el mismo servicio de credenciales evita
+    // agotar la cuota por una comprobación redundante de HTTP.
+    const verifyRecovered=await createCredentialAuthenticator(db,{
+      guardPatientSession:true,
+    });
+    assert.equal(await verifyRecovered({
+      mode:'paciente',email:inviteEmail,password,
+    }),null,'La contraseña anterior no debe autenticar después de la recuperación.');
+    const newCredential=await verifyRecovered({
       mode:'paciente',email:inviteEmail,password:recovered.password,
-    }});
+    });
+    assert.equal(newCredential?.email,inviteEmail);
+    assert.equal(newCredential?.role,'paciente');
     const pendingPatient=(await db.query(
       'SELECT id FROM public.vitalia_accounts WHERE email=$1',[pendingEmail])).rows[0];
     assert.ok(pendingPatient?.id,'La activación debe crear cuenta paciente.');
