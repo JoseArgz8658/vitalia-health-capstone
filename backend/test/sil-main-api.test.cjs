@@ -169,6 +169,20 @@ test('resumen obtiene conteos totales sin pacientes ni documentos y exige membre
   expect(deniedQuery).toHaveBeenCalledTimes(1);
 });
 
+test('conteos nulos o fuera de rango nunca se publican como cero',async()=>{
+  for(const invalid of [null,'','9007199254740992']){
+    const query=jest.fn()
+      .mockResolvedValueOnce({rows:[{allowed:1}]})
+      .mockResolvedValueOnce({rows:[{
+        ordersTotal:invalid,registered:'0',inReview:'0',
+        published:'0',pendingRequests:'0',
+      }]});
+    const service=createSilMainService({query});
+    await expect(service.operatorSummary(lab,operator))
+      .rejects.toThrow();
+  }
+});
+
 test('orden principal exige paciente y prestaciones válidas',async()=>{
   const {application,service}=demo();
   expect((await request(application).post('/api/sil/main/labs/'+lab+'/orders')
