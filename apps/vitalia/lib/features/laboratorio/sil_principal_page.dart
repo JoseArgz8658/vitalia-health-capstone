@@ -1917,7 +1917,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   );
 
   Widget _navigation() {
-    final pending = _orders.where(_isReviewable).length;
+    final pending = _summaryCount(
+      'inReview',_orders.where(_isReviewable).length);
     final destinations = [
       (_StationSection.dashboard, Icons.dashboard_outlined, 'Resumen'),
       (_StationSection.orders, Icons.assignment_outlined, 'Órdenes'),
@@ -2015,26 +2016,30 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
 
 
   Widget _operatorMetrics() {
-    // El API entrega hasta 50 órdenes y 50 derivaciones pendientes.
-    // Las tarjetas muestran solo el recuento del conjunto consultado.
+    // Si el resumen está disponible, son totales de este laboratorio.
+    // Sin él, mostrar las cifras recientes con un alcance explícito.
     final counts = <({IconData icon, String label, int value,
       _StationSection destination, Color color, Color tint})>[
       (icon: Icons.note_add_outlined, label: 'Derivaciones pendientes',
-        value: _pendingRequests.length, destination: _StationSection.requests,
+        value: _summaryCount('pendingRequests',_pendingRequests.length),
+        destination: _StationSection.requests,
         color: const Color(0xFFB54B5D), tint: ColoresVitalia.errorSuave),
-      (icon: Icons.assignment_outlined, label: 'Órdenes consultadas',
-        value: _orders.length, destination: _StationSection.orders,
+      (icon: Icons.assignment_outlined, label: 'Total de órdenes',
+        value: _summaryCount('ordersTotal',_orders.length),
+        destination: _StationSection.orders,
         color: OperatorPalette.blue, tint: ColoresVitalia.azulSuave),
       (icon: Icons.inventory_2_outlined, label: 'Órdenes registradas',
-        value: _orders.where((o) => o['status'] == 'registered').length,
+        value: _summaryCount('registered',
+          _orders.where((o) => o['status'] == 'registered').length),
         destination: _StationSection.orders,
         color: const Color(0xFF99630F), tint: ColoresVitalia.advertenciaSuave),
       (icon: Icons.fact_check_outlined, label: 'PDF pendientes de revisión',
-        value: _orders.where(_isReviewable).length,
+        value: _summaryCount('inReview',_orders.where(_isReviewable).length),
         destination: _canReview ? _StationSection.review : _StationSection.orders,
         color: const Color(0xFF7454A8), tint: ColoresVitalia.pendienteSuave),
       (icon: Icons.picture_as_pdf_outlined, label: 'Informes publicados',
-        value: _orders.where((o) => o['status'] == 'report_published').length,
+        value: _summaryCount('published',
+          _orders.where((o) => o['status'] == 'report_published').length),
         destination: _StationSection.orders,
         color: OperatorPalette.teal, tint: ColoresVitalia.verdeSuave),
     ];
@@ -2054,7 +2059,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               count: item.value,
               accent: item.color,
               tint: item.tint,
-              caption: 'En listas recientes (máx. 50)',
+              caption: _operatorSummary != null
+                ? 'Total del laboratorio'
+                : 'Solo lista reciente (máx. 50)',
               onTap: _busy ? null : () => _openSection(item.destination),
             ),
           ),
@@ -2063,7 +2070,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   }
 
   Widget _dashboard() {
-    final pending = _orders.where(_isReviewable).length;
+    final pending = _summaryCount(
+      'inReview',_orders.where(_isReviewable).length);
+    final isTotal = _operatorSummary != null;
     final shortcuts = _section('Accesos rápidos',
       'Inicia o continúa una tarea desde el mismo panel.',
       Icons.bolt_outlined, [
@@ -2099,15 +2108,19 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         ],
       ]);
     final queues = _section('Colas del laboratorio',
-      'Recuentos de las listas cargadas, no del histórico completo.',
+      isTotal
+          ? 'Totales actuales del laboratorio seleccionado.'
+          : 'Solo registros recientes cargados; no representan el total del laboratorio.',
       Icons.work_outline, [
         _queueLink(Icons.note_add_outlined, 'Derivaciones pendientes',
-          _pendingRequests.length, _StationSection.requests),
-        _queueLink(Icons.assignment_outlined, 'Órdenes consultadas',
-          _orders.length, _StationSection.orders),
+          _summaryCount('pendingRequests',_pendingRequests.length),
+          _StationSection.requests, total: isTotal),
+        _queueLink(Icons.assignment_outlined, 'Órdenes del laboratorio',
+          _summaryCount('ordersTotal',_orders.length),
+          _StationSection.orders, total: isTotal),
         if (_canReview)
           _queueLink(Icons.fact_check_outlined, 'Informes por revisar',
-            pending, _StationSection.review),
+            pending, _StationSection.review, total: isTotal),
       ]);
     final notices = _section('Trabajo seguro',
       'La publicación es una acción independiente.',
@@ -2184,12 +2197,15 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ]);
   }
 
-  Widget _queueLink(IconData icon, String title, int count, _StationSection section) =>
+  Widget _queueLink(IconData icon, String title, int count,
+      _StationSection section, {bool total = false}) =>
     ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(icon, color: ColoresVitalia.azul),
       title: Text(title),
-      subtitle: Text('$count en la lista'),
+      subtitle: Text(total
+          ? '$count en el laboratorio'
+          : '$count en la lista reciente (parcial)'),
       trailing: const Icon(Icons.chevron_right),
       onTap: _busy ? null : () => _openSection(section),
     );
@@ -2307,8 +2323,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               support: OperatorInfoNote(
                 icon: Icons.fact_check_outlined,
                 title: 'Revisión y publicación',
-                description: 'Pendientes en órdenes recientes: ' +
-                    _orders.where(_isReviewable).length.toString() +
+                description: (_operatorSummary == null
+                    ? 'Pendientes entre órdenes recientes: '
+                    : 'Pendientes en este laboratorio: ') +
+                    _summaryCount('inReview',
+                      _orders.where(_isReviewable).length).toString() +
                     '. La publicación requiere autorización.',
                 color: OperatorPalette.teal,
                 background: ColoresVitalia.verdeSuave,
