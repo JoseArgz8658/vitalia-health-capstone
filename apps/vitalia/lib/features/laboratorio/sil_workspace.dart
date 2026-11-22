@@ -155,7 +155,8 @@ class _SilWorkspaceTopNavigationState
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       alignment: 0.08,
-      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+      // En un cambio de pestaña debe servir en ambas direcciones del scroll.
+      alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
     );
   }
 
