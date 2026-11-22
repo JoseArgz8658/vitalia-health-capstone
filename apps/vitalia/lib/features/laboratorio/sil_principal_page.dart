@@ -179,9 +179,14 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _labs=labs;
       if (selected != _labId) _resetLab(selected);
     });
-    await _loadOrders();
-    if(_operator) await _loadPendingRequests();
-    if(_admin && _labId!=null) await _loadStaff();
+    // Administración carga el personal del laboratorio de forma independiente.
+    // Órdenes y derivaciones se consultan desde la estación del operador.
+    if (_operator) {
+      await _loadOrders();
+      await _loadPendingRequests();
+    } else if (_admin && _labId != null) {
+      await _loadStaff();
+    }
   }
 
   /// Consulta cifras completas del laboratorio; nunca se atribuyen totales
@@ -452,9 +457,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if (value == _labId || _busy) return;
     setState(() => _resetLab(value));
     _execute(() async {
-      await _loadOrders();
-      if(_operator)await _loadPendingRequests();
-      if(_admin)await _loadStaff();
+      if (_operator) {
+        await _loadOrders();
+        await _loadPendingRequests();
+      } else if (_admin) {
+        await _loadStaff();
+      }
     },showNotice:false);
   }
 
@@ -2148,7 +2156,28 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         ? _section('Selecciona un laboratorio',
             'La actividad requiere un laboratorio seleccionado.',
             Icons.info_outline, [])
-        : _ordersPanel(),
+        : _section(
+            'Estado administrativo',
+            'Consulta el personal y sus permisos en el laboratorio seleccionado.',
+            Icons.history_outlined, [
+              Text('${_labStaff.length} operadores asociados'),
+              const SizedBox(height: 8),
+              Text('${_labStaff.where((staff) =>
+                staff['active'] == true &&
+                staff['canReviewReports'] == true).length} '
+                'operadores con permiso de revisión'),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _busy ? null :
+                  () => _execute(_loadStaff,showNotice:false),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Actualizar estado administrativo'),
+              ),
+              const SizedBox(height: 8),
+              const Text('Este resumen no constituye un historial de '
+                'auditoría administrativa. La auditoría detallada '
+                'deberá consultarse por un mecanismo autorizado.'),
+            ]),
   };
 
 

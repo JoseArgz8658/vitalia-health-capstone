@@ -6,6 +6,7 @@ import 'package:vitalia_health/features/laboratorio/sil_principal_page.dart';
 class _StationApi extends AuthApi {
   final reviewActions=<Map<String,dynamic>>[];
   final pendingCompletions=<Map<String,dynamic>>[];
+  final requestPaths=<String>[];
   bool showPending=false;
   bool pendingWithoutDate=false;
   bool expandedSummary=false;
@@ -24,6 +25,7 @@ class _StationApi extends AuthApi {
   }) async {
     final requestUri=Uri.parse(path);
     final requestPath=requestUri.path;
+    requestPaths.add(requestPath);
     if (requestPath=='/labs/$allowedLab/summary') {
       if (unavailableSummary) throw StateError('Sin resumen de prueba');
       return {'summary': expandedSummary
@@ -371,6 +373,35 @@ void main() {
         'enabled':true,
       }
     ]);
+    await tester.tap(find.widgetWithText(TextButton,'Actividad'));
+    await tester.pumpAndSettle();
+    expect(find.text('Estado administrativo'),findsOneWidget);
+    expect(find.textContaining('no constituye un historial de'),findsOneWidget);
+    expect(find.text('Gestión de órdenes'),findsNothing);
+    expect(find.text('1 operadores asociados'), findsOneWidget);
+
+    final laboratory = _field('Laboratorio');
+    await tester.ensureVisible(laboratory);
+    await tester.tap(laboratory);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Laboratorio Sur').last);
+    await tester.pumpAndSettle();
+    expect(find.text('0 operadores asociados'), findsOneWidget);
+    expect(find.text('1 operadores asociados'), findsNothing);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Operadores y permisos'));
+    await tester.pumpAndSettle();
+    expect(find.text('operador@laboratorio.invalid'), findsNothing);
+    expect(find.textContaining('Todavía no hay operadores vinculados'),
+      findsOneWidget);
+    expect(api.requestPaths, containsAllInOrder([
+      '/labs/${_StationApi.allowedLab}/staff',
+      '/labs/${_StationApi.restrictedLab}/staff',
+    ]));
+    final clinicalRequests = api.requestPaths.where((path) =>
+      path.endsWith('/orders') || path.endsWith('/medical-requests/pending'));
+    expect(clinicalRequests, isEmpty,
+      reason: 'El panel administrativo solo necesita información del personal.');
     expect(tester.takeException(),isNull);
   });
 

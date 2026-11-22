@@ -304,22 +304,170 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
   });
 }
 
+// La interfaz administrativa se comprueba con sesión real, no con mocks.
+// Solo se leen los datos sintéticos y las acciones ya autorizadas; no
+// se revocan permisos necesarios para el resto del recorrido.
+async function adminJourney(browser, base) {
+  const page=await browser.newPage({viewport:{width:1440,height:1050}});
+  try {
+    const responseLabs=page.waitForResponse(r=>
+      new URL(r.url()).pathname==='/api/sil/main/labs' &&
+      r.request().method()==='GET',{timeout:15000});
+    await signIn(page,'admin','#/administracion');
+    const labsHttp=await responseLabs;
+    const labData=await labsHttp.json();
+    console.log('Edge admin: GET /labs HTTP '+labsHttp.status()+
+      ' cantidad='+String(labData.laboratories?.length ?? 'invalida'));
+    assert.equal(labsHttp.status(),200);
+    assert.ok(Array.isArray(labData.laboratories) &&
+      labData.laboratories.length>=2,
+      'La sesión de administración debe recibir ambos laboratorios de ensayo.');
+    await page.getByText('Administración de laboratorios',{exact:true})
+      .waitFor({timeout:15000});
+    const nav=label=>page.getByRole('button',{name:label,exact:true});
+    await nav('Laboratorios').waitFor();
+    await nav('Operadores y permisos').waitFor();
+    await nav('Actividad').waitFor();
+    assert.equal(await nav('Recibir solicitud').count(),0,
+      'Administración no debe presentar acciones clínicas de operador.');
+    assert.equal(await nav('Publicar informe').count(),0,
+      'El administrador no puede publicar informes desde su estación.');
+    // Los resúmenes de la columna secundaria pueden estar fuera del
+    // viewport; comprobamos controles operativos de la administración.
+    await nav('Registrar laboratorio').waitFor({timeout:10000});
+
+    await nav('Operadores y permisos').click();
+    // Flutter Canvas muestra los textos en pantalla, pero no todos son
+    // localizadores HTML. Comprobar controles accesibles y la respuesta real.
+    const refreshStaff=nav('Actualizar operadores');
+    await refreshStaff.waitFor({timeout:10000});
+    const staffResponse=page.waitForResponse(r=>
+      new URL(r.url()).pathname==='/api/sil/main'+base+'/staff' &&
+      r.request().method()==='GET');
+    await refreshStaff.click();
+    const staffHttp=await staffResponse;
+    assert.equal(staffHttp.status(),200);
+    const staffBody=await staffHttp.json();
+    const entries=staffBody.staff ?? [];
+    assert.equal(entries.length,2,'La administración debe listar ambos operadores.');
+    assert.deepEqual(entries.map(m=>m.email).sort(),
+      ['reviewer@example.invalid','uploader@example.invalid']);
+    assert.ok(entries.every(m=>m.active && m.canReviewReports),
+      'Ambos operadores tienen revisión autorizada inicialmente.');
+    await nav('Retirar permiso de revisión').first().waitFor();
+    if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+      await page.screenshot({
+        path:resolve(process.env.VITALIA_JOURNEY_SCREENSHOTS,
+          'administrador-operadores.png'),
+      });
+    }
+    // En esta copia sintética ambos operadores tienen permiso concedido.
+    // Probar el ciclo de revocación y restitución, dejando el estado original
+    // para que el recorrido del operador continúe sin cambios.
+    const permissionPath='/api/sil/main'+base+'/staff/review-permission';
+    const permissionResponse=()=>page.waitForResponse(r=>
+      new URL(r.url()).pathname===permissionPath &&
+      r.request().method()==='POST');
+    const revoke=nav('Retirar permiso de revisión').first();
+    const revoked=permissionResponse();
+    await (await reach(page,revoke,'Revocar revisión')).click();
+    const revokedResult=await revoked;
+    assert.equal(revokedResult.status(),200);
+    const revokedInput=revokedResult.request().postDataJSON();
+    assert.equal(revokedInput.enabled,false);
+    const grant=nav('Autorizar revisión');
+    await (await reach(page,grant,'Restituir revisión')).waitFor();
+    const granted=permissionResponse();
+    await grant.click();
+    const grantedResult=await granted;
+    assert.equal(grantedResult.status(),200);
+    assert.deepEqual(grantedResult.request().postDataJSON(),{
+      accountId:revokedInput.accountId,enabled:true,
+    },'Solo se restituye el permiso que se revocó en el ensayo.');
+
+    await nav('Actividad').click();
+    await nav('Actualizar estado administrativo').waitFor({timeout:10000});
+    assert.equal(await nav('Descargar solicitud original').count(),0,
+      'La actividad administrativa no muestra documentos de órdenes.');
+    assert.equal(await nav('Descargar PDF').count(),0,
+      'El administrador no debe ver el portal privado del paciente.');
+    if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+      await page.screenshot({
+        path:resolve(process.env.VITALIA_JOURNEY_SCREENSHOTS,
+          'administrador-escritorio.png'),
+      });
+    }
+    console.log('Microsoft Edge: administración, laboratorios, permisos y actividad verificados.');
+  } finally {
+    await page.close();
+  }
+}
+
 async function browserJourney(order, base, sampleOrder, samplePdf) {
   const {chromium}=require(process.env.VITALIA_JOURNEY_PLAYWRIGHT);
   const browser=await chromium.launch({channel:'msedge'});
   try {
+    await adminJourney(browser,base);
     const publishedId=await operatorJourney(browser,order,base,sampleOrder,samplePdf);
     const page=await browser.newPage({viewport:{width:390,height:844}});
-    await signIn(page,'patient');
-    const downloadButton=page.getByRole('button',{name:'Descargar PDF',exact:true}).first();
-    await downloadButton.waitFor({timeout:20000});
-    const downloaded=page.waitForEvent('download');
-    const response=page.waitForResponse(r=>r.url().endsWith('/patient/reports/'+publishedId+'/file'));
-    await downloadButton.click();
-    assert.equal((await response).status(),200);
-    const file=await downloaded;
-    assert.deepEqual(readFileSync(await file.path()),pdf);
-    console.log('Microsoft Edge: el paciente descargó el informe publicado desde la estación.');
+    try {
+      await signIn(page,'patient');
+      // Hay otro acceso "Mis informes" en el contenido. Restringir al
+      // menú superior accesible, no seleccionar por coincidencia global.
+      const patientNav=page.getByLabel('Navegación del paciente');
+      await patientNav.getByRole('button',
+        {name:'Mis informes',exact:true}).waitFor();
+      assert.equal(await page.getByRole('button',
+        {name:'Recibir solicitud',exact:true}).count(),0,
+        'El paciente no debe ver la estación interna del operador.');
+
+      const help=patientNav.getByRole('button',{name:'Ayuda',exact:true});
+      // En 390 px la última pestaña puede estar fuera de la barra; usar
+      // los botones visibles en vez de depender del scroll automático DOM.
+      for(let attempt=0;attempt<4;attempt++){
+        const box=await help.boundingBox({timeout:500}).catch(()=>null);
+        if(box && box.x>=0 && box.x+box.width<=page.viewportSize().width-48){
+          break;
+        }
+        const forward=page.getByRole('button',
+          {name:'Mostrar más secciones',exact:true});
+        assert.ok(await forward.count() && await forward.isEnabled(),
+          'La ayuda debe ser alcanzable desde la navegación móvil.');
+        await forward.click();
+      }
+      await help.click();
+      // La presencia del botón del diálogo verifica que abrió Ayuda.
+      const understood=page.getByRole('button',{name:'Entendido',exact:true});
+      await understood.waitFor({timeout:10000});
+      await understood.click();
+
+      await page.getByRole('button',{name:'Mi cuenta'}).click();
+      await page.getByRole('menuitem',{name:'Mi perfil'}).click();
+      // El diálogo Mi perfil expone un control de cierre accesible. El
+      // contenido se valida en el API real y en los tests de widgets.
+      const closeProfile=page.getByRole('button',{name:'Cerrar',exact:true});
+      await closeProfile.waitFor({timeout:10000});
+      await closeProfile.click();
+
+      const downloadButton=page.getByRole('button',{name:'Descargar PDF',exact:true}).first();
+      await downloadButton.waitFor({timeout:20000});
+      const downloaded=page.waitForEvent('download');
+      const response=page.waitForResponse(r=>r.url().endsWith(
+        '/patient/reports/'+publishedId+'/file'));
+      await downloadButton.click();
+      assert.equal((await response).status(),200);
+      const file=await downloaded;
+      assert.deepEqual(readFileSync(await file.path()),pdf);
+      if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+        await page.screenshot({
+          path:resolve(process.env.VITALIA_JOURNEY_SCREENSHOTS,
+            'paciente-movil.png'),
+        });
+      }
+      console.log('Microsoft Edge: paciente consultó ayuda, perfil y descargó informe publicado.');
+    } finally {
+      await page.close();
+    }
   } finally {
     await browser.close();
   }
@@ -420,6 +568,18 @@ async function main() {
     await admin(base+'/staff',201,{accountId:ids.reviewer});
     await admin(otherLab+'/staff',201,{accountId:ids.reviewer});
     await admin(otherLab+'/staff/review-permission',200,{accountId:ids.reviewer,enabled:true});
+    const northStaff = await (await call('admin', 'GET', base+'/staff', 200)).json();
+    const southStaff = await (await call('admin', 'GET', otherLab+'/staff', 200)).json();
+    assert.deepEqual(northStaff.staff.map(({email}) => email).sort(),
+      [credentials.reviewer.email, credentials.uploader.email].sort());
+    assert.deepEqual(southStaff.staff.map(({email}) => email), [credentials.reviewer.email]);
+    assert.equal(northStaff.staff.find(({accountId}) => accountId === ids.reviewer)
+      .canReviewReports, false, 'El permiso concedido en Sur no se aplica en Norte.');
+    assert.equal(southStaff.staff[0].canReviewReports, true);
+    await call('uploader', 'GET', base+'/staff', 403);
+    await call('patient', 'GET', base+'/staff', 403);
+    await call('admin', 'GET', base+'/medical-requests/pending', 403);
+    console.log('API: personal y permisos administrativos aislados por laboratorio.');
     await call('uploader','POST',base+'/patients',201,{json:{
       patientId:ids.patient,identityEvidenceReference:'verificacion-ficticia',identityVerified:true,
     }});
@@ -462,6 +622,10 @@ async function main() {
     const created=await call('uploader','POST',intake,201,confirmation);
     const registered=await created.json();
     const orderId=registered.order.id;
+    const adminOrders = await (await call('admin', 'GET', base+'/orders', 200)).json();
+    assert.ok(adminOrders.orders.some(order => order.id === orderId));
+    await call('admin', 'GET', base+'/orders?patientId='+ids.patient, 403);
+    await call('admin', 'GET', base+'/orders/'+orderId+'/medical-request/file', 403);
     assert.match(registered.request.documentReference,
       /^SOL-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     assert.equal(registered.request.documentReference, 'SOL-'+registered.request.id);
@@ -663,10 +827,21 @@ async function main() {
     await api('POST','/api/sil/main/patient/recovery/complete',204,{json:recovered});
     await api('POST','/api/sil/main/patient/recovery/complete',422,{json:recovered});
     await api('GET','/api/auth/me',401,{token:invited.token});
-    await api('POST','/api/auth/login',401,{json:{mode:'paciente',email:inviteEmail,password}});
-    await api('POST','/api/auth/login',200,{json:{
+    // Mantener el límite real de 10 intentos/IP. El ensayo ya autentica
+    // cinco cuentas iniciales, una invitada y tres roles en Edge. Verificar
+    // la clave anterior/nueva con el mismo servicio de credenciales evita
+    // agotar la cuota por una comprobación redundante de HTTP.
+    const verifyRecovered=await createCredentialAuthenticator(db,{
+      guardPatientSession:true,
+    });
+    assert.equal(await verifyRecovered({
+      mode:'paciente',email:inviteEmail,password,
+    }),null,'La contraseña anterior no debe autenticar después de la recuperación.');
+    const newCredential=await verifyRecovered({
       mode:'paciente',email:inviteEmail,password:recovered.password,
-    }});
+    });
+    assert.equal(newCredential?.email,inviteEmail);
+    assert.equal(newCredential?.role,'paciente');
     const pendingPatient=(await db.query(
       'SELECT id FROM public.vitalia_accounts WHERE email=$1',[pendingEmail])).rows[0];
     assert.ok(pendingPatient?.id,'La activación debe crear cuenta paciente.');

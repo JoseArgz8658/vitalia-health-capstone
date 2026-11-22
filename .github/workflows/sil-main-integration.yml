@@ -93,7 +93,7 @@ jobs:
             sleep 1
           done
           exit 1
-      - name: Probar el flujo del operador y del paciente en Edge
+      - name: Probar administración, operador y paciente en Edge
         working-directory: backend
         env:
           VITALIA_ISOLATED_REHEARSAL: 'YES'
