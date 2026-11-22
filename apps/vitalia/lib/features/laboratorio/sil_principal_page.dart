@@ -1223,11 +1223,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               child: const Text('Órdenes siguientes'),
             ),
           ]),
-        OutlinedButton.icon(
-          onPressed:_busy?null:()=>_execute(_loadLabs,showNotice:false),
-          icon:const Icon(Icons.refresh),
-          label:const Text('Actualizar estación'),
-        ),
+        if (!recent)
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _execute(_loadLabs, showNotice: false),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Actualizar estación'),
+          ),
       ],
     );
   }
@@ -1746,7 +1747,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         (_attachToExistingOrder || _requestExams.isNotEmpty);
     final current = !documentReady ? 0 : !patientReady ? 1 : !reviewed ? 2 : 3;
     final message = !documentReady
-        ? 'Comienza cargando un PDF médico. Si existe una solicitud guardada, selecciónala en «Derivaciones pendientes».'
+        ? 'Selecciona un PDF o retoma una derivación guardada.'
         : !_attachToExistingOrder && _pendingRequestId == null
         ? 'Archivo seleccionado. Guárdalo como derivación pendiente: así no se perderá mientras identificas al paciente o esperas que active su cuenta.'
         : !patientReady && !_attachToExistingOrder
@@ -1756,28 +1757,41 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         : !reviewed
         ? 'Compara los datos del paciente, los exámenes, la fecha y el profesional con el PDF original; después confirma el cotejo.'
         : 'Los datos esenciales están confirmados. Comprueba nuevamente el documento original y completa el registro.';
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      OperatorStepGuide(
-        current: current,
-        steps: const [
-          (title: 'Recibir solicitud', detail: 'Cargar o recuperar PDF',
-              icon: Icons.upload_file_outlined),
-          (title: 'Identificar paciente', detail: 'Buscar o activar cuenta',
-              icon: Icons.person_search_outlined),
-          (title: 'Revisar exámenes', detail: 'Cotejo con el original',
-              icon: Icons.fact_check_outlined),
-          (title: 'Crear orden', detail: 'Confirmar y registrar',
-              icon: Icons.assignment_turned_in_outlined),
-        ],
-      ),
-      const SizedBox(height: 11),
-      OperatorNextStep(
-        title: '¿Qué debo hacer ahora?',
-        message: message,
-        icon: documentReady ? Icons.tips_and_updates_outlined
-            : Icons.upload_file_outlined,
-      ),
-    ]);
+    const stages = ['Recibir solicitud', 'Identificar paciente', 'Revisar exámenes', 'Crear orden'];
+    return SilWorkspaceSurface(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Wrap(
+          spacing: 10,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            SilWorkspaceStatus(label: 'Paso ${current + 1} de ${stages.length}', positive: true),
+            Text(stages[current], style: const TextStyle(fontWeight: FontWeight.w700)),
+            TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (dialogContext) => AlertDialog(
+                  title: const Text('Guía postanalítica'),
+                  scrollable: true,
+                  content: const SizedBox(width: 480, child: SilWorkspaceProcessPath()),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      child: const Text('Cerrar'),
+                    ),
+                  ],
+                ),
+              ),
+              child: const Text('Ver guía'),
+            ),
+          ],
+        ),
+        Semantics(
+          liveRegion: true,
+          child: Text(message, style: Theme.of(context).textTheme.bodySmall),
+        ),
+      ]),
+    );
   }
 
   Widget _requestIntake() => Column(
@@ -1791,6 +1805,14 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         primary: _section('1. Recibir la solicitud médica',
         'Carga una solicitud o retoma un PDF guardado en el laboratorio.',
         Icons.description_outlined, [
+        FilledButton.icon(
+          onPressed:_busy?null:_pickMedicalRequest,
+          icon:const Icon(Icons.picture_as_pdf_outlined),
+          label:Text(_medicalRequestFile?.name ??
+            (_pendingRequestId==null?'Seleccionar solicitud PDF':
+              'Seleccionar un PDF distinto')),
+        ),
+        const SizedBox(height:10),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Vincular a una orden existente'),
@@ -1831,14 +1853,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             ),
           ],
         ],
-        const SizedBox(height:10),
-        OutlinedButton.icon(
-          onPressed:_busy?null:_pickMedicalRequest,
-          icon:const Icon(Icons.picture_as_pdf_outlined),
-          label:Text(_medicalRequestFile?.name ??
-            (_pendingRequestId==null?'Seleccionar solicitud PDF':
-              'Seleccionar un PDF distinto')),
-        ),
         const SizedBox(height:8),
         OutlinedButton.icon(
           onPressed: _busy || _medicalRequestFile == null ? null :
@@ -2637,23 +2651,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _StationSection.requests => _operatorSubpage(
         title: 'Recibir solicitud',
         description: 'Carga una derivación PDF, coteja la identidad y confirma su vinculación.',
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SilWorkspaceProcessPath(),
-            const SizedBox(height: 14),
-            _requestIntake(),
-          ],
-        ),
+        child: _requestIntake(),
       ),
       _StationSection.patients => _operatorSubpage(
         title: 'Pacientes y activación de cuentas',
         description: 'Busca a un paciente que ya tiene acceso o invita a uno nuevo para que active su cuenta.',
-        support: const OperatorNextStep(
-          icon: Icons.manage_accounts_outlined,
-          title: 'Dos situaciones distintas',
-          message: 'Paciente existente: búscalo en el directorio. Paciente nuevo: verifica su identidad, genera un código y entrégaselo. La cuenta se crea cuando el paciente activa ese código.',
-        ),
         child: SilWorkspaceColumns(
           primary: _patientDirectory(),
           secondary: _patientLink(),

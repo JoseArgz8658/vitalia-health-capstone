@@ -203,6 +203,12 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
     // de autenticación de la cuenta paciente en el mismo proceso de prueba.
     await page.setViewportSize({width:390,height:844});
     await receive.click();
+    const pdfPicker = button('Seleccionar solicitud PDF');
+    await pdfPicker.waitFor();
+    const pickerPosition = await pdfPicker.boundingBox();
+    assert.ok(pickerPosition && pickerPosition.y >= 0 &&
+      pickerPosition.y + pickerPosition.height <= page.viewportSize().height,
+      'El selector de PDF debe quedar visible sin desplazarse en móvil.');
     const pdfReader=button('Leer PDF y sugerir datos');
     await pdfReader.waitFor();
     assert.equal(await pdfReader.isEnabled(),false,'Primero se debe seleccionar un PDF');
