@@ -310,7 +310,7 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
 async function adminJourney(browser) {
   const page=await browser.newPage({viewport:{width:1440,height:1050}});
   try {
-    await signIn(page,'admin','#/laboratorio');
+    await signIn(page,'admin','#/administracion');
     await page.getByText('Administración de laboratorios',{exact:true})
       .waitFor({timeout:15000});
     const nav=label=>page.getByRole('button',{name:label,exact:true});
