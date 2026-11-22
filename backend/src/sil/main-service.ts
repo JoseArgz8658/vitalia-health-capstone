@@ -1033,7 +1033,7 @@ export function createSilMainService(db:Pool) {
       const email=patientEmail??suggestedEmail;
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
-        const site=await chooseSite(tx,labId,siteId);
+        const site=await chooseSite(tx,labId,operatorId,siteId);
         const id=randomUUID();
         const saved=await tx.query<{createdAt:Date}>(
           `INSERT INTO public.vitalia_sil_main_pending_requests
