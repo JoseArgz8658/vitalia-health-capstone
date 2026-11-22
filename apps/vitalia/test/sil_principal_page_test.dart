@@ -8,6 +8,8 @@ class _StationApi extends AuthApi {
   final pendingCompletions=<Map<String,dynamic>>[];
   bool showPending=false;
   bool pendingWithoutDate=false;
+  bool expandedSummary=false;
+  bool unavailableSummary=false;
   static const allowedLab = '11111111-1111-4111-8111-111111111111';
   static const restrictedLab = '22222222-2222-4222-8222-222222222222';
   static const ownOrder = '33333333-3333-4333-8333-333333333333';
@@ -19,6 +21,24 @@ class _StationApi extends AuthApi {
     Map<String, dynamic>? body,
   }) async {
     final requestPath=Uri.parse(path).path;
+    if (requestPath=='/labs/$allowedLab/summary') {
+      if (unavailableSummary) throw StateError('Sin resumen de prueba');
+      return {'summary': expandedSummary
+        ? {
+          'ordersTotal':104,'registered':20,'inReview':14,
+          'published':70,'pendingRequests':8,
+        }
+        : {
+          'ordersTotal':2,'registered':0,'inReview':2,
+          'published':0,'pendingRequests':showPending?1:0,
+        }};
+    }
+    if (requestPath=='/labs/$restrictedLab/summary') {
+      return {'summary':{
+        'ordersTotal':0,'registered':0,'inReview':0,
+        'published':0,'pendingRequests':0,
+      }};
+    }
     if(requestPath=='/labs/$allowedLab/medical-requests/pending'){
       return {'pending':showPending?[{
         'id':'66666666-6666-4666-8666-666666666666',
@@ -256,6 +276,51 @@ void main() {
     expect(patientSelection, findsOneWidget);
     expect(find.text('Buscar paciente por nombre o correo'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('panel usa totales completos sin confundirlos con las últimas órdenes', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api=_StationApi()..expandedSummary=true;
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home:SilPrincipalPage(
+      api:api,role:'operador_laboratorio',onExpired:(){},onLogout:(){},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text('104'),findsWidgets);
+    expect(find.text('70'),findsOneWidget);
+    expect(find.text('14'),findsWidgets);
+    expect(find.text('Total del laboratorio'),findsNWidgets(5));
+    expect(find.text('Totales actuales del laboratorio seleccionado.'),
+      findsOneWidget);
+    expect(find.text('Revisión interna (14)'),findsOneWidget);
+
+    final lab=_field('Laboratorio');
+    await tester.ensureVisible(lab);
+    await tester.tap(lab);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Laboratorio Sur').last);
+    await tester.pumpAndSettle();
+    expect(find.text('104'),findsNothing,
+      reason:'Nunca mostrar cifras del laboratorio anterior.');
+    expect(find.text('0'),findsWidgets);
+    expect(tester.takeException(),isNull);
+  });
+
+  testWidgets('si falla resumen muestra alcance parcial en vez de fingir totales', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api=_StationApi()..unavailableSummary=true;
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home:SilPrincipalPage(
+      api:api,role:'operador_laboratorio',onExpired:(){},onLogout:(){},
+    )));
+    await tester.pumpAndSettle();
+    expect(find.text('Solo lista reciente (máx. 50)'),findsNWidgets(5));
+    expect(find.textContaining('no representan el total del laboratorio'),
+      findsOneWidget);
+    expect(tester.takeException(),isNull);
   });
 
   testWidgets('administración muestra operadores y autoriza revisión desde un botón', (tester) async {
