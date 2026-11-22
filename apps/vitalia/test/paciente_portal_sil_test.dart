@@ -294,6 +294,8 @@ void main() {
     expect(find.text('Informes publicados'), findsOneWidget);
     expect(find.textContaining('Última publicación ·'), findsOneWidget);
     expect(find.text('Historial y orientación'), findsOneWidget);
+    expect(find.text('Sobre Vitalia'), findsOneWidget);
+    expect(find.text('Privacidad y uso responsable'), findsOneWidget);
     expect(find.byIcon(Icons.family_restroom), findsNothing);
     // Con un único PDF, la ayuda no duplica el acceso a la comparación.
     expect(find.text('Cómo leer mis resultados'), findsOneWidget);

@@ -1035,7 +1035,21 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                     ),
                     secondary: _portalTools(),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    children: [
+                      TextButton(
+                        onPressed: () => PortalAyudaSil.sobreVitalia(context),
+                        child: const Text('Sobre Vitalia'),
+                      ),
+                      TextButton(
+                        onPressed: () => PortalAyudaSil.privacidad(context),
+                        child: const Text('Privacidad y uso responsable'),
+                      ),
+                    ],
+                  ),
                   Text(
                     _mainSil
                         ? 'Vitalia Health · Integración en revisión · '
