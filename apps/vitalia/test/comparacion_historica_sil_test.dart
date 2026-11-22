@@ -110,6 +110,21 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('una sola medición no se presenta como tendencia',
+      (tester) async {
+    await tester.pumpWidget(_screen([
+      {
+        'authorizedAt': '2026-11-08',
+        'orderNumber': 'VH-000001',
+        'value': 91,
+      },
+    ]));
+    expect(find.textContaining('No hay suficientes mediciones'), findsOneWidget);
+    expect(find.byKey(const Key('sil-comparacion-historica-grafico')),
+        findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('no grafica mediciones con fecha o valor inválido',
       (tester) async {
     await tester.pumpWidget(_screen([
