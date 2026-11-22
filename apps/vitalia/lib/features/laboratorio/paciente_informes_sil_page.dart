@@ -46,6 +46,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
   final _reportsAnchor = GlobalKey();
   final _pageScroll = ScrollController();
   bool _reportsTabSelected = false;
+  bool _issuingLinkCode = false;
 
   @override
   void dispose() {
@@ -879,6 +880,62 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     ],
   );
 
+  Future<void> _openPatientLink() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Vincular mi cuenta'),
+        content: const Text(
+          'Si el laboratorio está verificando tu identidad, genera un código '
+          'de un solo uso y entrégalo al operador. Vence en 15 minutos.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Generar código'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || _issuingLinkCode) return;
+    _issuingLinkCode = true;
+    try {
+      final response = await widget.api.silMainRequest('/patient/link-code', body: {});
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Código de vinculación'),
+          scrollable: true,
+          content: SelectableText(response['code'] as String),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      );
+    } on AuthFailure catch (error) {
+      if (!mounted) return;
+      if (error.status == 401) {
+        widget.onExpired();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.status == 409
+              ? 'Ya generaste tres códigos en esta hora. Usa el último o inténtalo más tarde.'
+              : error.message)),
+        );
+      }
+    } finally {
+      _issuingLinkCode = false;
+    }
+  }
+
   Widget _accountMenu() => PopupMenuButton<String>(
     tooltip: 'Mi cuenta',
     icon: FutureBuilder<Map<String, dynamic>>(
@@ -902,13 +959,24 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       },
     ),
     onSelected: (action) {
-      if (action == 'profile') {
+      if (action == 'link') {
+        _openPatientLink();
+      } else if (action == 'profile') {
         _openProfile();
       } else {
         _openRecovery();
       }
     },
     itemBuilder: (context) => const [
+      if (_mainSil)
+        PopupMenuItem(
+          value: 'link',
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.link),
+            title: Text('Vincular mi cuenta'),
+          ),
+        ),
       PopupMenuItem(
         value: 'profile',
         child: ListTile(

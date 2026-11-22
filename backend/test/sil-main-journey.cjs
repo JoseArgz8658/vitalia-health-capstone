@@ -11,6 +11,7 @@ const {Pool} = require('pg');
 const {createApp} = require('../dist/app');
 const {createCredentialAuthenticator} = require('../dist/auth/credentials');
 const {hashPassword} = require('../dist/auth/password');
+const {createPatientRegistrar} = require('../dist/auth/registration');
 const {findSessionAccount, issueSession, revokeSession} = require('../dist/auth/sessions');
 const {createSilMainService} = require('../dist/sil/main-service');
 
@@ -576,7 +577,7 @@ async function main() {
       issue:(id,mode,hash)=>issueSession(db,id,mode,hash),
       find:token=>findSessionAccount(db,token),
       revoke:token=>revokeSession(db,token),
-    },...Array(18).fill(undefined),createSilMainService(db)));
+    },createPatientRegistrar(db,{demoOnly:true}),...Array(17).fill(undefined),createSilMainService(db)));
     server=await new Promise((accept,reject)=>{
       const listener=host.listen(3119,'127.0.0.1',()=>accept(listener));
       listener.once('error',reject);
@@ -657,6 +658,46 @@ async function main() {
     const otherDirectory=await call('reviewer','GET',otherLab+'/patients',200);
     assert.deepEqual((await otherDirectory.json()).patients,[]);
     await call('uploader','GET',otherLab+'/patients',403);
+    const selfRegistered={email:'camino-b@example.invalid',password};
+    await api('POST','/api/auth/register',202,{json:selfRegistered});
+    const selfLogin=await api('POST','/api/auth/login',200,{
+      json:{mode:'paciente',...selfRegistered},
+    });
+    const {token:selfToken}=await selfLogin.json();
+    const patientCode='/api/sil/main/patient/link-code';
+    const requestCode=async ()=>(await (await api('POST',patientCode,201,
+      {token:selfToken,json:{}})).json()).code;
+    const ownRecords='/api/sil/main/patient/reports';
+    assert.deepEqual((await (await api('GET',ownRecords,200,{token:selfToken})).json()).reports,[]);
+    const firstCode=await requestCode();
+    const validCode=await requestCode();
+    const linkPath=otherLab+'/patient-link-code';
+    const verify={identityConfirmed:true,identityReference:'IDENTIDAD-FICTICIA-B'};
+    await call('reviewer','POST',linkPath,404,{json:{...verify,code:firstCode}});
+    await call('reviewer','POST',linkPath,400,{json:{...verify,code:validCode,identityConfirmed:false}});
+    await call('uploader','POST',linkPath,403,{json:{...verify,code:validCode}});
+    await call('admin','POST',linkPath,403,{json:{...verify,code:validCode}});
+    await call('reviewer','POST',linkPath,200,{json:{...verify,code:validCode}});
+    await call('reviewer','POST',base+'/patient-link-code',404,{json:{...verify,code:validCode}});
+    const selfDirectory=await (await call('reviewer','GET',
+      otherLab+'/patients?search='+encodeURIComponent(selfRegistered.email),200)).json();
+    assert.deepEqual(selfDirectory.patients.map(p=>p.email),[selfRegistered.email]);
+    const unlinkedDirectory=await (await call('uploader','GET',
+      base+'/patients?search='+encodeURIComponent(selfRegistered.email),200)).json();
+    assert.deepEqual(unlinkedDirectory.patients,[]);
+    const expiringCode=await requestCode();
+    await api('POST',patientCode,409,{token:selfToken,json:{}});
+    await db.query(`UPDATE public.vitalia_sil_main_patient_link_codes
+                    SET created_at=CURRENT_TIMESTAMP-INTERVAL '16 minutes',
+                        expires_at=CURRENT_TIMESTAMP-INTERVAL '1 minute'
+                    WHERE token_hash=$1`,
+      [createHash('sha256').update(expiringCode).digest('hex')]);
+    await call('reviewer','POST',base+'/patient-link-code',404,{json:{...verify,code:expiringCode}});
+    const linkAudit=await db.query(
+      `SELECT count(*)::int AS total FROM public.vitalia_sil_main_audit
+       WHERE lab_id=$1 AND action='patient_identity_linked' AND details ? 'linkCodeId'`,
+      [otherLab.split('/').at(-1)]);
+    assert.equal(linkAudit.rows[0].total,1);
     const requestPdf=syntheticPdf([
       'Referencia: SOL-1002','Profesional solicitante: Persona Ficticia',
       'Fecha de solicitud: 2024-01-01','Glicemia',
