@@ -915,10 +915,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     );
     if(mounted)setState((){
       _reviewOrderId=null;
+      _reviewSelectedOrder=null;
       _reviewConfirmed=false;
       _reviewPdfDownloaded=false;
     });
     await _loadOrders();
+    await _loadReviewPage(offset: _reviewOffset);
   }
 
   Widget _section(String title,String detail,IconData icon,List<Widget> children){
@@ -1114,12 +1116,17 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                           ),
                           if (_canReview && _isReviewable(order))
                             TextButton(
-                              onPressed: _busy ? null : () => setState(() {
-                                _reviewOrderId = order['id'] as String;
-                                _reviewPdfDownloaded = false;
-                                _reviewConfirmed = false;
-                                _activeSection = _StationSection.review;
-                              }),
+                              onPressed: _busy ? null : () {
+                                setState(() {
+                                  _reviewOrderId = order['id'] as String;
+                                  _reviewSelectedOrder = order;
+                                  _reviewPdfDownloaded = false;
+                                  _reviewConfirmed = false;
+                                  _activeSection = _StationSection.review;
+                                });
+                                _execute(() => _loadReviewPage(offset: 0),
+                                    showNotice: false);
+                              },
                               child: const Text('Revisar informe'),
                             ),
                         ]),
@@ -1872,6 +1879,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         await _loadOrderPage(offset: _orderOffset);
         await _loadPatients(offset: 0, search: _orderPatientSearch.text.trim());
       }, showNotice: false);
+    } else if (section == _StationSection.review && _canReview) {
+      _execute(() => _loadReviewPage(offset: 0), showNotice: false);
     }
   }
 
