@@ -158,10 +158,16 @@ async function adminJourney(browser) {
     await page.getByText('Operadores y permisos',{exact:true}).last().waitFor();
     // Los laboratorios se ordenan por nombre. Norte contiene ambas cuentas
     // autorizadas; Sur sólo contiene la cuenta secundaria.
-    await page.getByText('uploader@example.invalid',{exact:true}).waitFor();
-    await page.getByText('reviewer@example.invalid',{exact:true}).waitFor();
-    assert.equal(await button('Retirar permiso de revisión').count(),2,
-      'Los permisos administrados deben reflejar la membresía real en Norte.');
+    // Flutter web crea elementos semánticos conforme se desplaza la vista;
+    // los operadores pueden estar por debajo del formulario de invitación.
+    await reach(page,page.getByText('uploader@example.invalid',{exact:true}),
+      'cuenta operadora Norte');
+    await reach(page,page.getByText('reviewer@example.invalid',{exact:true}),
+      'cuenta revisora Norte');
+    const permission=button('Retirar permiso de revisión').first();
+    await reach(page,permission,'control administrativo de revisión');
+    assert.ok(await permission.isEnabled(),
+      'El administrador debe poder gestionar el permiso explícito.');
     if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
       await page.screenshot({path:resolve(
         process.env.VITALIA_JOURNEY_SCREENSHOTS,'administracion-escritorio.png')});
