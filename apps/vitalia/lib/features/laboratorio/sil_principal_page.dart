@@ -6,6 +6,7 @@ import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
 import 'sil_workspace.dart';
 import 'sil_admin_sites.dart';
+import 'sil_admin_operator_dialog.dart';
 import 'sil_patient_search_dialog.dart';
 import 'sil_main_clinical_panel.dart';
 import 'operator_design.dart';
@@ -486,7 +487,36 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     await _loadLabs();
   }
 
-  Future<void> _inviteOperator() async {
+  Future<void> _manageOperator({Map<String,dynamic>? member}) async {
+    final lab = _labId;
+    if (!_admin || _busy || lab == null) return;
+    await _execute(() async {
+      final dialog = await SilAdminOperatorDialog.open(
+        context: context,api: widget.api,labId: lab,
+        labName: _labs.where((item) => item['id'] == lab)
+            .firstOrNull?['displayName'] as String? ?? 'Laboratorio',
+        member: member,
+      );
+      if (dialog == null || !mounted || lab != _labId) return;
+      final siteAccess = Map<String,dynamic>.from(dialog['siteAccess'] as Map);
+      if (member != null) {
+        await widget.api.silMainRequest('/labs/$lab/staff/sites',body: {
+          'accountId': member['accountId'], 'siteAccess': siteAccess,
+        });
+        await _loadStaff();
+        if (mounted) setState(() => _notice = 'Sedes del operador actualizadas.');
+      } else if (dialog['existing'] == true) {
+        _staffAccount.text = dialog['email'] as String;
+        await _grantStaff(siteAccess: siteAccess);
+        if (mounted) setState(() => _notice = 'Operador asociado y sedes asignadas.');
+      } else {
+        _inviteEmail.text = dialog['email'] as String;
+        await _inviteOperator(siteAccess: siteAccess);
+      }
+    },showNotice:false);
+  }
+
+  Future<void> _inviteOperator({Map<String,dynamic>? siteAccess}) async {
     final lab=_labId;
     final email=_inviteEmail.text.trim().toLowerCase();
     if(lab==null||!email.contains('@')||email.length>254){
@@ -494,7 +524,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     }
     final response=await widget.api.silMainRequest(
       '/labs/$lab/operator-invitations',
-      body:{'email':email},
+      body:{'email':email,if(siteAccess!=null)'siteAccess':siteAccess},
     );
     final invitation=Map<String,dynamic>.from(response['invitation'] as Map);
     final code=invitation['code'] as String;
@@ -551,14 +581,16 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _inviteEmail.clear();
   }
 
-  Future<void> _grantStaff() async {
+  Future<void> _grantStaff({Map<String,dynamic>? siteAccess}) async {
     final lab = _labId;
     final email = _staffAccount.text.trim().toLowerCase();
     if (lab == null || !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
       throw const AuthFailure('Selecciona el laboratorio e ingresa un correo válido.');
     }
     try {
-      await widget.api.silMainRequest('/labs/$lab/staff', body: {'email': email});
+      await widget.api.silMainRequest('/labs/$lab/staff', body: {
+        'email': email,if(siteAccess!=null)'siteAccess':siteAccess,
+      });
     } on AuthFailure catch (error) {
       if (error.status == 404) {
         throw const AuthFailure('No hay un operador activo con ese correo. Si aún no tiene cuenta, usa Invitar operador.');
@@ -1613,6 +1645,16 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       ],
       icon: const Icon(Icons.more_horiz),
     );
+    final siteMode = member['siteAccessMode'] == 'selected';
+    final siteCount = (member['siteIds'] as List? ?? []).length;
+    final siteLabel = Text(siteMode
+        ? '$siteCount sedes autorizadas' : 'Todas las sedes',
+      style: Theme.of(context).textTheme.bodySmall);
+    final sitesAction = OutlinedButton.icon(
+      onPressed: _busy ? null : () => _manageOperator(member: member),
+      icon: const Icon(Icons.location_on_outlined),
+      label: const Text('Asignar sedes'),
+    );
     final action = OutlinedButton.icon(
       onPressed: _busy || !active
           ? null
@@ -1636,7 +1678,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       child: wide
           ? Row(
               children: [
-                Expanded(flex: 4, child: email),
+                Expanded(flex: 4, child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [email,const SizedBox(height: 4),siteLabel],
+                )),
                 Expanded(
                   flex: 2,
                   child: Align(
@@ -1660,7 +1705,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       spacing: 4,
                       runSpacing: 4,
-                      children: [action, accessAction],
+                      children: [sitesAction, action, accessAction],
                     ),
                   ),
                 ),
@@ -1670,6 +1715,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 email,
+                const SizedBox(height: 4),
+                siteLabel,
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -1689,7 +1736,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                   spacing: 6,
                   runSpacing: 6,
                   crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [action, accessAction],
+                  children: [sitesAction, action, accessAction],
                 ),
               ],
             ),
@@ -1870,36 +1917,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             icon: const Icon(Icons.refresh),
             label: const Text('Actualizar operadores'),
           ),
-          OutlinedButton.icon(
-            onPressed: _busy
-                ? null
-                : () => _adminEditor(
-                    title: 'Vincular operador',
-                    label: 'Correo del operador',
-                    keyboardType: TextInputType.emailAddress,
-                    submitLabel: 'Vincular al laboratorio',
-                    controller: _staffAccount,
-                    submit: _grantStaff,
-                    instruction:
-                        'La cuenta debe estar activa y tener rol de operador.',
-                  ),
-            icon: const Icon(Icons.link),
-            label: const Text('Vincular cuenta'),
-          ),
           FilledButton.icon(
-            onPressed: _busy
-                ? null
-                : () => _adminEditor(
-                    title: 'Invitar operador',
-                    label: 'Correo del nuevo operador',
-                    submitLabel: 'Crear invitación',
-                    controller: _inviteEmail,
-                    submit: _inviteOperator,
-                    keyboardType: TextInputType.emailAddress,
-                    instruction: 'Entrega el código de un solo uso al destinatario por el canal oficial del laboratorio.',
-                  ),
+            onPressed: _busy ? null : () => _manageOperator(),
             icon: const Icon(Icons.person_add_alt_1_outlined),
-            label: const Text('Invitar operador'),
+            label: const Text('Agregar operador'),
           ),
         ],
       ),
