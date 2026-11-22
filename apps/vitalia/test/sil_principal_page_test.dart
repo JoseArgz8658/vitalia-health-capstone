@@ -7,7 +7,6 @@ class _StationApi extends AuthApi {
   final reviewActions=<Map<String,dynamic>>[];
   final pendingCompletions=<Map<String,dynamic>>[];
   final requestPaths=<String>[];
-  bool rejectClinicalOrders=false;
   bool showPending=false;
   bool pendingWithoutDate=false;
   bool expandedSummary=false;
@@ -27,12 +26,6 @@ class _StationApi extends AuthApi {
     final requestUri=Uri.parse(path);
     final requestPath=requestUri.path;
     requestPaths.add(requestPath);
-    // El backend nunca entrega órdenes clínicas al administrador.
-    if (rejectClinicalOrders &&
-        (requestPath=='/labs/$allowedLab/orders' ||
-         requestPath=='/labs/$restrictedLab/orders')) {
-      throw const AuthFailure('No tienes permiso para acceder a órdenes.', 403);
-    }
     if (requestPath=='/labs/$allowedLab/summary') {
       if (unavailableSummary) throw StateError('Sin resumen de prueba');
       return {'summary': expandedSummary
@@ -351,7 +344,7 @@ void main() {
   testWidgets('administración muestra operadores y autoriza revisión desde un botón', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
     addTearDown(()=>tester.binding.setSurfaceSize(null));
-    final api=_StationApi()..rejectClinicalOrders=true;
+    final api=_StationApi();
     addTearDown(api.close);
     await tester.pumpWidget(MaterialApp(
       home:SilPrincipalPage(
@@ -405,8 +398,10 @@ void main() {
       '/labs/${_StationApi.allowedLab}/staff',
       '/labs/${_StationApi.restrictedLab}/staff',
     ]));
-    expect(api.requestPaths.where((path) => path.endsWith('/orders')), isEmpty,
-      reason: 'El administrador no debe consultar órdenes clínicas en ningún laboratorio.');
+    final clinicalRequests = api.requestPaths.where((path) =>
+      path.endsWith('/orders') || path.endsWith('/medical-requests/pending'));
+    expect(clinicalRequests, isEmpty,
+      reason: 'El panel administrativo solo necesita información del personal.');
     expect(tester.takeException(),isNull);
   });
 

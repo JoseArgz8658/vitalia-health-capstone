@@ -34,7 +34,9 @@ No se usa el PostgreSQL del equipo, el servidor local, Docker Desktop del equipo
 
 ## Corrección detectada durante el ensayo
 
-La carga del administrador intentaba solicitar `GET /labs/:id/orders`, ruta exclusiva del operador, lo que provocaba HTTP 403 e interrumpía la consulta posterior del personal. Se corrigió `_loadLabs` y `_selectLab` para consultar datos de órdenes y derivaciones **únicamente como operador**, y personal **únicamente como administrador**. La sección Actividad administrativa presenta ahora un resumen de personal y permisos, no información clínica. Se añadió una regresión Flutter que fuerza HTTP 403 sobre la ruta de órdenes y verifica que el administrador continúe funcionando sin invocarla.
+La carga del panel administrativo consultaba las órdenes antes de solicitar el personal. `_loadLabs` y `_selectLab` ahora usan la consulta de personal para administración y mantienen órdenes y derivaciones en la estación del operador. Actividad presenta el estado del personal y sus permisos. La regresión Flutter verifica que administración use solo las rutas de personal tras seleccionar cada laboratorio.
+
+El contrato de la API conserva el listado general de órdenes para administración. Las pruebas de integración comprueban que el mismo rol recibe HTTP 403 al buscar órdenes por paciente, consultar derivaciones pendientes o descargar la solicitud original asociada a una orden.
 
 La suite también reveló que el ensayo consumía los intentos de autenticación de su propia IP. Se sustituyeron comprobaciones HTTP redundantes de la contraseña recuperada por llamadas directas al mismo servicio de credenciales del backend. **No se modificó el límite de producción** (10 intentos por IP en 15 minutos).
 

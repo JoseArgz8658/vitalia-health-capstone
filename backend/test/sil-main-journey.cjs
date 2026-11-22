@@ -578,7 +578,7 @@ async function main() {
     assert.equal(southStaff.staff[0].canReviewReports, true);
     await call('uploader', 'GET', base+'/staff', 403);
     await call('patient', 'GET', base+'/staff', 403);
-    await call('admin', 'GET', base+'/orders', 403);
+    await call('admin', 'GET', base+'/medical-requests/pending', 403);
     console.log('API: personal y permisos administrativos aislados por laboratorio.');
     await call('uploader','POST',base+'/patients',201,{json:{
       patientId:ids.patient,identityEvidenceReference:'verificacion-ficticia',identityVerified:true,
@@ -622,6 +622,10 @@ async function main() {
     const created=await call('uploader','POST',intake,201,confirmation);
     const registered=await created.json();
     const orderId=registered.order.id;
+    const adminOrders = await (await call('admin', 'GET', base+'/orders', 200)).json();
+    assert.ok(adminOrders.orders.some(order => order.id === orderId));
+    await call('admin', 'GET', base+'/orders?patientId='+ids.patient, 403);
+    await call('admin', 'GET', base+'/orders/'+orderId+'/medical-request/file', 403);
     assert.match(registered.request.documentReference,
       /^SOL-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     assert.equal(registered.request.documentReference, 'SOL-'+registered.request.id);

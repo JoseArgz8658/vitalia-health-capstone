@@ -179,8 +179,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _labs=labs;
       if (selected != _labId) _resetLab(selected);
     });
-    // El administrador no tiene permiso para leer órdenes clínicas.
-    // Consultarlas aquí abortaba la carga de operadores y permisos (403).
+    // Administración carga el personal del laboratorio de forma independiente.
+    // Órdenes y derivaciones se consultan desde la estación del operador.
     if (_operator) {
       await _loadOrders();
       await _loadPendingRequests();
@@ -2158,8 +2158,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             Icons.info_outline, [])
         : _section(
             'Estado administrativo',
-            'Resumen del personal del laboratorio. Las órdenes, informes '
-            'y su revisión clínica están reservados al operador autorizado.',
+            'Consulta el personal y sus permisos en el laboratorio seleccionado.',
             Icons.history_outlined, [
               Text('${_labStaff.length} operadores asociados'),
               const SizedBox(height: 8),
