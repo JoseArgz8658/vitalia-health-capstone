@@ -328,8 +328,10 @@ async function adminJourney(browser, base) {
     await nav('Operadores y permisos').click();
     await page.getByText('Operadores y permisos de revisión',{exact:true})
       .waitFor({timeout:10000});
-    await page.getByText('uploader@example.invalid',{exact:true}).waitFor();
-    await page.getByText('reviewer@example.invalid',{exact:true}).waitFor();
+    for(const address of ['uploader@example.invalid','reviewer@example.invalid']){
+      const entry=page.getByText(address,{exact:true});
+      await reach(page,entry,'Operador en directorio: '+address);
+    }
     assert.ok(await nav('Retirar permiso de revisión').count()>0,
       'El permiso concedido debe figurar en la administración.');
     // En esta copia sintética ambos operadores tienen permiso concedido.
