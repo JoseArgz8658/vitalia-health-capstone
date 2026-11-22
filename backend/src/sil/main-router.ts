@@ -130,6 +130,36 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     res.json(result);
   });
 
+  const siteInput=z.object({
+    name:z.string().trim().min(2).max(120),
+    address:z.string().trim().min(3).max(200),
+    commune:z.string().trim().min(2).max(100),
+    region:z.string().trim().min(2).max(100).optional(),
+    phone:z.string().trim().regex(/^[+0-9 ()-]{5,32}$/).optional(),
+    email:z.string().trim().toLowerCase().pipe(z.email().max(254)).optional(),
+  });
+  const sitePath='/labs/:labId/sites';
+  router.get(sitePath,staff,labPath,async(req,res)=>{
+    const {id,role}=res.locals.account;
+    res.json(await main.listSites(req.params.labId as string,id,role));
+  });
+  router.post(sitePath,administrator,labPath,async(req,res)=>{
+    const data=siteInput.extend({siteId:uuid.optional()}).strict().safeParse(req.body);
+    if(!data.success){res.status(400).json({error:{code:'INVALID_SITE'}});return;}
+    const {siteId,...fields}=data.data;
+    res.status(siteId?200:201).json(await main.saveSite(
+      req.params.labId as string,res.locals.account.id,fields,siteId));
+  });
+  router.post(sitePath+'/state',administrator,labPath,async(req,res)=>{
+    const data=z.object({siteId:uuid,active:z.boolean()}).strict().safeParse(req.body);
+    if(!data.success){res.status(400).json({error:{code:'INVALID_SITE'}});return;}
+    res.json(await main.setSiteActive(req.params.labId as string,res.locals.account.id,
+      data.data.siteId,data.data.active));
+  });
+  router.get('/patient/sites',patient,async(_req,res)=>{
+    res.json(await main.patientSites(res.locals.account.id));
+  });
+
   router.post('/labs',administrator,async(req,res)=>{
     const data=z.object({displayName:z.string().trim().min(3).max(150)})
       .strict().safeParse(req.body);
@@ -343,12 +373,13 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       }
       const validName=pdfFileName.safeParse(name);
       const validEmail=z.union([z.literal(''),z.email().max(254)]).safeParse(email);
-      if(!validName.success||!validEmail.success||!Buffer.isBuffer(req.body)){
+      const site=uuid.optional().safeParse(req.get('x-request-site-id'));
+      if(!site.success||!validName.success||!validEmail.success||!Buffer.isBuffer(req.body)){
         res.status(400).json({error:{code:'INVALID_PENDING_REQUEST'}});return;
       }
       res.status(201).json(await main.savePendingMedicalRequest(
         req.params.labId as string,res.locals.account.id,
-        validName.data,req.body,email||null));
+        validName.data,req.body,email||null,...(site.data?[site.data]:[])));
     });
 
   router.get('/labs/:labId/medical-requests/pending',staff,labPath,async(req,res)=>{
@@ -393,6 +424,7 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       }
       const parsed=medicalRequest.omit({fileName:true}).extend({
         patientId:uuid,
+        siteId:uuid.optional(),
         patientEmail:z.email().max(254).transform(s=>s.trim().toLowerCase()),
         examCodes:z.array(examCode).min(1).max(6)
           .refine(items=>new Set(items).size===items.length),
@@ -400,10 +432,10 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       if(!parsed.success){
         res.status(400).json({error:{code:'INVALID_PENDING_COMPLETION'}});return;
       }
-      const {patientId,patientEmail,examCodes,...request}=parsed.data;
+      const {patientId,patientEmail,examCodes,siteId,...request}=parsed.data;
       res.status(201).json(await main.completePendingMedicalRequest(
         req.params.labId as string,req.params.pendingId as string,
-        res.locals.account.id,patientId,patientEmail,examCodes,request));
+        res.locals.account.id,patientId,patientEmail,examCodes,request,...(siteId?[siteId]:[])));
     });
 
   router.post('/labs/:labId/medical-requests/pending/:pendingId/cancel',
@@ -483,13 +515,14 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     }
     const data=z.object({
       patientId:uuid,
+        siteId:uuid.optional(),
       examCodes:z.array(examCode).min(1).max(6)
         .refine(items=>new Set(items).size===items.length),
     }).strict().safeParse(req.body);
     if(!data.success){res.status(400).json({error:{code:'INVALID_ORDER'}});return;}
     res.status(201).json(await main.createOrder(
       req.params.labId as string,data.data.patientId,
-      data.data.examCodes,res.locals.account.id));
+      data.data.examCodes,res.locals.account.id,...(data.data.siteId?[data.data.siteId]:[])));
   });
 
   router.post('/labs/:labId/medical-requests/preview',staff,labPath,
@@ -512,19 +545,21 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       }
       const data=medicalRequest.extend({
         patientId:uuid,
+        siteId:uuid.optional(),
         examCodes:z.array(examCode).min(1).max(6)
           .refine(items=>new Set(items).size===items.length),
       }).safeParse({
         ...medicalRequestHeaders(req),
         patientId:req.get('x-request-patient-id'),
+        siteId:req.get('x-request-site-id'),
         examCodes:req.get('x-request-exam-codes')?.split(','),
       });
       if(!data.success||!Buffer.isBuffer(req.body)){
         res.status(400).json({error:{code:'INVALID_MEDICAL_REQUEST'}});return;
       }
-      const {patientId,examCodes,...request}=data.data;
+      const {patientId,examCodes,siteId,...request}=data.data;
       res.status(201).json(await main.createOrderFromMedicalRequest(
-        req.params.labId as string,patientId,examCodes,res.locals.account.id,request,req.body));
+        req.params.labId as string,patientId,examCodes,res.locals.account.id,request,req.body,...(siteId?[siteId]:[])));
     });
 
   router.post('/labs/:labId/orders/:orderId/medical-request',staff,labPath,

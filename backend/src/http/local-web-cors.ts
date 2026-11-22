@@ -25,7 +25,7 @@ export const localWebCors: RequestHandler = (req, res, next) => {
       : undefined;
     const allowed = ['authorization', 'content-type'];
     if(medicalRequestUpload)allowed.push(
-      'x-request-patient-email','x-request-filename',
+      'x-request-patient-email','x-request-filename','x-request-site-id',
     );
     if (reportUpload) allowed.push(
       'x-report-filename',
@@ -42,13 +42,13 @@ export const localWebCors: RequestHandler = (req, res, next) => {
       'x-report-authorization-ref','x-report-authorized-at','x-report-patient-confirmed',
     );
     if (mainUpload === 'medical-request') allowed.push(
-      'x-request-filename','x-request-prescriber','x-request-reference',
+      'x-request-filename','x-request-prescriber','x-request-reference','x-request-site-id',
       'x-request-date','x-request-identity-confirmed','x-request-reviewed',
     );
     const mainIntake = main &&
       /^\/api\/sil\/main\/labs\/[a-f0-9-]{36}\/medical-requests(\/preview)?$/.test(req.path);
     if (mainIntake) allowed.push(
-      'x-request-filename','x-request-prescriber','x-request-reference',
+      'x-request-filename','x-request-prescriber','x-request-reference','x-request-site-id',
       'x-request-date','x-request-identity-confirmed','x-request-reviewed',
       'x-request-patient-id','x-request-exam-codes',
     );

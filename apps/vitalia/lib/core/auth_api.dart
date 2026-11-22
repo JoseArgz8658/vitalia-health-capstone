@@ -140,7 +140,7 @@ class AuthApi {
     }
     final candidate=Uri.tryParse(path);
     final allowed=RegExp(
-      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|summary|staff(?:/(?:review-permission|membership))?|patients|patient-invitations|patient-link-code|operator-invitations(?:/revoke)?|administrative-audit))?)?|patient/(?:profile|link-code|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
+      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|summary|sites(?:/state)?|staff(?:/(?:review-permission|membership))?|patients|patient-invitations|patient-link-code|operator-invitations(?:/revoke)?|administrative-audit))?)?|patient/(?:profile|sites|link-code|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
     );
     final pendingPath=RegExp(
       r'^/labs/[a-f0-9-]{36}/medical-requests/pending(?:/[a-f0-9-]{36}/(?:complete|cancel))?$',
@@ -245,10 +245,11 @@ class AuthApi {
   /// Almacena una derivación incluso si el paciente todavía no tiene cuenta.
   Future<Map<String,dynamic>> silMainSavePendingRequest({
     required String labId,required String fileName,required Uint8List bytes,
-    String? patientEmail,
+    String? patientEmail, String? siteId,
   }) => _silMainPdfRequest(
     labId:labId,path:'medical-requests/pending',fileName:fileName,
     bytes:bytes,headers:{
+      if (siteId != null) 'x-request-site-id':siteId,
       if(patientEmail!=null&&patientEmail.trim().isNotEmpty)
         'x-request-patient-email':Uri.encodeComponent(patientEmail.trim().toLowerCase()),
     },
@@ -309,6 +310,7 @@ class AuthApi {
     required String labId,
     String? orderId,
     String? patientId,
+    String? siteId,
     List<String> examCodes = const [],
     required String fileName,
     required Uint8List bytes,
@@ -336,6 +338,7 @@ class AuthApi {
         'x-request-reviewed':'true',
         if (orderId == null) ...{
           'x-request-patient-id':patientId!,
+          if (siteId != null) 'x-request-site-id':siteId,
           'x-request-exam-codes':examCodes.join(','),
         },
       },

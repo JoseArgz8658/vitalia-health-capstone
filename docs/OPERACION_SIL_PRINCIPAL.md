@@ -6,7 +6,7 @@ solicitudes, ordenes, revision y publicacion de informes ya autorizados, con dat
 
 ## 1. Condiciones antes de compilar o desplegar
 
-El backend usa la base principal `vitalia`, esquema postanalitico **045**. La instalación 041 se actualiza mediante el procedimiento controlado. El código distingue:
+El backend usa la base principal `vitalia`, esquema postanalitico **046**. La instalación 041 se actualiza mediante el procedimiento controlado. El código distingue:
 
 | Elemento | Configuracion esperada |
 | --- | --- |
@@ -23,7 +23,7 @@ contiene estos valores hasta que se vuelva a compilar.
 
 **Importante:** `deploy/configurar.ps1` prepara variables generales pero
 **no** instala ni autoriza el SIL principal. En la base principal, el comando
-`migrate-all` solo verifica el esquema; **no aplica** las migraciones 041 a 045.
+`migrate-all` solo verifica el esquema; **no aplica** las migraciones 041 a 046.
 Si el esquema no esta preparado, detener el proceso. El procedimiento de
 migracion controlada exige respaldo, ensayo aislado y aprobacion explicita.
 No modificar una base existente para satisfacer esta guia.
@@ -53,7 +53,7 @@ docker compose exec api node dist/database/migrate-all.js
 ```
 
 En `vitalia` ese comando ejecuta una **consulta de solo lectura**: requiere
-las migraciones SIL hasta la 045 y la tabla de derivaciones pendientes con cierre administrativo.
+las migraciones SIL hasta la 046 y la tabla de derivaciones pendientes con cierre administrativo.
 No ejecutar el migrador general contra `vitalia_dev` para estas comprobaciones,
 porque ese entorno tiene una politica de migraciones diferente.
 
@@ -293,3 +293,21 @@ Invoke-RestMethod http://127.0.0.1:5173/api/health
 | Activar cuenta por invitación | Camino A con código de invitación y evidencia de identidad | Activación con cuenta ficticia y vinculación al laboratorio |
 | Vincular cuenta iniciada por paciente | Camino B con verificación del operador y código 045 | Registro, expiración, reuso, membresía y límite de emisión |
 | Consultar historial y ayuda | Portal Flutter, informes publicados y comparación descriptiva | Widgets de portal, comparación y descarga en Edge |
+
+## Sedes del laboratorio (046)
+
+En **Administración → Sedes**, selecciona el laboratorio y registra sus
+ubicaciones. El nombre es único por laboratorio. El directorio de pacientes
+solo muestra los datos de contacto de sedes activas de sus laboratorios.
+
+Al guardar una derivación PDF o registrar una orden, una única sede activa se
+selecciona automáticamente. Cuando hay varias, el operador elige una. Un
+laboratorio sin sedes activas admite registros sin sede. Al vincular un PDF a
+una orden existente se utiliza la sede de esa orden. Las órdenes antiguas
+siguen siendo válidas y conservan su relación al desactivar una sede.
+
+La migración `046_sil_main_laboratory_sites.sql` crea el catálogo y agrega
+referencias opcionales con una clave compuesta por laboratorio y sede. Usa
+el apartado de actualización de Windows y Docker para ensayar el salto
+045 → 046 con el respaldo disponible. El verificador de arranque de la API
+permanece en solo lectura y las sedes se crean desde administración.
