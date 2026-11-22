@@ -326,8 +326,12 @@ async function adminJourney(browser, base) {
     await nav('Registrar laboratorio').waitFor({timeout:10000});
 
     await nav('Operadores y permisos').click();
-    await page.getByText('Operadores y permisos de revisión',{exact:true})
-      .waitFor({timeout:10000});
+    // El panel de personal aparece debajo de la invitación; Flutter
+    // no expone al árbol de accesibilidad los widgets que quedan fuera
+    // de la pantalla hasta que se desplaza el contenedor.
+    await reach(page,
+      page.getByText('Operadores y permisos de revisión',{exact:true}),
+      'Panel de permisos de operadores');
     for(const address of ['uploader@example.invalid','reviewer@example.invalid']){
       const entry=page.getByText(address,{exact:true});
       await reach(page,entry,'Operador en directorio: '+address);
