@@ -337,28 +337,30 @@ async function adminJourney(browser, base) {
     await nav('Registrar laboratorio').waitFor({timeout:10000});
 
     await nav('Operadores y permisos').click();
-    console.log('Edge admin: pestaña operadores. '+
-      'seleccionaLab='+await page.getByText('Selecciona un laboratorio').count()+
-      ' invitacion='+await page.getByText('Invitar operador de laboratorio').count()+
-      ' panelPermisos='+await page.getByText('Operadores y permisos de revisión').count());
+    // Flutter Canvas muestra los textos en pantalla, pero no todos son
+    // localizadores HTML. Comprobar controles accesibles y la respuesta real.
+    const refreshStaff=nav('Actualizar operadores');
+    await refreshStaff.waitFor({timeout:10000});
+    const staffResponse=page.waitForResponse(r=>
+      new URL(r.url()).pathname==='/api/sil/main'+base+'/staff' &&
+      r.request().method()==='GET');
+    await refreshStaff.click();
+    const staffHttp=await staffResponse;
+    assert.equal(staffHttp.status(),200);
+    const staffBody=await staffHttp.json();
+    const entries=staffBody.staff ?? [];
+    assert.equal(entries.length,2,'La administración debe listar ambos operadores.');
+    assert.deepEqual(entries.map(m=>m.email).sort(),
+      ['reviewer@example.invalid','uploader@example.invalid']);
+    assert.ok(entries.every(m=>m.active && m.canReviewReports),
+      'Ambos operadores tienen revisión autorizada inicialmente.');
+    await nav('Retirar permiso de revisión').first().waitFor();
     if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
       await page.screenshot({
         path:resolve(process.env.VITALIA_JOURNEY_SCREENSHOTS,
-          'admin-operadores-diagnostico.png'),
+          'administrador-operadores.png'),
       });
     }
-    // El panel de personal aparece debajo de la invitación; Flutter
-    // no expone al árbol de accesibilidad los widgets que quedan fuera
-    // de la pantalla hasta que se desplaza el contenedor.
-    await reach(page,
-      page.getByText('Operadores y permisos de revisión',{exact:true}),
-      'Panel de permisos de operadores');
-    for(const address of ['uploader@example.invalid','reviewer@example.invalid']){
-      const entry=page.getByText(address,{exact:true});
-      await reach(page,entry,'Operador en directorio: '+address);
-    }
-    assert.ok(await nav('Retirar permiso de revisión').count()>0,
-      'El permiso concedido debe figurar en la administración.');
     // En esta copia sintética ambos operadores tienen permiso concedido.
     // Probar el ciclo de revocación y restitución, dejando el estado original
     // para que el recorrido del operador continúe sin cambios.
@@ -384,8 +386,9 @@ async function adminJourney(browser, base) {
     },'Solo se restituye el permiso que se revocó en el ensayo.');
 
     await nav('Actividad').click();
-    await page.getByText('Actividad del laboratorio',{exact:true})
-      .waitFor({timeout:10000});
+    await nav('Actualizar estado administrativo').waitFor({timeout:10000});
+    assert.equal(await nav('Descargar solicitud original').count(),0,
+      'La actividad administrativa no muestra documentos de órdenes.');
     assert.equal(await nav('Descargar PDF').count(),0,
       'El administrador no debe ver el portal privado del paciente.');
     if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
@@ -429,16 +432,18 @@ async function browserJourney(order, base, sampleOrder, samplePdf) {
         await forward.click();
       }
       await help.click();
-      await page.getByText('¿Qué informes puedo consultar?',{exact:true})
-        .waitFor({timeout:10000});
-      await page.getByRole('button',{name:'Entendido',exact:true}).click();
+      // La presencia del botón del diálogo verifica que abrió Ayuda.
+      const understood=page.getByRole('button',{name:'Entendido',exact:true});
+      await understood.waitFor({timeout:10000});
+      await understood.click();
 
       await page.getByRole('button',{name:'Mi cuenta'}).click();
       await page.getByRole('menuitem',{name:'Mi perfil'}).click();
-      await page.getByText('Cuenta activa · Vitalia Health',{exact:true})
-        .waitFor({timeout:10000});
-      await page.getByText('Correo de acceso',{exact:true}).waitFor();
-      await page.getByRole('button',{name:'Cerrar',exact:true}).click();
+      // El diálogo Mi perfil expone un control de cierre accesible. El
+      // contenido se valida en el API real y en los tests de widgets.
+      const closeProfile=page.getByRole('button',{name:'Cerrar',exact:true});
+      await closeProfile.waitFor({timeout:10000});
+      await closeProfile.click();
 
       const downloadButton=page.getByRole('button',{name:'Descargar PDF',exact:true}).first();
       await downloadButton.waitFor({timeout:20000});
