@@ -13,7 +13,8 @@ const reviewName='039_sil_main_operator_review';
 const clinicalName='040_sil_main_clinical_access';
 const referralsName='041_sil_main_pending_referrals';
 const closureName='042_sil_main_pending_closure';
-const finalName='043_sil_main_operator_membership';
+const membershipName='043_sil_main_operator_membership';
+const finalName='044_sil_main_operator_invite_revocation';
 const sha=(sql:string)=>createHash('sha256')
   .update(sql.replace(/\r\n/g,'\n')).digest('hex');
 
@@ -49,7 +50,7 @@ async function main(){
   const directory=resolve(__dirname,'../../database/migrations');
   const files=(await readdir(directory)).filter(file=>/^\d{3}_[a-z_]+\.sql$/.test(file));
   const plan=[...silMainRehearsedPlan(files),foundation+'.sql',reviewName+'.sql',
-    clinicalName+'.sql',referralsName+'.sql',closureName+'.sql',finalName+'.sql'];
+    clinicalName+'.sql',referralsName+'.sql',closureName+'.sql',membershipName+'.sql',finalName+'.sql'];
   if(!plan.every(file=>files.includes(file)))throw new Error('Faltan migraciones del SIL principal.');
   const allFiles=[
     ...files.filter(file=>/^0(?:0[1-9]|1[01])_/.test(file)),
@@ -104,7 +105,7 @@ async function main(){
       console.info('BASE: vitalia. Sólo lectura.');
       console.info('Historial original 012: verificado.');
       console.info('Migraciones registradas: '+history.rows.length);
-      console.info('Plan permitido: 012_profiles_locations, 013–032, 038–043.');
+      console.info('Plan permitido: 012_profiles_locations, 013–032, 038–044.');
       console.info('Excluidas: 033–037 DEMO.');
       console.info('No se escribió ninguna tabla.');
       await client.query('COMMIT');
@@ -118,35 +119,23 @@ async function main(){
           throw new Error('Migración aplicada con huella inesperada: '+version);
         }
       }
-      if(history.rows.length!==39)throw new Error('Historial SIL 043 inesperado.');
-      console.info('SIL principal 043 ya registrado. Sin cambios.');
+      if(history.rows.length!==40)throw new Error('Historial SIL 044 inesperado.');
+      console.info('SIL principal 044 ya registrado. Sin cambios.');
       await client.query('COMMIT');
       return;
     }
-    // Si ya existe 042, aplicar únicamente el catálogo de auditoría 043.
-    if(ledger.has(closureName)){
-      const previous=plan.slice(0,-1).map(file=>file.slice(0,-4));
-      if(history.rows.length!==38 ||
+    // Cada actualización incremental verifica todo el prefijo aplicado.
+    const baseline=[reviewName,clinicalName,referralsName,closureName,membershipName]
+      .reverse().find(version=>ledger.has(version));
+    if(baseline){
+      const previousLength=plan.indexOf(baseline+'.sql')+1;
+      const previous=plan.slice(0,previousLength).map(file=>file.slice(0,-4));
+      if(history.rows.length!==12+previousLength ||
         previous.some(version=>ledger.get(version)!==sha(code.get(version)!))){
-        throw new Error('La actualización desde 042 exige 38 migraciones verificadas.');
+        throw new Error('Historial previo incompleto o alterado: '+baseline);
       }
-      const sql=code.get(finalName)!;
-      await client.query(sql);
-      await client.query(
-        'INSERT INTO public.vitalia_schema_migrations(version,checksum) VALUES($1,$2)',
-        [finalName,sha(sql)]);
-      await client.query('COMMIT');
-      console.info('SIL principal actualizado de 042 a 043: administración de operadores.');
-      return;
-    }
-    // Si ya existe 041, aplicar 042 y 043 bajo la misma transacción.
-    if(ledger.has(referralsName)){
-      const previous=plan.slice(0,-2).map(file=>file.slice(0,-4));
-      if(history.rows.length!==37 ||
-        previous.some(version=>ledger.get(version)!==sha(code.get(version)!))){
-        throw new Error('La actualización desde 041 exige 37 migraciones verificadas.');
-      }
-      for(const version of [closureName,finalName]){
+      for(const file of plan.slice(previousLength)){
+        const version=file.slice(0,-4);
         const sql=code.get(version)!;
         await client.query(sql);
         await client.query(
@@ -154,42 +143,7 @@ async function main(){
           [version,sha(sql)]);
       }
       await client.query('COMMIT');
-      console.info('SIL principal actualizado de 041 a 043: cierre y administración.');
-      return;
-    }
-    // Actualizaciones históricas controladas hasta el esquema 042.
-
-    // El respaldo nuevo debe ensayarse en copia ANTES de usar --apply.
-    if(ledger.has(clinicalName)){
-      const previous=plan.slice(0,-3).map(file=>file.slice(0,-4));
-      if(history.rows.length!==36 ||
-        previous.some(version=>ledger.get(version)!==sha(code.get(version)!))){
-        throw new Error('La actualización desde 040 exige 36 migraciones verificadas.');
-      }
-      for(const version of [referralsName,closureName,finalName]){
-        const sql=code.get(version)!;
-        await client.query(sql);
-        await client.query('INSERT INTO public.vitalia_schema_migrations(version,checksum) VALUES($1,$2)',
-          [version,sha(sql)]);
-      }
-      await client.query('COMMIT');
-      console.info('SIL principal actualizado de 040 a 043.');
-      return;
-    }
-    if(ledger.has(reviewName)){
-      const previous=plan.slice(0,-4).map(file=>file.slice(0,-4));
-      if(history.rows.length!==35 ||
-        previous.some(version=>ledger.get(version)!==sha(code.get(version)!))){
-        throw new Error('La actualización desde 039 requiere el historial SIL completo.');
-      }
-      for(const version of [clinicalName,referralsName,closureName,finalName]){
-        const sql=code.get(version)!;
-        await client.query(sql);
-        await client.query('INSERT INTO public.vitalia_schema_migrations(version,checksum) VALUES($1,$2)',
-          [version,sha(sql)]);
-      }
-      await client.query('COMMIT');
-      console.info('SIL principal actualizado de 039 a 043.');
+      console.info('SIL principal actualizado desde '+baseline+' hasta '+finalName+'.');
       return;
     }
     if(history.rows.length!==12 ||
@@ -267,7 +221,7 @@ async function main(){
       throw new Error('Sesiones originales alteradas.');
     const verified=await client.query<{ok:boolean}>(
       `SELECT
-        (SELECT count(*)=39 FROM public.vitalia_schema_migrations)
+        (SELECT count(*)=40 FROM public.vitalia_schema_migrations)
         AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
           WHERE version='012_preliminary_assistant')
         AND EXISTS(SELECT 1 FROM public.vitalia_schema_migrations
@@ -287,8 +241,8 @@ async function main(){
     if(verified.rows[0]?.ok!==true)throw new Error('Estado final inválido.');
     await client.query('COMMIT');
     console.info(rehearse
-      ?'SIL PRINCIPAL 012–032 + 038–043 ENSAYADO EN COPIA AISLADA. Migraciones en copia: 39.'
-      :'SIL principal migrado 012–032 + 038–043; DEMO 033–037 omitida.');
+      ?'SIL PRINCIPAL 012–032 + 038–044 ENSAYADO EN COPIA AISLADA. Migraciones en copia: 40.'
+      :'SIL principal migrado 012–032 + 038–044; DEMO 033–037 omitida.');
     console.info('Historial, cuentas y sesiones originales preservados.');
   }catch(error){
     try{await client.query('ROLLBACK');}catch{broken=true;}

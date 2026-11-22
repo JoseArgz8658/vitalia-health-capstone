@@ -140,7 +140,7 @@ class AuthApi {
     }
     final candidate=Uri.tryParse(path);
     final allowed=RegExp(
-      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|summary|staff(?:/(?:review-permission|membership))?|patients|patient-invitations|operator-invitations))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
+      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|summary|staff(?:/(?:review-permission|membership))?|patients|patient-invitations|operator-invitations(?:/revoke)?|administrative-audit))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
     );
     final pendingPath=RegExp(
       r'^/labs/[a-f0-9-]{36}/medical-requests/pending(?:/[a-f0-9-]{36}/(?:complete|cancel))?$',
@@ -149,6 +149,8 @@ class AuthApi {
     final isOrders=candidate?.path.endsWith('/orders') ?? false;
     final isPatients=candidate?.path.endsWith('/patients') ?? false;
     final isPending=candidate?.path.endsWith('/medical-requests/pending') ?? false;
+    final isAdminHistory=candidate?.path.endsWith('/operator-invitations') == true ||
+        candidate?.path.endsWith('/administrative-audit') == true;
     final allowedQuery = {
       'limit', 'offset',
       if (isPatients || isOrders) 'search',
@@ -157,7 +159,7 @@ class AuthApi {
     if(candidate==null||candidate.hasScheme||candidate.hasAuthority||
        candidate.hasFragment||
        (!allowed.hasMatch(candidate.path)&&!pendingPath.hasMatch(candidate.path))||
-       (queries.isNotEmpty&&(body!=null||(!isOrders&&!isPatients&&!isPending)))||
+       (queries.isNotEmpty&&(body!=null||(!isOrders&&!isPatients&&!isPending&&!isAdminHistory)))||
        queries.keys.any((key)=>!allowedQuery.contains(key))||
        queries.values.any((values)=>values.length!=1)){
       throw const AuthFailure('Ruta del SIL principal inválida.');

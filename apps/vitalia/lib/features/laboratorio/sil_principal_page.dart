@@ -1617,6 +1617,157 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     );
   }
 
+  String _adminHistoryLabel(String value) => switch (value) {
+    'pending' => 'Pendiente',
+    'activated' => 'Activada',
+    'revoked' => 'Revocada',
+    'expired' => 'Vencida',
+    'laboratory_created' => 'Laboratorio creado',
+    'operator_invited' => 'Operador invitado',
+    'operator_activated' => 'Operador activado',
+    'operator_invitation_revoked' => 'Invitación de operador revocada',
+    'staff_granted' => 'Operador vinculado',
+    'operator_review_permission_changed' => 'Permiso de revisión modificado',
+    'operator_membership_disabled' => 'Operador suspendido',
+    'operator_membership_enabled' => 'Operador reactivado',
+    _ => value,
+  };
+
+  Future<void> _showAdminHistory({required bool invitations}) async {
+    final lab = _labId;
+    if (lab == null) return;
+    final endpoint = invitations ? 'operator-invitations' : 'administrative-audit';
+    final collection = invitations ? 'invitations' : 'events';
+    const size = 20;
+    var offset = 0;
+
+    Future<Map<String, dynamic>> load() =>
+        widget.api.silMainRequest('/labs/$lab/$endpoint?limit=$size&offset=$offset');
+
+    var page = load();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: Text(invitations ? 'Invitaciones de operadores' : 'Auditoría administrativa'),
+          scrollable: true,
+          content: SizedBox(
+            width: 550,
+            child: FutureBuilder<Map<String, dynamic>>(
+              future: page,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const LinearProgressIndicator(semanticsLabel: 'Cargando historial');
+                }
+                if (snapshot.hasError) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(switch (snapshot.error) {
+                        AuthFailure(:final message) => message,
+                        _ => 'No se pudo completar la operación.',
+                      }),
+                      TextButton(
+                        onPressed: () => update(() => page = load()),
+                        child: const Text('Actualizar historial'),
+                      ),
+                    ],
+                  );
+                }
+                final data = snapshot.data!;
+                final rows = (data[collection] as List).cast<Map>();
+                final dates = MaterialLocalizations.of(context);
+                String date(Object? value) {
+                  final parsed = DateTime.tryParse(value?.toString() ?? '');
+                  if (parsed == null) return '—';
+                  final local = parsed.toLocal();
+                  return '${dates.formatShortDate(local)} '
+                      '${dates.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (rows.isEmpty) const Text('No hay registros en esta página.'),
+                    for (final row in rows)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(invitations
+                            ? row['email'] as String
+                            : _adminHistoryLabel(row['action'] as String)),
+                        subtitle: Text(invitations
+                            ? '${_adminHistoryLabel(row['status'] as String)} · Vence ${date(row['expiresAt'])}'
+                            : '${row['actorEmail']} · ${date(row['createdAt'])}'),
+                        trailing: invitations && row['status'] == 'pending'
+                            ? TextButton(
+                                onPressed: () async {
+                                  final confirmed = await showDialog<bool>(
+                                    context: context,
+                                    builder: (confirmationContext) => AlertDialog(
+                                      title: const Text('Revocar invitación'),
+                                      content: Text(
+                                        'El código de ${row['email']} dejará de funcionar.',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(confirmationContext, false),
+                                          child: const Text('Cancelar'),
+                                        ),
+                                        FilledButton(
+                                          onPressed: () => Navigator.pop(confirmationContext, true),
+                                          child: const Text('Revocar'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirmed != true || !context.mounted) return;
+                                  update(() {
+                                    page = widget.api.silMainRequest(
+                                      '/labs/$lab/operator-invitations/revoke',
+                                      body: {'invitationId': row['id']},
+                                    ).then((_) => load());
+                                  });
+                                },
+                                child: const Text('Revocar'),
+                              )
+                            : null,
+                      ),
+                    if (offset > 0 || data['hasMore'] == true)
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          TextButton(
+                            onPressed: offset == 0 ? null : () => update(() {
+                              offset -= size;
+                              page = load();
+                            }),
+                            child: const Text('Anterior'),
+                          ),
+                          TextButton(
+                            onPressed: data['hasMore'] != true || offset >= 10000
+                                ? null : () => update(() {
+                                  offset += size;
+                                  page = load();
+                                }),
+                            child: const Text('Siguiente'),
+                          ),
+                        ],
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cerrar'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _staffDirectory() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -1624,6 +1775,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         title: 'Directorio de operadores',
         actions: [
           _labSelector(),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _showAdminHistory(invitations: true),
+            icon: const Icon(Icons.mail_outline),
+            label: const Text('Ver invitaciones'),
+          ),
           OutlinedButton.icon(
             onPressed: _busy
                 ? null
@@ -2852,8 +3008,13 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                           : 'Datos de personal pendientes de consulta.',
                     ),
                   const Divider(height: 28),
-                  const Text(
-                    'El historial de auditoría administrativa requiere una fuente autorizada.',
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : () => _showAdminHistory(invitations: false),
+                      icon: const Icon(Icons.history),
+                      label: const Text('Ver auditoría administrativa'),
+                    ),
                   ),
                 ],
               ),

@@ -613,6 +613,39 @@ async function main() {
     await call('uploader', 'GET', base+'/staff', 403);
     await call('patient', 'GET', base+'/staff', 403);
     await call('admin', 'GET', base+'/medical-requests/pending', 403);
+    const invitationPath=base+'/operator-invitations';
+    const invitationEmail='operador-seguimiento@example.invalid';
+    await admin(invitationPath,201,{email:invitationEmail});
+    await admin(invitationPath,201,{email:invitationEmail});
+    const invitations=await (await call('admin','GET',invitationPath,200)).json();
+    assert.deepEqual(invitations.invitations.map(({status})=>status).sort(),['pending','revoked']);
+    assert.ok(invitations.invitations.every(entry=>entry.email===invitationEmail &&
+      !Object.hasOwn(entry,'code') && !Object.hasOwn(entry,'token_hash')));
+    const otherInvitations=await (await call('admin','GET',otherLab+'/operator-invitations',200)).json();
+    assert.deepEqual(otherInvitations.invitations,[]);
+    const firstPage=await (await call('admin','GET',invitationPath+'?limit=1',200)).json();
+    assert.equal(firstPage.invitations.length,1);
+    assert.equal(firstPage.hasMore,true);
+    await call('admin','GET',invitationPath+'?limit=51',400);
+    await call('uploader','GET',invitationPath,403);
+    const pendingInvitation=invitations.invitations.find(entry=>entry.status==='pending');
+    const revokePath=invitationPath+'/revoke';
+    const revoke={invitationId:pendingInvitation.id};
+    await call('uploader','POST',revokePath,403,{json:revoke});
+    await admin(otherLab+'/operator-invitations/revoke',404,revoke);
+    await admin(revokePath,200,revoke);
+    await admin(revokePath,404,revoke);
+    const afterRevocation=await (await call('admin','GET',invitationPath,200)).json();
+    assert.ok(afterRevocation.invitations.every(entry=>entry.status==='revoked'));
+    const auditPath=base+'/administrative-audit';
+    const northAudit=await (await call('admin','GET',auditPath,200)).json();
+    assert.equal(northAudit.events.filter(event=>event.action==='operator_invited').length,2);
+    assert.equal(northAudit.events.filter(event=>event.action==='operator_invitation_revoked').length,1);
+    assert.ok(northAudit.events.every(event=>Object.keys(event).sort().join(',')===
+      'action,actorEmail,createdAt,id'));
+    const southAudit=await (await call('admin','GET',otherLab+'/administrative-audit',200)).json();
+    assert.ok(southAudit.events.every(event=>event.action!=='operator_invited'));
+    await call('patient','GET',auditPath,403);
     console.log('API: personal y permisos administrativos aislados por laboratorio.');
     await call('uploader','POST',base+'/patients',201,{json:{
       patientId:ids.patient,identityEvidenceReference:'verificacion-ficticia',identityVerified:true,

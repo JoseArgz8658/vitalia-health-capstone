@@ -44,7 +44,7 @@ export function createSilMainService(db:Pool) {
       'patient_invited'|'patient_activated'|
       'pending_request_saved'|'pending_request_downloaded'|'pending_request_completed'|
       'pending_request_cancelled'|'operator_membership_disabled'|
-      'operator_membership_enabled',
+      'operator_membership_enabled'|'operator_invitation_revoked',
     orderId:string|null=null,details:Record<string,unknown>={}) {
     await tx.query(
       `INSERT INTO public.vitalia_sil_main_audit
@@ -200,6 +200,48 @@ export function createSilMainService(db:Pool) {
            RETURNING id,display_name AS "displayName"`,[id,name,adminId]);
         await audit(tx,id,adminId,'laboratory_created');
         return {laboratory:row.rows[0]};
+      });
+    },
+
+    async listOperatorInvitations(labId:string,limit:number,offset:number){
+      const found=await db.query(
+        `SELECT id,email,created_at AS "createdAt",expires_at AS "expiresAt",
+                CASE WHEN consumed_at IS NOT NULL THEN 'activated'
+                     WHEN revoked_at IS NOT NULL THEN 'revoked'
+                     WHEN expires_at<=CURRENT_TIMESTAMP THEN 'expired'
+                     ELSE 'pending' END AS status
+         FROM public.vitalia_sil_main_operator_invites
+         WHERE lab_id=$1
+         ORDER BY created_at DESC,id DESC
+         LIMIT $2 OFFSET $3`,[labId,limit+1,offset]);
+      return {invitations:found.rows.slice(0,limit),hasMore:found.rows.length>limit};
+    },
+
+    async listAdministrativeAudit(labId:string,limit:number,offset:number){
+      const found=await db.query(
+        `SELECT e.id,e.action,e.created_at AS "createdAt",a.email AS "actorEmail"
+         FROM public.vitalia_sil_main_audit e
+         JOIN public.vitalia_accounts a ON a.id=e.actor_id
+         WHERE e.lab_id=$1 AND e.action IN (
+           'laboratory_created','operator_invited','operator_activated','staff_granted',
+           'operator_review_permission_changed','operator_membership_disabled',
+           'operator_membership_enabled','operator_invitation_revoked')
+         ORDER BY e.created_at DESC,e.id DESC
+         LIMIT $2 OFFSET $3`,[labId,limit+1,offset]);
+      return {events:found.rows.slice(0,limit),hasMore:found.rows.length>limit};
+    },
+
+    async revokeOperatorInvitation(labId:string,inviteId:string,adminId:string){
+      return transaction(async tx=>{
+        const revoked=await tx.query(
+          `UPDATE public.vitalia_sil_main_operator_invites
+           SET revoked_at=CURRENT_TIMESTAMP
+           WHERE id=$1 AND lab_id=$2 AND consumed_at IS NULL
+             AND revoked_at IS NULL AND expires_at>CURRENT_TIMESTAMP
+           RETURNING id`,[inviteId,labId]);
+        if(!revoked.rows.length)throw new SilMainNotFound();
+        await audit(tx,labId,adminId,'operator_invitation_revoked',null,{inviteId});
+        return {status:'revoked'};
       });
     },
 
