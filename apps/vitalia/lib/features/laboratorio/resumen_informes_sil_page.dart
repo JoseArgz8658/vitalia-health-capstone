@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
 import 'portal_visual_sil.dart';
+import 'comparacion_historica_sil.dart';
 import 'portal_ayuda_sil.dart';
 
 class ResumenInformesSilPage extends StatefulWidget {
@@ -160,6 +161,11 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
                 Chip(label: Text('$label ${_number(group[key] as num)}')),
             ]),
             const SizedBox(height: 8),
+            ComparacionHistoricaSil(
+              analyte: '${group['analyte']}',
+              unit: '${group['unit']}',
+              measurements: _items(group, 'measurements'),
+            ),
             for (final measurement in _items(group, 'measurements'))
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
