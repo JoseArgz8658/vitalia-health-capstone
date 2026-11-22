@@ -140,7 +140,7 @@ class AuthApi {
     }
     final candidate=Uri.tryParse(path);
     final allowed=RegExp(
-      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|summary|staff(?:/(?:review-permission|membership))?|patients|patient-invitations|operator-invitations))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
+      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|summary|staff(?:/(?:review-permission|membership))?|patients|patient-invitations|operator-invitations|administrative-audit))?)?|patient/(?:profile|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
     );
     final pendingPath=RegExp(
       r'^/labs/[a-f0-9-]{36}/medical-requests/pending(?:/[a-f0-9-]{36}/(?:complete|cancel))?$',
@@ -149,6 +149,8 @@ class AuthApi {
     final isOrders=candidate?.path.endsWith('/orders') ?? false;
     final isPatients=candidate?.path.endsWith('/patients') ?? false;
     final isPending=candidate?.path.endsWith('/medical-requests/pending') ?? false;
+    final isAdminHistory=candidate?.path.endsWith('/operator-invitations') == true ||
+        candidate?.path.endsWith('/administrative-audit') == true;
     final allowedQuery = {
       'limit', 'offset',
       if (isPatients || isOrders) 'search',
@@ -157,7 +159,7 @@ class AuthApi {
     if(candidate==null||candidate.hasScheme||candidate.hasAuthority||
        candidate.hasFragment||
        (!allowed.hasMatch(candidate.path)&&!pendingPath.hasMatch(candidate.path))||
-       (queries.isNotEmpty&&(body!=null||(!isOrders&&!isPatients&&!isPending)))||
+       (queries.isNotEmpty&&(body!=null||(!isOrders&&!isPatients&&!isPending&&!isAdminHistory)))||
        queries.keys.any((key)=>!allowedQuery.contains(key))||
        queries.values.any((values)=>values.length!=1)){
       throw const AuthFailure('Ruta del SIL principal inválida.');
@@ -1112,831 +1114,667 @@ class AuthApi {
               : code == 'PROFESSIONAL_PASSWORD_REQUIRED'
               ? 'Ingresa y confirma una nueva contraseña profesional de al menos 12 caracteres.'
               : code == 'PROFESSIONAL_PASSWORD_EXISTS'
-              ? 'Ya tienes contraseña profesional. Ingresa con tu perfil profesional para aceptar otra clínica.'
-              : code == 'INVITATION_ACCOUNT_MISMATCH'
-              ? 'La invitación no corresponde a la cuenta con la que ingresaste.'
-              : code == 'EXISTING_ACCOUNT'
-              ? 'El correo ya tiene una cuenta. No se modificó su contraseña ni su rol. Solicita al equipo la incorporación de esa cuenta.'
-              : switch (response.statusCode) {
-                  400 =>
-                    activation
-                        ? 'Revisa el código, nombres y contraseña. El código puede estar vencido, revocado o utilizado.'
-                        : 'Revisa los datos y las sucursales o especialidades seleccionadas.',
-                  403 => 'Solo el administrador o el jefe autorizado de esta clínica pueden realizar esta operación.',
-                  409 => 'La autorización o invitación no está disponible. Actualiza antes de repetir; revoca la invitación anterior si necesitas emitir otra.',
-                  429 => 'Hay otra activación en curso. Espera un momento e intenta nuevamente.',
-                  503 => 'La incorporación institucional aún no está disponible. Revisa migración y permisos con el equipo.',
-                  _ => 'No se pudo completar la incorporación institucional.',
-                },
-          response.statusCode,
-        );
+              ? 'Ya tienes contraseña profesional. Ingresa con tu perfil profesional para…77082 tokens truncated…'button',{name:'Cerrar',exact:true});
+      await closeProfile.waitFor({timeout:10000});
+      await closeProfile.click();
+
+      const downloadButton=page.getByRole('button',{name:'Descargar PDF',exact:true}).first();
+      assert.equal(await downloadButton.count(),0);
+      await page.getByRole('button',{name:'Más opciones',exact:true}).first().click();
+      await downloadButton.waitFor({timeout:20000});
+      if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+        await page.setViewportSize({width:1440,height:1050});
+        await downloadButton.waitFor();
+        await page.screenshot({path:resolve(
+          process.env.VITALIA_JOURNEY_SCREENSHOTS, 'paciente-escritorio.png')});
+        await page.setViewportSize({width:390,height:844});
       }
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    } on AuthFailure {
-      rethrow;
-    } on TimeoutException {
-      throw const AuthFailure(
-        'La solicitud tardó demasiado. Actualiza antes de repetir. Si se creó una invitación y perdiste su código, revócala antes de emitir otra.',
-      );
-    } catch (_) {
-      throw const AuthFailure(
-        'No se pudo conectar. Actualiza antes de repetir la solicitud.',
-      );
-    }
-  }
-
-  Future<Map<String, dynamic>> team(
-    String clinicId, {
-    String? memberId,
-    bool history = false,
-    int offset = 0,
-    Map<String, dynamic>? update,
-  }) async {
-    final clinic = _institutionId(clinicId);
-    final member = memberId == null ? null : _institutionId(memberId);
-    if ((history && member == null) ||
-        (update != null && (member == null || history)) ||
-        (member != null && !history && update == null)) {
-      throw const AuthFailure('Solicitud de equipo inválida.');
-    }
-    final token = _token;
-    if (token == null ||
-        expiresAt == null ||
-        !expiresAt!.isAfter(DateTime.now())) {
-      clear();
-      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-    }
-    try {
-      final path =
-          '/api/team/$clinic${member == null ? '' : '/$member'}${history ? '/history' : ''}';
-      final uri = _base
-          .resolve(path)
-          .replace(
-            queryParameters: update == null
-                ? {'limit': '20', 'offset': '$offset'}
-                : null,
-          );
-      final headers = {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      };
-      final response =
-          await (update == null
-                  ? _client.get(uri, headers: headers)
-                  : _client.post(
-                      uri,
-                      headers: headers,
-                      body: jsonEncode(update),
-                    ))
-              .timeout(const Duration(seconds: 15));
-      if (_token != token || response.statusCode == 401) {
-        clear();
-        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
+      const downloaded=page.waitForEvent('download');
+      const response=page.waitForResponse(r=>r.url().endsWith(
+        '/patient/reports/'+publishedId+'/file'));
+      await downloadButton.click();
+      assert.equal((await response).status(),200);
+      const file=await downloaded;
+      assert.deepEqual(readFileSync(await file.path()),pdf);
+      if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+        await page.screenshot({
+          path:resolve(process.env.VITALIA_JOURNEY_SCREENSHOTS,
+            'paciente-movil.png'),
+        });
       }
-      if (response.statusCode >= 400) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final code = (data['error'] as Map?)?['code'];
-        throw AuthFailure(
-          code == 'NO_MEMBERSHIP_CHANGE'
-              ? 'No hiciste cambios en la pertenencia.'
-              : switch (response.statusCode) {
-                  400 => 'Revisa el motivo y las sucursales o especialidades seleccionadas.',
-                  403 => 'Solo el jefe activo de esta clínica puede modificar pertenencias de profesionales ordinarios.',
-                  404 => 'La pertenencia no está disponible en esta clínica.',
-                  409 => 'La pertenencia cambió o la clínica no está disponible. Actualiza la lista antes de editar nuevamente.',
-                  503 => 'La gestión del equipo aún no está disponible. Revisa migración y permisos con el equipo.',
-                  _ => 'No se pudo completar la gestión del equipo.',
-                },
-          response.statusCode,
-        );
-      }
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    } on AuthFailure {
-      rethrow;
-    } on TimeoutException {
-      throw const AuthFailure(
-        'La solicitud tardó demasiado. Reintenta el mismo formulario para comprobar el resultado sin duplicar cambios, o actualiza la lista.',
-      );
-    } catch (_) {
-      throw const AuthFailure(
-        'No se pudo conectar. Conserva el formulario para reintentar o actualiza la lista.',
-      );
-    }
-  }
-
-  Future<Map<String, dynamic>> professionalCredentials(
-    String clinicId,
-    String memberId, {
-    String? requestId,
-    Map<String, dynamic>? body,
-  }) async {
-    final clinic = _institutionId(clinicId), member = _institutionId(memberId);
-    if (requestId != null) _institutionId(requestId);
-    if (requestId != null && body == null)
-      throw const AuthFailure('Solicitud inválida.');
-    final token = _token;
-    if (token == null ||
-        expiresAt == null ||
-        !expiresAt!.isAfter(DateTime.now())) {
-      clear();
-      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-    }
-    try {
-      final path =
-          '/api/professional-credentials/$clinic/$member${body == null
-              ? ''
-              : requestId == null
-              ? '/requests'
-              : '/requests/$requestId/decision'}';
-      final headers = {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      };
-      final response =
-          await (body == null
-                  ? _client.get(_base.resolve(path), headers: headers)
-                  : _client.post(
-                      _base.resolve(path),
-                      headers: headers,
-                      body: jsonEncode(body),
-                    ))
-              .timeout(const Duration(seconds: 20));
-      if (_token != token || response.statusCode == 401) {
-        clear();
-        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-      }
-      if (response.statusCode >= 400)
-        throw AuthFailure(switch (response.statusCode) {
-          400 =>
-            'Revisa las referencias, la fecha de consulta y la confirmación.',
-          403 => 'No tienes permiso para esta verificación. El jefe registra antecedentes y el administrador decide.',
-          404 =>
-            'La solicitud o pertenencia no está disponible en esta clínica.',
-          409 => 'El perfil cambió, existe una solicitud pendiente o ya fue resuelta. Actualiza antes de continuar.',
-          503 => 'La verificación profesional aún no está disponible. Revisa migración y permisos con el equipo.',
-          _ => 'No se pudo completar la verificación profesional.',
-        }, response.statusCode);
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    } on AuthFailure {
-      rethrow;
-    } on TimeoutException {
-      throw const AuthFailure(
-        'La solicitud tardó demasiado. Reintenta sin cambiar los datos o actualiza para comprobar el resultado.',
-      );
-    } catch (_) {
-      throw const AuthFailure(
-        'No se pudo conectar. Conserva los datos para reintentar.',
-      );
-    }
-  }
-
-  Future<http.Response> careInboxRequest({
-    String? id,
-    String? action,
-    int offset = 0,
-    Map<String, dynamic>? body,
-  }) async {
-    if ((id != null && !RegExp(r'^[a-f0-9-]{36}$').hasMatch(id)) ||
-        (action != null &&
-            ![
-              'file',
-              'begin',
-              'review',
-              'referral-options',
-              'referrals',
-            ].contains(action)) ||
-        (action != null && id == null) ||
-        (['begin', 'referrals'].contains(action) && body == null) ||
-        (!['begin', 'review', 'referrals'].contains(action) && body != null)) {
-      throw const AuthFailure('Solicitud de atención inválida.');
-    }
-    final token = _token;
-    if (token == null ||
-        expiresAt == null ||
-        !expiresAt!.isAfter(DateTime.now())) {
-      clear();
-      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-    }
-    final uri = _base
-        .resolve(
-          '/api/care-inbox${id == null ? '' : '/$id'}${action == null ? '' : '/$action'}',
-        )
-        .replace(
-          queryParameters: id == null || action == 'referral-options'
-              ? {'offset': '$offset'}
-              : null,
-        );
-    try {
-      final response =
-          await (body == null
-                  ? _client.get(
-                      uri,
-                      headers: {'Authorization': 'Bearer $token'},
-                    )
-                  : _client.post(
-                      uri,
-                      headers: {
-                        'Authorization': 'Bearer $token',
-                        'Content-Type': 'application/json',
-                      },
-                      body: jsonEncode(body),
-                    ))
-              .timeout(const Duration(seconds: 60));
-      if (_token != token) throw const AuthFailure('La sesión cambió.', 401);
-      if (response.statusCode == 401) {
-        clear();
-        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-      }
-      if (response.statusCode >= 400)
-        throw AuthFailure(switch (response.statusCode) {
-          400 =>
-            action == 'referrals'
-                ? 'Revisa el destinatario, el motivo y la confirmación.'
-                : 'Revisa fechas, resultados, observaciones y confirmación del original.',
-          403 => 'Ingresa en modo profesional para consultar tus atenciones.',
-          404 => 'Esta atención ya no está disponible para tu cuenta. Actualiza la bandeja.',
-          409 => 'La atención cambió. Actualiza antes de continuar.',
-          503 =>
-            'La bandeja no está disponible temporalmente. Intenta nuevamente.',
-          _ => 'No se pudo consultar la atención.',
-        }, response.statusCode);
-      return response;
-    } on AuthFailure {
-      rethrow;
-    } catch (_) {
-      throw const AuthFailure(
-        'No se pudo completar la solicitud. Actualiza la atención antes de repetir.',
-      );
-    }
-  }
-
-  Future<Map<String, dynamic>> careContext() => _careGet('context');
-
-  Future<Map<String, dynamic>> careCatalog(
-    String communeCode, {
-    int offset = 0,
-  }) => _careGet(
-    'catalog',
-    query: {'communeCode': communeCode, 'offset': '$offset'},
-  );
-
-  Future<Map<String, dynamic>> _careGet(
-    String path, {
-    Map<String, String>? query,
-  }) async {
-    final token = _token;
-    if (token == null ||
-        expiresAt == null ||
-        !expiresAt!.isAfter(DateTime.now())) {
-      clear();
-      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-    }
-    try {
-      final response = await _client
-          .get(
-            _base.resolve('/api/care/$path').replace(queryParameters: query),
-            headers: {'Authorization': 'Bearer $token'},
-          )
-          .timeout(const Duration(seconds: 15));
-      if (_token != token) throw const AuthFailure('La sesión cambió.', 401);
-      if (response.statusCode == 401) {
-        clear();
-        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-      }
-      if (response.statusCode >= 400) {
-        throw AuthFailure(switch (response.statusCode) {
-          409 => 'Completa primero tus datos personales en Mi perfil.',
-          400 => 'Selecciona una comuna válida para consultar atención.',
-          403 => 'Ingresa en modo paciente para enviar un examen.',
-          _ => 'No se pudo consultar la atención. Intenta nuevamente.',
-        }, response.statusCode);
-      }
-      return Map<String, dynamic>.from(jsonDecode(response.body) as Map);
-    } on AuthFailure {
-      rethrow;
-    } catch (_) {
-      throw const AuthFailure(
-        'No se pudo consultar la atención. Intenta nuevamente.',
-      );
-    }
-  }
-
-  Uri documentUri([String suffix = '', Map<String, String>? query]) {
-    if (suffix.isNotEmpty &&
-        !RegExp(
-          r'^[a-f0-9-]{36}/(file|processing|review|care|explanation|assistant(?:/explanation)?)$',
-        ).hasMatch(suffix)) {
-      throw const AuthFailure('Documento inválido.');
-    }
-    return _base
-        .resolve('/api/documents${suffix.isEmpty ? '' : '/$suffix'}')
-        .replace(queryParameters: query);
-  }
-
-  Future<http.Response> sendDocumentRequest(http.BaseRequest request) async {
-    final token = _token;
-    if (token == null ||
-        expiresAt == null ||
-        !expiresAt!.isAfter(DateTime.now())) {
-      clear();
-      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-    }
-    if (request.url.origin != _base.origin ||
-        !(request.url.path == '/api/documents' ||
-            RegExp(
-              r'^/api/documents/[a-f0-9-]{36}/(file|processing|review|care|explanation|assistant(?:/explanation)?)$',
-            ).hasMatch(request.url.path))) {
-      throw const AuthFailure('Solicitud de documento inválida.');
-    }
-    if ((request.url.path.endsWith('/review') ||
-            request.url.path.endsWith('/care')) &&
-        request.method != 'GET') {
-      throw const AuthFailure('La revisión del paciente es solo de consulta.');
-    }
-    if ((request.url.path.endsWith('/explanation') ||
-            request.url.path.endsWith('/assistant')) &&
-        !['GET', 'POST'].contains(request.method)) {
-      throw const AuthFailure('Solicitud de explicación inválida.');
-    }
-    request.headers['Authorization'] = 'Bearer $token';
-    try {
-      final response =
-          await (() async {
-            final streamed = await _client.send(request);
-            return http.Response.fromStream(streamed);
-          })().timeout(
-            Duration(
-              seconds:
-                  (request.url.path.endsWith('/explanation') ||
-                      request.url.path.endsWith('/assistant'))
-                  ? 150
-                  : 60,
-            ),
-          );
-      if (_token != token)
-        throw const AuthFailure('La sesión cambió. Ingresa nuevamente.', 401);
-      if (response.statusCode == 401) {
-        clear();
-        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-      }
-      if (response.statusCode >= 400) {
-        final message = switch (response.statusCode) {
-          400 =>
-            request.url.path.contains('/assistant')
-                ? 'Pregunta o examen fuera de los límites del asistente.'
-                : 'Revisa el archivo y los datos del examen.',
-          403 => 'No tienes permiso para acceder a estos documentos.',
-          404 => 'Documento no disponible.',
-          409 =>
-            request.url.path.contains('/assistant')
-                ? 'Comprueba la revisión aprobada y el límite de treinta preguntas. Actualiza antes de repetir.'
-                : request.url.path == '/api/documents' &&
-                      request.method == 'POST'
-                ? 'La selección de atención o tu perfil cambió. Actualiza los datos antes de enviar.'
-                : 'Primero se requiere una revisión profesional aprobada.',
-          413 => 'El archivo supera 10 MiB.',
-          503 =>
-            request.url.path.contains('/assistant')
-                ? assistantFailureMessage(response.body)
-                : 'El servicio está ocupado. Intenta nuevamente.',
-          _ => 'No se pudo completar la solicitud.',
-        };
-        throw AuthFailure(message, response.statusCode);
-      }
-      return response;
-    } on AuthFailure {
-      rethrow;
-    } on TimeoutException {
-      throw AuthFailure(
-        request.url.path.contains('/assistant')
-            ? 'El asistente tardó demasiado. Actualiza la conversación antes de repetir.'
-            : 'La solicitud tardó demasiado. Actualiza el historial antes de repetir una carga.',
-      );
-    } catch (_) {
-      throw AuthFailure(
-        request.url.path.contains('/assistant')
-            ? 'No se pudo conectar con el asistente. Actualiza la conversación antes de repetir.'
-            : 'No se pudo conectar. Si estabas subiendo un archivo, actualiza el historial antes de repetir.',
-      );
-    }
-  }
-
-  Uri assignmentUri([String suffix = '', Map<String, String>? query]) {
-    if (suffix.isNotEmpty &&
-        !RegExp(r'^[a-f0-9-]{36}/deactivate$').hasMatch(suffix)) {
-      throw const AuthFailure('Asignación inválida.');
-    }
-    return _base
-        .resolve('/api/assignments${suffix.isEmpty ? '' : '/$suffix'}')
-        .replace(queryParameters: query);
-  }
-
-  Future<http.Response> sendAssignmentRequest(http.Request request) async {
-    final token = _token;
-    if (token == null ||
-        expiresAt == null ||
-        !expiresAt!.isAfter(DateTime.now())) {
-      clear();
-      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-    }
-    if (request.url.origin != _base.origin ||
-        !['GET', 'POST'].contains(request.method) ||
-        !(request.url.path == '/api/assignments' ||
-            RegExp(r'^/api/assignments/[a-f0-9-]{36}/deactivate$')
-                .hasMatch(request.url.path))) {
-      throw const AuthFailure('Solicitud de asignación inválida.');
-    }
-    request.headers['Authorization'] = 'Bearer $token';
-    try {
-      final response = await (() async {
-        return http.Response.fromStream(await _client.send(request));
-      })().timeout(const Duration(seconds: 15));
-      if (_token != token)
-        throw const AuthFailure('La sesión cambió. Ingresa nuevamente.', 401);
-      if (response.statusCode == 401) {
-        clear();
-        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-      }
-      if (response.statusCode >= 400) {
-        throw AuthFailure(switch (response.statusCode) {
-          400 => 'Revisa los correos y la solicitud.',
-          403 => 'No tienes permiso para gestionar estas asignaciones.',
-          404 => 'Cuenta o asignación no disponible. Comprueba los correos y sus roles.',
-          _ => 'No se pudo completar la solicitud.',
-        }, response.statusCode);
-      }
-      return response;
-    } on AuthFailure {
-      rethrow;
-    } on TimeoutException {
-      throw const AuthFailure(
-        'La solicitud tardó demasiado. Actualiza la lista antes de repetir.',
-      );
-    } catch (_) {
-      throw const AuthFailure(
-        'No se pudo conectar. Actualiza la lista antes de repetir.',
-      );
-    }
-  }
-
-  Uri professionalUri(
-    String patientId, {
-    String? documentId,
-    String? action,
-    Map<String, String>? query,
-  }) {
-    final identifier = RegExp(r'^[a-f0-9-]{36}$');
-    if (!identifier.hasMatch(patientId) ||
-        (documentId != null &&
-            (!identifier.hasMatch(documentId) ||
-                !['file', 'extraction'].contains(action))) ||
-        (documentId == null && action != null)) {
-      throw const AuthFailure('Solicitud profesional inválida.');
-    }
-    return _base
-        .resolve(
-          '/api/professional/patients/$patientId/documents'
-          '${documentId == null ? '' : '/$documentId/$action'}',
-        )
-        .replace(queryParameters: query);
-  }
-
-  Future<http.Response> sendProfessionalRequest(http.Request request) async {
-    final token = _token;
-    if (token == null ||
-        expiresAt == null ||
-        !expiresAt!.isAfter(DateTime.now())) {
-      clear();
-      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-    }
-    if (request.url.origin != _base.origin ||
-        request.method != 'GET' ||
-        !RegExp(
-          r'^/api/professional/patients/[a-f0-9-]{36}/documents(?:/[a-f0-9-]{36}/(?:file|extraction))?$',
-        ).hasMatch(request.url.path)) {
-      throw const AuthFailure('Solicitud profesional inválida.');
-    }
-    request.headers['Authorization'] = 'Bearer $token';
-    try {
-      final response = await (() async {
-        return http.Response.fromStream(await _client.send(request));
-      })().timeout(const Duration(seconds: 60));
-      if (_token != token)
-        throw const AuthFailure('La sesión cambió. Ingresa nuevamente.', 401);
-      if (response.statusCode == 401) {
-        clear();
-        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-      }
-      if (response.statusCode >= 400) {
-        throw AuthFailure(switch (response.statusCode) {
-          403 => 'No tienes permiso para consultar estos exámenes.',
-          404 =>
-            'Paciente o documento no disponible. Comprueba tus asignaciones.',
-          503 => 'Las descargas están ocupadas. Intenta nuevamente.',
-          _ => 'No se pudo consultar el documento.',
-        }, response.statusCode);
-      }
-      return response;
-    } on AuthFailure {
-      rethrow;
-    } on TimeoutException {
-      throw const AuthFailure(
-        'La consulta tardó demasiado. Intenta nuevamente.',
-      );
-    } catch (_) {
-      throw const AuthFailure('No se pudo conectar con el servidor.');
-    }
-  }
-
-  Uri reviewUri(String patientId, String documentId) {
-    final identifier = RegExp(r'^[a-f0-9-]{36}$');
-    if (!identifier.hasMatch(patientId) || !identifier.hasMatch(documentId)) {
-      throw const AuthFailure('Revisión inválida.');
-    }
-    return _base.resolve(
-      '/api/professional/patients/$patientId/documents/$documentId/review',
-    );
-  }
-
-  Future<http.Response> sendReviewRequest(http.Request request) async {
-    final token = _token;
-    if (token == null ||
-        expiresAt == null ||
-        !expiresAt!.isAfter(DateTime.now())) {
-      clear();
-      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-    }
-    if (request.url.origin != _base.origin ||
-        !['GET', 'POST'].contains(request.method) ||
-        !RegExp(
-          r'^/api/professional/patients/[a-f0-9-]{36}/documents/[a-f0-9-]{36}/review$',
-        ).hasMatch(request.url.path)) {
-      throw const AuthFailure('Solicitud de revisión inválida.');
-    }
-    request.headers['Authorization'] = 'Bearer $token';
-    try {
-      final response = await (() async {
-        return http.Response.fromStream(await _client.send(request));
-      })().timeout(const Duration(seconds: 15));
-      if (_token != token)
-        throw const AuthFailure('La sesión cambió. Ingresa nuevamente.', 401);
-      if (response.statusCode == 401) {
-        clear();
-        throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-      }
-      if (response.statusCode >= 400) {
-        throw AuthFailure(switch (response.statusCode) {
-          400 => 'Revisa la fecha, los resultados, las observaciones y la confirmación.',
-          403 => 'No tienes permiso para revisar este documento.',
-          404 =>
-            'Paciente o documento no disponible. Comprueba tus asignaciones.',
-          409 => 'Ya existe una revisión o cambió el procesamiento. Actualiza la revisión.',
-          413 => 'La revisión supera el tamaño permitido.',
-          _ => 'No se pudo guardar o consultar la revisión. Actualiza antes de repetir.',
-        }, response.statusCode);
-      }
-      return response;
-    } on AuthFailure {
-      rethrow;
-    } on TimeoutException {
-      throw const AuthFailure(
-        'La solicitud tardó demasiado. Actualiza la revisión antes de repetir.',
-      );
-    } catch (_) {
-      throw const AuthFailure(
-        'No se pudo conectar. Actualiza la revisión antes de repetir.',
-      );
-    }
-  }
-
-  Future<Map<String, dynamic>> _request(
-    String path, {
-    Map<String, String>? body,
-    bool get = false,
-  }) async {
-    final headers = <String, String>{
-      'Content-Type': 'application/json',
-      if (_token != null) 'Authorization': 'Bearer $_token',
-    };
-    try {
-      final uri = _base.resolve('/api/auth/$path');
-      final response =
-          await (get
-                  ? _client.get(uri, headers: headers)
-                  : _client.post(
-                      uri,
-                      headers: headers,
-                      body: jsonEncode(body ?? {}),
-                    ))
-              .timeout(const Duration(seconds: 15));
-      if (response.statusCode == 401) {
-        if (path != 'login') clear();
-        throw AuthFailure(
-          path == 'login'
-              ? 'Correo, contraseña o modo de acceso incorrectos.'
-              : 'La sesión terminó. Ingresa nuevamente.',
-          401,
-        );
-      }
-      if (response.statusCode == 429) {
-        throw const AuthFailure('Espera antes de volver a intentar.', 429);
-      }
-      if (response.statusCode >= 400) {
-        throw AuthFailure(
-          'No se pudo completar la solicitud. Intenta nuevamente.',
-          response.statusCode,
-        );
-      }
-      if (response.statusCode == 204) return {};
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    } on AuthFailure {
-      rethrow;
-    } on TimeoutException {
-      throw const AuthFailure('El servidor tardó demasiado en responder.');
-    } catch (_) {
-      throw const AuthFailure('No se pudo conectar con el servidor.');
-    }
-  }
-
-  Future<Map<String, dynamic>> login(
-    String email,
-    String password, {
-    String mode = 'paciente',
-  }) async {
-    if (!['paciente', 'profesional', 'administrador', 'operador_laboratorio'].contains(mode))
-      throw const AuthFailure('Modo de acceso inválido.');
-    clear();
-    try {
-      final data = await _request(
-        'login',
-        body: {'email': email.trim(), 'password': password, 'mode': mode},
-      );
-      if (data['professionalPasswordSetup'] is Map) {
-        final setup = data['professionalPasswordSetup'] as Map;
-        final token = setup['token'];
-        if (token is! String || !RegExp(r'^[a-f0-9]{64}$').hasMatch(token)) {
-          throw const AuthFailure(
-            'No se pudo preparar la configuración profesional.',
-          );
-        }
-        throw ProfessionalPasswordSetupRequired(token);
-      }
-      _token = data['token'] as String;
-      expiresAt = DateTime.parse(data['expiresAt'] as String);
-      if (!expiresAt!.isAfter(DateTime.now()))
-        throw const AuthFailure('La sesión terminó.');
-      return await me();
-    } catch (_) {
-      clear();
-      rethrow;
-    }
-  }
-
-  Future<Map<String, dynamic>> me() async {
-    final data = await _request('me', get: true);
-    final user = data['user'] as Map<String, dynamic>;
-    if (!['paciente', 'profesional', 'administrador', 'operador_laboratorio'].contains(user['role'])) {
-      clear();
-      throw const AuthFailure('La cuenta no tiene un rol autorizado.');
-    }
-    return user;
-  }
-
-  Future<void> saveProfessionalPassword({
-    required String currentPassword,
-    required String password,
-    required String confirmation,
-    String? setupToken,
-  }) async {
-    final session = _token;
-    if (setupToken == null &&
-        (session == null ||
-            expiresAt == null ||
-            !expiresAt!.isAfter(DateTime.now()))) {
-      clear();
-      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-    }
-    try {
-      final response = await _client
-          .post(
-            _base.resolve(
-              '/api/onboarding/professional-password/${setupToken == null ? 'change' : 'setup'}',
-            ),
-            headers: {
-              'Content-Type': 'application/json',
-              if (setupToken != null)
-                'Authorization': 'ProfessionalSetup $setupToken',
-              if (setupToken == null) 'Authorization': 'Bearer $session',
-            },
-            body: jsonEncode({
-              'currentPassword': currentPassword,
-              'professionalPassword': password,
-              'professionalConfirmation': confirmation,
-              'confirmed': true,
-            }),
-          )
-          .timeout(const Duration(seconds: 30));
-      if (setupToken == null && session != _token)
-        throw const AuthFailure('La sesión cambió.', 401);
-      if (response.statusCode >= 400) {
-        final code = (jsonDecode(response.body) as Map)['error']?['code'];
-        if (response.statusCode == 401 && setupToken == null) clear();
-        throw AuthFailure(switch (code) {
-          'CURRENT_PASSWORD_INVALID' => 'La contraseña actual no es correcta.',
-          'PASSWORD_REUSED' =>
-            'La contraseña profesional debe ser diferente a la de paciente.',
-          'PASSWORD_UNCHANGED' =>
-            'La nueva contraseña debe ser diferente a la actual.',
-          'SETUP_EXPIRED' => 'La configuración venció. Vuelve a iniciar sesión como profesional.',
-          'PROFESSIONAL_PASSWORD_EXISTS' => 'Tu contraseña profesional ya está configurada. Vuelve a iniciar sesión.',
-          _ => 'No se pudo cambiar la contraseña. Revisa los datos e intenta nuevamente.',
-        }, response.statusCode);
-      }
-      if (setupToken == null) clear();
-    } on AuthFailure {
-      rethrow;
-    } on TimeoutException {
-      throw const AuthFailure(
-        'La solicitud tardó demasiado. Comprueba el acceso con la nueva contraseña antes de repetir.',
-      );
-    } catch (_) {
-      throw const AuthFailure('No se pudo conectar con el servidor.');
-    }
-  }
-
-  Future<Map<String, dynamic>> generateSilRecoveryKey(String currentPassword) =>
-      _silRecoveryRequest('key', {'currentPassword': currentPassword}, authenticated: true);
-
-  Future<void> recoverSilPassword(String email, String key, String password) async {
-    await _silRecoveryRequest('complete', {
-      'email': email.trim().toLowerCase(),
-      'recoveryKey': key.trim(),
-      'password': password,
-    });
-  }
-
-  Future<Map<String, dynamic>> _silRecoveryRequest(
-    String action,
-    Map<String, String> body, {
-    bool authenticated = false,
-  }) async {
-    final token = authenticated ? _token : null;
-    if (authenticated &&
-        (token == null || !(expiresAt?.isAfter(DateTime.now()) ?? false))) {
-      clear();
-      throw const AuthFailure('La sesión terminó. Ingresa nuevamente.', 401);
-    }
-    try {
-      final response = await _client.post(
-        _base.resolve(_silMainMode ? '/api/sil/main/patient/recovery/$action' : '/api/sil/portal/recovery/$action'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 20));
-      if (authenticated && token != _token) {
-        throw const AuthFailure('La sesión cambió. Ingresa nuevamente.', 401);
-      }
-      if (authenticated && response.statusCode == 401) clear();
-      if (response.statusCode >= 400) {
-        throw AuthFailure(switch (response.statusCode) {
-          400 => 'Comprueba los datos ingresados.',
-          401 => 'La sesión terminó. Ingresa nuevamente.',
-          422 => authenticated
-              ? 'Comprueba tu contraseña actual.'
-              : 'La clave de recuperación es incorrecta, venció o ya se usó.',
-          429 => 'Demasiados intentos. Espera antes de continuar.',
-          503 => 'Hay otra solicitud en curso. Intenta en unos segundos.',
-          _ => 'No se pudo completar la recuperación.',
-        }, response.statusCode);
-      }
-      return response.statusCode == 204
-          ? {}
-          : jsonDecode(response.body) as Map<String, dynamic>;
-    } on AuthFailure {
-      rethrow;
-    } on TimeoutException {
-      throw AuthFailure(authenticated
-          ? 'La operación tardó demasiado. Puedes generar otra clave.'
-          : 'La operación tardó demasiado. Comprueba el acceso con tu nueva contraseña.');
-    } catch (_) {
-      throw const AuthFailure('No se pudo conectar con el portal.');
-    }
-  }
-
-  Future<void> register(String email, String password) async {
-    await _request(
-      'register',
-      body: {'email': email.trim(), 'password': password},
-    );
-  }
-
-  Future<void> logout() async {
-    try {
-      await _request('logout');
+      console.log('Microsoft Edge: paciente consultó ayuda, perfil y descargó informe publicado.');
     } finally {
-      clear();
+      await page.close();
     }
+  } finally {
+    await browser.close();
   }
 }
+
+function demoAccounts(manual) {
+  const raw=process.env.VITALIA_JOURNEY_DEMO_PASSWORDS;
+  delete process.env.VITALIA_JOURNEY_DEMO_PASSWORDS;
+  if(raw===undefined)return {};
+  if(!manual)throw new Error('Los accesos del DEMO requieren el modo manual.');
+  const emails={
+    admin:'admin.sil@example.invalid',
+    uploader:'operador.sil@example.invalid',
+    patient:'paciente.sil@example.invalid',
+  };
+  let passwords;
+  try {
+    passwords=JSON.parse(raw);
+  } catch {
+    throw new Error('No se pudieron leer las contraseñas del ensayo.');
+  }
+  return Object.fromEntries(Object.entries(emails).map(([key,email])=>{
+    const value=passwords?.[key];
+    if(typeof value!=='string'||value.length===0||Buffer.byteLength(value,'utf8')>1024){
+      throw new Error('Ingresa una contraseña válida para '+email+'.');
+    }
+    return [key,{email,password:value}];
+  }));
+}
+
+async function main() {
+  if(process.env.VITALIA_ISOLATED_REHEARSAL!=='YES' ||
+    process.env.PGHOST!=='127.0.0.1' ||
+    process.env.PGUSER!=='vitalia_restore' ||
+    process.env.PGDATABASE!=='vitalia_restored') {
+    throw new Error('Se requiere PostgreSQL aislado, vacío y accesible por loopback.');
+  }
+  const container=process.env.VITALIA_JOURNEY_DB_CONTAINER;
+  if(container && (!/^vitalia-edge-qa-[a-f0-9]{12}$/.test(container) || process.env.PGPORT!=='55439')){
+    throw new Error('El contenedor local debe pertenecer al ensayo de Edge.');
+  }
+  const manual=process.env.VITALIA_JOURNEY_MANUAL==='YES';
+  const demo=demoAccounts(manual);
+  const fixture=process.env.VITALIA_JOURNEY_FIXTURE;
+  if(manual && (!process.env.VITALIA_JOURNEY_WEB || !fixture)){
+    throw new Error('El ensayo manual requiere una compilación web y una ruta para el PDF ficticio.');
+  }
+  const db=new Pool({connectionTimeoutMillis:5000});
+  let server, webServer;
+  try {
+    await prepare(db,container);
+    const roles={
+      admin:'administrador', uploader:'operador_laboratorio',
+      reviewer:'operador_laboratorio', patient:'paciente', other:'paciente',
+    };
+    const ids={};
+    const credentials=Object.fromEntries(Object.keys(roles).map(name=>[
+      name,demo[name]??{email:name+'@example.invalid',password},
+    ]));
+    const passwordHash=await hashPassword(password);
+    for(const [name,role] of Object.entries(roles)){
+      ids[name]=randomUUID();
+      await db.query('INSERT INTO public.vitalia_accounts(id,email,password_hash,role_code) VALUES($1,$2,$3,$4)',
+        [ids[name],credentials[name].email,demo[name]?await hashPassword(credentials[name].password):passwordHash,role]);
+    }
+
+    process.env.VITALIA_SIL_MAIN_MODE='YES';
+    const host=express();
+    const web=process.env.VITALIA_JOURNEY_WEB;
+    host.use(createApp({
+      authenticate:await createCredentialAuthenticator(db,{guardPatientSession:process.env.VITALIA_SIL_MAIN_MODE==='YES'}),
+      issue:(id,mode,hash)=>issueSession(db,id,mode,hash),
+      find:token=>findSessionAccount(db,token),
+      revoke:token=>revokeSession(db,token),
+    },...Array(18).fill(undefined),createSilMainService(db)));
+    server=await new Promise((accept,reject)=>{
+      const listener=host.listen(3119,'127.0.0.1',()=>accept(listener));
+      listener.once('error',reject);
+    });
+
+    const tokens={};
+    for(const [name,mode] of Object.entries(roles)){
+      const login=await api('POST','/api/auth/login',200,{
+        json:{mode,...credentials[name]},
+      });
+      const {token}=await login.json();
+      tokens[name]=token;
+      const me=await api('GET','/api/auth/me',200,{token});
+      assert.equal((await me.json()).user.role,mode);
+    }
+    const call=(actor,method,path,status,data)=>api(method,'/api/sil/main'+path,status,
+      {token:tokens[actor],...data});
+    const admin=(path,status,json)=>call('admin','POST',path,status,{json});
+    const lab=async name=>(await (await admin('/labs',201,{displayName:name})).json()).laboratory.id;
+    const base='/labs/'+await lab('Laboratorio sintético Norte');
+    const otherLab='/labs/'+await lab('Laboratorio sintético Sur');
+    await admin(base+'/staff',201,{accountId:ids.uploader});
+    await admin(base+'/staff',201,{accountId:ids.reviewer});
+    await admin(otherLab+'/staff',201,{accountId:ids.reviewer});
+    await admin(otherLab+'/staff/review-permission',200,{accountId:ids.reviewer,enabled:true});
+    const northStaff = await (await call('admin', 'GET', base+'/staff', 200)).json();
+    const southStaff = await (await call('admin', 'GET', otherLab+'/staff', 200)).json();
+    assert.deepEqual(northStaff.staff.map(({email}) => email).sort(),
+      [credentials.reviewer.email, credentials.uploader.email].sort());
+    assert.deepEqual(southStaff.staff.map(({email}) => email), [credentials.reviewer.email]);
+    assert.equal(northStaff.staff.find(({accountId}) => accountId === ids.reviewer)
+      .canReviewReports, false, 'El permiso concedido en Sur no se aplica en Norte.');
+    assert.equal(southStaff.staff[0].canReviewReports, true);
+    await call('uploader', 'GET', base+'/staff', 403);
+    await call('patient', 'GET', base+'/staff', 403);
+    await call('admin', 'GET', base+'/medical-requests/pending', 403);
+    const invitationPath=base+'/operator-invitations';
+    const invitationEmail='operador-seguimiento@example.invalid';
+    await admin(invitationPath,201,{email:invitationEmail});
+    await admin(invitationPath,201,{email:invitationEmail});
+    const invitations=await (await call('admin','GET',invitationPath,200)).json();
+    assert.deepEqual(invitations.invitations.map(({status})=>status).sort(),['pending','revoked']);
+    assert.ok(invitations.invitations.every(entry=>entry.email===invitationEmail &&
+      !Object.hasOwn(entry,'code') && !Object.hasOwn(entry,'token_hash')));
+    const otherInvitations=await (await call('admin','GET',otherLab+'/operator-invitations',200)).json();
+    assert.deepEqual(otherInvitations.invitations,[]);
+    const firstPage=await (await call('admin','GET',invitationPath+'?limit=1',200)).json();
+    assert.equal(firstPage.invitations.length,1);
+    assert.equal(firstPage.hasMore,true);
+    await call('admin','GET',invitationPath+'?limit=51',400);
+    await call('uploader','GET',invitationPath,403);
+    const auditPath=base+'/administrative-audit';
+    const northAudit=await (await call('admin','GET',auditPath,200)).json();
+    assert.equal(northAudit.events.filter(event=>event.action==='operator_invited').length,2);
+    assert.ok(northAudit.events.every(event=>Object.keys(event).sort().join(',')===
+      'action,actorEmail,createdAt,id'));
+    const southAudit=await (await call('admin','GET',otherLab+'/administrative-audit',200)).json();
+    assert.ok(southAudit.events.every(event=>event.action!=='operator_invited'));
+    await call('patient','GET',auditPath,403);
+    console.log('API: personal y permisos administrativos aislados por laboratorio.');
+    await call('uploader','POST',base+'/patients',201,{json:{
+      patientId:ids.patient,identityEvidenceReference:'verificacion-ficticia',identityVerified:true,
+    }});
+    const directory=await call('uploader','GET',base+'/patients?search='+encodeURIComponent(credentials.patient.email.toUpperCase())+'&limit=1',200);
+    const linked=await directory.json();
+    assert.deepEqual(linked.patients.map(patient=>patient.id),[ids.patient]);
+    assert.equal(linked.hasMore,false);
+    const otherDirectory=await call('reviewer','GET',otherLab+'/patients',200);
+    assert.deepEqual((await otherDirectory.json()).patients,[]);
+    await call('uploader','GET',otherLab+'/patients',403);
+    const requestPdf=syntheticPdf([
+      'Referencia: SOL-1002','Profesional solicitante: Persona Ficticia',
+      'Fecha de solicitud: 2024-01-01','Glicemia',
+    ]);
+    const intake=base+'/medical-requests';
+    const requestFile={bytes:requestPdf,headers:{
+      'Content-Type':'application/pdf','x-request-filename':'solicitud.pdf',
+    }};
+    await call('uploader','POST',otherLab+'/medical-requests/preview',403,requestFile);
+    const preview=await (await call('uploader','POST',intake+'/preview',200,requestFile)).json();
+    assert.equal(preview.state,'text_ready');
+    assert.equal(preview.suggestedDocumentReference,'SOL-1002');
+    assert.equal(preview.suggestedPrescriberName,'Persona Ficticia');
+    assert.equal(preview.suggestedRequestDate,'2024-01-01');
+    assert.ok(preview.suggestedExams.some(exam=>exam.code==='glicemia'));
+    assert.equal((await (await call('uploader','GET',base+'/orders',200)).json()).orders.length,0);
+    const confirmation={bytes:requestPdf,headers:{
+      ...requestFile.headers,
+      'x-request-patient-id':ids.patient,'x-request-exam-codes':'glicemia',
+      'x-request-reference':'SOL-1002','x-request-prescriber':'Persona Ficticia',
+      'x-request-date':'2024-01-01','x-request-identity-confirmed':'true',
+      'x-request-reviewed':'true',
+    }};
+    await call('uploader','POST',intake,400,{...confirmation,headers:{
+      ...confirmation.headers,'x-request-reviewed':'false',
+    }});
+    await call('uploader','POST',intake,404,{...confirmation,headers:{
+      ...confirmation.headers,'x-request-patient-id':ids.other,
+    }});
+    const created=await call('uploader','POST',intake,201,confirmation);
+    const registered=await created.json();
+    const orderId=registered.order.id;
+    const adminOrders = await (await call('admin', 'GET', base+'/orders', 200)).json();
+    assert.ok(adminOrders.orders.some(order => order.id === orderId));
+    await call('admin', 'GET', base+'/orders?patientId='+ids.patient, 403);
+    await call('admin', 'GET', base+'/orders/'+orderId+'/medical-request/file', 403);
+    assert.match(registered.request.documentReference,
+      /^SOL-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    assert.equal(registered.request.documentReference, 'SOL-'+registered.request.id);
+    assert.notEqual(registered.request.documentReference,'SOL-1002',
+      'El backend debe generar una referencia interna, no aceptar la del cliente.');
+    const storedRequestReference=await db.query(
+      'SELECT document_reference FROM public.vitalia_sil_main_medical_requests WHERE id=$1',
+      [registered.request.id]);
+    assert.equal(storedRequestReference.rows[0].document_reference,
+      registered.request.documentReference);
+    await call('uploader','POST',intake,409,confirmation);
+    assert.equal((await (await call('uploader','GET',base+'/orders',200)).json()).orders.length,1);
+    const summaryPath=base+'/summary';
+    const summary=(await (await call('uploader','GET',summaryPath,200)).json()).summary;
+    assert.deepEqual(summary,{
+      ordersTotal:1,registered:1,inReview:0,published:0,pendingRequests:0,
+    },'El resumen debe contar la tabla completa del laboratorio.');
+    await call('patient','GET',summaryPath,403);
+    await call('admin','GET',summaryPath,403);
+    await call('uploader','GET',otherLab+'/summary',403);
+    const requestPath='/orders/'+orderId+'/medical-request/file';
+    await call('patient','GET',base+requestPath,403);
+    await call('uploader','GET',otherLab+requestPath,403);
+    await call('reviewer','GET',otherLab+requestPath,404);
+    const original=await call('uploader','GET',base+requestPath,200);
+    assert.deepEqual(Buffer.from(await original.arrayBuffer()),requestPdf);
+    console.log('API: lectura, confirmación y registro atómico de solicitud verificados.');
+    const clinical=base+'/orders/'+orderId+'/clinical';
+    assert.equal((await (await call('uploader','GET',clinical,200)).json()).hasMedicalRequest,true);
+    const sample=code=>({json:{containerCode:code}});
+    const values={json:{values:[{examCode:'glicemia',analyte:'Glucosa',numericValue:91.2}]}};
+    await call('uploader','GET',otherLab+'/orders/'+orderId+'/clinical',403);
+    await call('reviewer','GET',otherLab+'/orders/'+orderId+'/clinical',404);
+    await call('uploader','POST',clinical+'/results',409,values);
+    await call('uploader','POST',clinical+'/samples',409,sample('edta'));
+    const resultsPreview=clinical+'/results/preview';
+    const resultsPdf=(barcode,...lines)=>({bytes:syntheticPdf([
+      'Vitalia - resultados ficticios','Muestra: '+barcode,...lines,
+    ]),headers:{'Content-Type':'application/pdf'}});
+    const wrongBarcode='LAB-'+randomUUID().toUpperCase();
+    await call('uploader','POST',resultsPreview,409,resultsPdf(wrongBarcode,'Glucosa 91,2 mg/dL'));
+    const {barcode}=await (await call('uploader','POST',clinical+'/samples',201,sample('fluoride'))).json();
+    const matching=resultsPdf(barcode,'Glucosa 91,2 mg/dL');
+    await call('patient','POST',resultsPreview,403,matching);
+    await call('uploader','POST',otherLab+'/orders/'+orderId+'/clinical/results/preview',403,matching);
+    await call('reviewer','POST',otherLab+'/orders/'+orderId+'/clinical/results/preview',404,matching);
+    const resultPreview=async file=>(await call('uploader','POST',resultsPreview,200,file)).json();
+    assert.deepEqual(await resultPreview(matching),{
+      state:'text_ready',items:[{examCode:'glicemia',analyte:'Glucosa',unit:'mg/dL',suggestedValue:91.2}],
+    });
+    for(const file of [
+      resultsPdf(wrongBarcode,'Glucosa 91,2 mg/dL'),
+      resultsPdf(barcode,'Muestra: '+wrongBarcode,'Glucosa 91,2 mg/dL'),
+    ]){
+      assert.deepEqual(await resultPreview(file),{state:'sample_mismatch',items:[]});
+    }
+    for(const lines of [
+      ['Glucosa 5 mmol/L'],
+      ['Glucosa 90 mg/dL','Glucosa 91 mg/dL'],
+      ['Glucosa 1.234 mg/dL'],
+      ['Glucosa 90 mg/dL 70-110'],
+    ]){
+      assert.equal((await resultPreview(resultsPdf(barcode,...lines))).items[0].suggestedValue,null);
+    }
+    assert.equal((await (await call('uploader','GET',clinical,200)).json()).results,null);
+    console.log('API: vista previa de resultados sin persistencia, con muestras y unidades cotejadas.');
+    await call('uploader','POST',clinical+'/samples',409,sample('fluoride'));
+    await call('uploader','POST',clinical+'/results',201,values);
+    await call('uploader','POST',resultsPreview,409,matching);
+    await call('uploader','POST',clinical+'/review',403,{json:{decision:'approved'}});
+    await admin(base+'/staff/review-permission',200,{accountId:ids.uploader,enabled:true});
+    await call('uploader','POST',clinical+'/review',200,{json:{decision:'returned',reason:'Revisar valor transcrito'}});
+    await call('uploader','POST',clinical+'/results',201,{json:{values:[
+      {examCode:'glicemia',analyte:'Glucosa',numericValue:93.1},
+    ]}});
+    await call('uploader','POST',clinical+'/review',200,{json:{decision:'approved'}});
+    const recorded=await (await call('uploader','GET',clinical,200)).json();
+    assert.equal(recorded.results.status,'approved');
+    assert.equal(recorded.results.values[0].numericValue,93.1);
+    console.log('API: muestras, resultados por analito, devolución, corrección y aprobación verificados.');
+    const path=base+'/orders/'+orderId+'/report';
+    const attached=await call('uploader','POST',path,201,{bytes:pdf,headers:{
+      'Content-Type':'application/pdf','X-Report-Filename':'informe-sintetico.pdf',
+      'X-Report-Authorized-Professional':'Profesional Ficticio',
+      'X-Report-Authorization-Ref':'AUT-FICTICIA',
+      'X-Report-Authorized-At':'2024-01-01T12:00:00Z','X-Report-Patient-Confirmed':'true',
+    }});
+    const reportId=(await attached.json()).report.id;
+    const patientFile='/patient/reports/'+reportId+'/file';
+    await call('patient','GET',patientFile,404);
+    await call('reviewer','GET',path+'/file',403);
+    await call('reviewer','GET',otherLab+'/orders/'+orderId+'/report/file',404);
+    await admin(base+'/staff/review-permission',200,{accountId:ids.uploader,enabled:true});
+    const publish=(actor,status)=>call(actor,'POST',path+'/publish',status,{json:{operatorReviewConfirmed:true}});
+    await publish('uploader',409);
+    await admin(base+'/staff/review-permission',200,{accountId:ids.reviewer,enabled:true});
+    await publish('reviewer',409);
+    await call('reviewer','GET',path+'/file',200);
+    await publish('uploader',409); // La revisión de otra cuenta no habilita esta publicación.
+    const pending=await call('uploader','GET',path+'/file',200);
+    assert.deepEqual(Buffer.from(await pending.arrayBuffer()),pdf);
+    await admin(base+'/staff/review-permission',200,{accountId:ids.uploader,enabled:false});
+    await publish('uploader',403);
+    await admin(base+'/staff/review-permission',200,{accountId:ids.uploader,enabled:true});
+    await publish('uploader',201);
+    await publish('uploader',409);
+    await call('other','GET',patientFile,404);
+    const patient=await call('patient','GET',patientFile,200);
+    assert.deepEqual(Buffer.from(await patient.arrayBuffer()),pdf);
+    const historyPath=clinical+'/audit';
+    await api('GET','/api/sil/main'+historyPath,401);
+    await call('patient','GET',historyPath,403);
+    await call('uploader','GET',otherLab+'/orders/'+orderId+'/clinical/audit',403);
+    await call('reviewer','GET',otherLab+'/orders/'+orderId+'/clinical/audit',404);
+    const historyResponse=await call('uploader','GET',historyPath,200);
+    assert.equal(historyResponse.headers.get('cache-control'),'private, no-store');
+    const {events,hasOlder}=await historyResponse.json();
+    assert.equal(hasOlder,false);
+    assert.ok(events.length>1);
+    assert.ok(events.every((event,index)=>index===0||event.createdAt<=events[index-1].createdAt));
+    assert.ok(events.some(event=>event.action==='results_recorded'&&event.staffEmail===credentials.uploader.email));
+    assert.ok(events.some(event=>event.action==='report_downloaded'&&event.staffEmail===null));
+    assert.ok(events.every(event=>Object.keys(event).sort().join(',')==='action,createdAt,staffEmail'));
+    console.log('API: historial de la orden verificado con aislamiento por laboratorio y datos mínimos.');
+    const audit=await db.query(`SELECT action,actor_id FROM public.vitalia_sil_main_audit
+      WHERE order_id=$1 ORDER BY created_at,id`,[orderId]);
+    for(const [action,actor] of [
+      ['report_attached','uploader'],['report_review_accessed','uploader'],
+      ['report_published','uploader'],['report_downloaded','patient'],
+    ]){
+      assert.ok(audit.rows.some(row=>row.action===action && row.actor_id===ids[actor]),action);
+    }
+    await api('POST','/api/auth/logout',204,{token:tokens.patient});
+    await call('patient','GET',patientFile,401);
+    // El operador recibe una derivación y la guarda SIN una cuenta paciente.
+    const pendingEmail='patient-invited@example.invalid';
+    const pendingPdf=syntheticPdf([
+      'Paciente: Ana María Pérez Soto','RUT: 12.345.678-5',
+      'Fecha de nacimiento: 12/04/1990',
+      'Correo electrónico: patient-invited@example.invalid',
+      'Teléfono: +56 9 1234 5678',
+      'Sexo: Femenino',
+      'Referencia: SOL-PEND-0042',
+      'Profesional solicitante: Persona Ficticia',
+      'Fecha de solicitud: 2024-01-01','Glicemia',
+    ]);
+    const pendingPath=base+'/medical-requests/pending';
+    const pendingUpload={bytes:pendingPdf,headers:{
+      'Content-Type':'application/pdf',
+      'x-request-filename':'derivacion-pendiente.pdf',
+      'x-request-patient-email':pendingEmail,
+    }};
+    // La sesión del paciente fue revocada arriba: debe recibir 401, no 403.
+    await call('patient','POST',pendingPath,401,pendingUpload);
+    await call('uploader','POST',otherLab+'/medical-requests/pending',403,pendingUpload);
+    const savedPending=await (await call('uploader','POST',pendingPath,201,pendingUpload)).json();
+    const pendingId=savedPending.pending.id;
+    assert.equal(savedPending.pending.status,'pending');
+    assert.equal(savedPending.pending.patientEmail,pendingEmail);
+    assert.ok(Object.hasOwn(savedPending.pending.suggestions,'suggestedPatient'));
+    await call('uploader','POST',pendingPath,409,pendingUpload);
+    const savedList=await (await call('uploader','GET',pendingPath,200)).json();
+    assert.ok(savedList.pending.some(item=>item.id===pendingId));
+    const beforeComplete=(await (await call('uploader','GET',summaryPath,200)).json()).summary;
+    assert.equal(beforeComplete.pendingRequests,1,
+      'Una derivación guardada debe sumar en el total del laboratorio.');
+    await call('patient','GET',pendingPath,401);
+    await call('reviewer','GET',otherLab+'/medical-requests/pending/'+pendingId+'/file',404);
+    const savedPdf=await call('uploader','GET',
+      pendingPath+'/'+pendingId+'/file',200);
+    assert.deepEqual(Buffer.from(await savedPdf.arrayBuffer()),pendingPdf);
+    const pendingBeforeActivation=await db.query(
+      'SELECT status,order_id FROM public.vitalia_sil_main_pending_requests WHERE id=$1',
+      [pendingId]);
+    assert.equal(pendingBeforeActivation.rows[0].status,'pending');
+    assert.equal(pendingBeforeActivation.rows[0].order_id,null);
+    const pendingOrdersBefore=await db.query(
+      'SELECT count(*)::int AS total FROM public.vitalia_sil_main_orders WHERE lab_id=$1',[base.slice(6)]);
+    assert.ok(pendingOrdersBefore.rows[0].total>=1);
+    console.log('API: derivación con identidad sugerida guardada sin cuenta ni orden.');
+
+
+    const inviteEmail='patient-invited@example.invalid';
+    const inviteInput={email:inviteEmail,identityReference:'verificacion-ficticia-invitacion',identityConfirmed:true};
+    const oldInvite=await (await call('uploader','POST',base+'/patient-invitations',201,{json:inviteInput})).json();
+    const invite=await (await call('uploader','POST',base+'/patient-invitations',201,{json:inviteInput})).json();
+    await api('POST','/api/sil/main/patients/activate',403,{json:{email:inviteEmail,code:oldInvite.code,password}});
+    const activation={email:inviteEmail,code:invite.code,password};
+    await api('POST','/api/sil/main/patients/activate',201,{json:activation});
+    await call('uploader','POST',base+'/patient-invitations',409,{json:inviteInput});
+    await api('POST','/api/sil/main/patients/activate',403,{json:activation});
+    const invited=await (await api('POST','/api/auth/login',200,{json:{
+      mode:'paciente',email:inviteEmail,password,
+    }})).json();
+    const recovery=await (await api('POST','/api/sil/main/patient/recovery/key',201,{
+      token:invited.token,json:{currentPassword:password},
+    })).json();
+    const recovered={email:inviteEmail,recoveryKey:recovery.recoveryKey,password:'ClaveNueva-SoloPrueba-2026!'};
+    await api('POST','/api/sil/main/patient/recovery/complete',204,{json:recovered});
+    await api('POST','/api/sil/main/patient/recovery/complete',422,{json:recovered});
+    await api('GET','/api/auth/me',401,{token:invited.token});
+    // Mantener el límite real de 10 intentos/IP. El ensayo ya autentica
+    // cinco cuentas iniciales, una invitada y tres roles en Edge. Verificar
+    // la clave anterior/nueva con el mismo servicio de credenciales evita
+    // agotar la cuota por una comprobación redundante de HTTP.
+    const verifyRecovered=await createCredentialAuthenticator(db,{
+      guardPatientSession:true,
+    });
+    assert.equal(await verifyRecovered({
+      mode:'paciente',email:inviteEmail,password,
+    }),null,'La contraseña anterior no debe autenticar después de la recuperación.');
+    const newCredential=await verifyRecovered({
+      mode:'paciente',email:inviteEmail,password:recovered.password,
+    });
+    assert.equal(newCredential?.email,inviteEmail);
+    assert.equal(newCredential?.role,'paciente');
+    const pendingPatient=(await db.query(
+      'SELECT id FROM public.vitalia_accounts WHERE email=$1',[pendingEmail])).rows[0];
+    assert.ok(pendingPatient?.id,'La activación debe crear cuenta paciente.');
+    const pendingComplete=pendingPath+'/'+pendingId+'/complete';
+    const pendingData={
+      patientId:pendingPatient.id,patientEmail:pendingEmail,
+      examCodes:['glicemia'],
+      // Sin documentReference: el servidor asigna una ID única.
+      prescriberName:'Persona Ficticia',
+      requestDate:'2024-01-01',
+      patientIdentityConfirmed:true,humanReviewConfirmed:true,
+    };
+    await call('uploader','POST',pendingComplete,400,{json:{
+      ...pendingData,patientIdentityConfirmed:false,
+    }});
+    // Bloquear reutilización de la derivación para otro correo,
+    // antes incluso de comprobar si existe la cuenta del paciente.
+    await call('uploader','POST',pendingComplete,409,{json:{
+      ...pendingData,patientEmail:'equivocado@example.invalid',
+    }});
+    await call('reviewer','POST',otherLab+'/medical-requests/pending/'+pendingId+'/complete',404,{
+      json:pendingData,
+    });
+    const completed=await (await call('uploader','POST',pendingComplete,201,{
+      json:pendingData,
+    })).json();
+    assert.equal(completed.pending.status,'completed');
+    assert.equal(completed.order.patientId,pendingPatient.id);
+    assert.equal(completed.request.documentReference,'SOL-'+completed.request.id);
+    assert.notEqual(completed.request.documentReference,registered.request.documentReference);
+    await call('uploader','POST',pendingComplete,404,{json:pendingData});
+    const pendingAfter=await (await call('uploader','GET',pendingPath,200)).json();
+    assert.ok(!pendingAfter.pending.some(item=>item.id===pendingId));
+    const afterComplete=(await (await call('uploader','GET',summaryPath,200)).json()).summary;
+    assert.equal(afterComplete.pendingRequests,0);
+    assert.ok(afterComplete.ordersTotal>=2);
+    const pendingSaved=await db.query(
+      'SELECT status,order_id FROM public.vitalia_sil_main_pending_requests WHERE id=$1',
+      [pendingId]);
+    assert.equal(pendingSaved.rows[0].status,'completed');
+    assert.equal(pendingSaved.rows[0].order_id,completed.order.id);
+    const completedPdf=await call('uploader','GET',
+      base+'/orders/'+completed.order.id+'/medical-request/file',200);
+    assert.deepEqual(Buffer.from(await completedPdf.arrayBuffer()),pendingPdf);
+    const pendingAudit=await db.query(
+      "SELECT action FROM public.vitalia_sil_main_audit WHERE lab_id=$1 AND action LIKE 'pending_request_%'",
+      [base.slice(6)]);
+    assert.ok(pendingAudit.rows.some(row=>row.action==='pending_request_saved'));
+    assert.ok(pendingAudit.rows.some(row=>row.action==='pending_request_downloaded'));
+    assert.ok(pendingAudit.rows.some(row=>row.action==='pending_request_completed'));
+    // Cierre de una derivación distinta, sin activar paciente ni crear orden.
+    const rejectedPdf=syntheticPdf([
+      'Solicitud administrativa ficticia SOL-PEND-CLOSE-01',
+      'Paciente: Caso Sintético Vitalia',
+      'Profesional: Persona de prueba',
+      'Documento ilegible en verificación administrativa',
+    ]);
+    const rejectedUpload={bytes:rejectedPdf,headers:{
+      'Content-Type':'application/pdf',
+      'x-request-filename':'solicitud-para-cerrar.pdf',
+    }};
+    const rejected=(await (await call('uploader','POST',pendingPath,201,
+      rejectedUpload)).json()).pending;
+    const closePath=pendingPath+'/'+rejected.id+'/cancel';
+    const closure={reason:'unreadable_document'};
+    const beforeClosureOrders=(await db.query(
+      'SELECT count(*)::int AS total FROM public.vitalia_sil_main_orders WHERE lab_id=$1',
+      [base.slice(6)])).rows[0].total;
+    await call('admin','POST',closePath,403,{json:closure});
+    await call('reviewer','POST',
+      otherLab+'/medical-requests/pending/'+rejected.id+'/cancel',404,
+      {json:closure});
+    await call('uploader','POST',closePath,400,{json:{
+      ...closure,patientEmail:'no-enviar@example.invalid',
+    }});
+    const closed=(await (await call('uploader','POST',closePath,200,
+      {json:closure})).json()).pending;
+    assert.equal(closed.status,'cancelled');
+    assert.equal(closed.reason,'unreadable_document');
+    await call('uploader','POST',closePath,409,{json:closure});
+    await call('uploader','POST',
+      pendingPath+'/'+rejected.id+'/complete',404,{json:pendingData});
+    await call('uploader','GET',pendingPath+'/'+rejected.id+'/file',404);
+    const afterClosureOrders=(await db.query(
+      'SELECT count(*)::int AS total FROM public.vitalia_sil_main_orders WHERE lab_id=$1',
+      [base.slice(6)])).rows[0].total;
+    assert.equal(afterClosureOrders,beforeClosureOrders,
+      'Cerrar una derivación no debe generar órdenes.');
+    const closedRow=(await db.query(
+      `SELECT status,order_id,closure_reason,closed_by,closed_at
+       FROM public.vitalia_sil_main_pending_requests WHERE id=$1`,
+      [rejected.id])).rows[0];
+    assert.equal(closedRow.status,'cancelled');
+    assert.equal(closedRow.order_id,null);
+    assert.equal(closedRow.closure_reason,'unreadable_document');
+    assert.ok(closedRow.closed_by && closedRow.closed_at);
+    const closedAudit=(await db.query(
+      `SELECT details FROM public.vitalia_sil_main_audit
+       WHERE action='pending_request_cancelled' AND lab_id=$1
+         AND details->>'pendingId'=$2`,
+      [base.slice(6),rejected.id])).rows;
+    assert.equal(closedAudit.length,1);
+    assert.equal(closedAudit[0].details.reason,'unreadable_document');
+    const outstanding=(await (await call('uploader','GET',
+      pendingPath,200)).json()).pending;
+    assert.ok(!outstanding.some(p=>p.id===rejected.id));
+    console.log('API: cierre pendiente transaccional y auditado sin crear orden.');
+
+    console.log('API: derivación pendiente recuperada, activación y orden atómica aprobadas.');
+
+    console.log('API: activación y recuperación del paciente de un solo uso verificadas.');
+    console.log('API y PostgreSQL: recorrido con credenciales y sesiones reales aprobado.');
+    if(web){
+      const site=express();
+      site.use(express.static(resolve(web)));
+      webServer=await new Promise((accept,reject)=>{
+        const listener=site.listen(5173,'127.0.0.1',()=>accept(listener));
+        listener.once('error',reject);
+      });
+      const browserOrder=await call('uploader','POST',base+'/orders',201,{json:{
+        patientId:ids.patient,examCodes:['glicemia'],
+      }});
+      const {order:ready}=await browserOrder.json();
+      const {order:sampleOrder}=await (await call('uploader','POST',base+'/orders',201,{json:{
+        patientId:ids.patient,examCodes:['glicemia'],
+      }})).json();
+      const queryOrders=async (actor,labPath,query,status=200)=>(await call(actor,'GET',
+        labPath+'/orders?'+new URLSearchParams(query),status)).json();
+      const page1=await queryOrders('uploader',base,{limit:1});
+      const page2=await queryOrders('uploader',base,{limit:1,offset:1});
+      assert.equal(page1.hasMore,true);
+      assert.notEqual(page1.orders[0].id,page2.orders[0].id);
+      const folio='VH-'+String(sampleOrder.orderNumber).padStart(6,'0');
+      const found=await queryOrders('uploader',base,{
+        search:folio.toLowerCase(),status:'registered',patientId:ids.patient,
+      });
+      assert.deepEqual(found.orders.map(order=>order.id),[sampleOrder.id]);
+      const email=await queryOrders('uploader',base,{search:credentials.patient.email.toUpperCase()});
+      assert.ok(email.orders.some(order=>order.id===sampleOrder.id));
+      assert.deepEqual((await queryOrders('uploader',base,{search:folio,status:'report_published'})).orders,[]);
+      assert.deepEqual((await queryOrders('uploader',base,{patientId:ids.other})).orders,[]);
+      assert.deepEqual((await queryOrders('reviewer',otherLab,{search:folio})).orders,[]);
+      await queryOrders('uploader',otherLab,{search:folio},403);
+      await queryOrders('admin',base,{search:credentials.patient.email},403);
+      await queryOrders('uploader',base,{status:'missing'},400);
+      console.log('API: búsqueda, filtros y paginación de órdenes verificados.');
+      const samplePath=base+'/orders/'+sampleOrder.id;
+      assert.equal((await (await call('uploader','GET',samplePath+'/clinical',200)).json()).hasMedicalRequest,false);
+      await call('uploader','POST',samplePath+'/medical-request',201,{
+        bytes:browserRequestPdf,headers:{
+          ...requestFile.headers,'x-request-reference':'SOL-1004',
+          'x-request-prescriber':'Persona Ficticia','x-request-date':'2024-01-01',
+          'x-request-identity-confirmed':'true','x-request-reviewed':'true',
+        },
+      });
+      const {barcode:sampleCode}=await (await call('uploader','POST',
+        base+'/orders/'+sampleOrder.id+'/clinical/samples',201,sample('fluoride'))).json();
+      const samplePdf=resultsPdf(sampleCode,'Glucosa 91,2 mg/dL').bytes;
+      if(manual){
+        writeFileSync(fixture,pdf,{flag:'wx'});
+        const newRequest=resolve(dirname(fixture),'solicitud-ficticia.pdf');
+        writeFileSync(newRequest,syntheticPdf([
+          'Referencia: SOL-1003','Profesional solicitante: Persona Ficticia',
+          'Fecha de solicitud: 2024-01-01','Glicemia',
+        ]),{flag:'wx'});
+        const resultsFixture=resolve(dirname(fixture),'resultados-ficticios.pdf');
+        writeFileSync(resultsFixture,samplePdf,{flag:'wx'});
+        console.log('PDF para crear una orden desde Recibir solicitud: '+newRequest);
+        console.log('Orden para probar la lectura de resultados: VH-'+String(sampleOrder.orderNumber).padStart(6,'0'));
+        console.log('PDF para Muestras y resultados > Leer PDF de resultados: '+resultsFixture);
+        console.log('\nSIL temporal listo en http://localhost:5173/#/laboratorio');
+        console.log('Orden disponible: VH-'+String(ready.orderNumber).padStart(6,'0'));
+        console.log('Adjunta el PDF con '+credentials.uploader.email+'.');
+        console.log('Con esa misma cuenta, descarga el PDF de revisión, confirma y publica.');
+        console.log('Consulta el informe con '+credentials.patient.email+' en http://localhost:5173/.');
+        if(demo.admin){
+          console.log('Acceso de administración de prueba: '+credentials.admin.email+'.');
+          console.log('Usa las contraseñas del DEMO que ingresaste en PowerShell.');
+        } else {
+          console.log('Contraseña de estas cuentas ficticias: '+password);
+        }
+        console.log('PDF para adjuntar: '+fixture);
+        const input=createInterface({input:process.stdin,output:process.stdout});
+        try {
+          await input.question('Pulsa Enter para cerrar el ensayo.\n');
+        } finally {
+          input.close();
+        }
+      } else {
+        await browserJourney(ready,base,sampleOrder,samplePdf);
+      }
+    }
+    if(!manual) {
+      // Ensayo real de suspensión por laboratorio, después del recorrido Edge.
+      const membership=base+'/staff/membership';
+      await call('uploader','POST',membership,403,{json:{
+        accountId:ids.uploader,active:false,
+      }});
+      await call('admin','POST',membership,400,{json:{
+        accountId:ids.uploader,active:'false',
+      }});
+      const suspended=(await (await call('admin','POST',membership,200,{json:{
+        accountId:ids.uploader,active:false,
+      }})).json()).membership;
+      assert.equal(suspended.active,false);
+      assert.equal(suspended.canReviewReports,false);
+      await call('uploader','GET',base+'/summary',403);
+      await call('admin','POST',membership,409,{json:{
+        accountId:ids.uploader,active:false,
+      }});
+      const restored=(await (await call('admin','POST',membership,200,{json:{
+        accountId:ids.uploader,active:true,
+      }})).json()).membership;
+      assert.equal(restored.active,true);
+      assert.equal(restored.canReviewReports,false,
+        'Reactivar no debe recuperar permisos de revisión.');
+      await call('uploader','GET',base+'/summary',200);
+      const history=(await db.query(
+        `SELECT action,details FROM public.vitalia_sil_main_audit
+         WHERE lab_id=$1 AND action IN
+         ('operator_membership_disabled','operator_membership_enabled')
+         ORDER BY created_at`,[base.slice(6)])).rows;
+      assert.deepEqual(history.map(x=>x.action),
+        ['operator_membership_disabled','operator_membership_enabled']);
+      assert.ok(history.every(x=>x.details.accountId===ids.uploader));
+      console.log('API: suspensión y reactivación por laboratorio auditadas.');
+    }
+  } finally {
+    if(webServer)await new Promise(done=>webServer.close(done));
+    if(server)await new Promise(done=>server.close(done));
+    await db.end();
+  }
+}
+
+main().catch(error=>{console.error(error.message);process.exitCode=1;});

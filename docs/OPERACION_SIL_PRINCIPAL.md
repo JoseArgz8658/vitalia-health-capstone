@@ -180,3 +180,17 @@ eventos permitidos de auditoría y no reescribe registros anteriores.
 La instalación en `vitalia` principal requiere respaldo, ensayo aislado
 y aplicación explícita. No iniciar un backend nuevo contra un esquema
 anterior a la versión requerida.
+
+
+### Seguimiento administrativo de invitaciones y actividad
+
+En **Operadores y permisos**, selecciona un laboratorio y abre **Ver invitaciones**.
+La vista muestra invitaciones pendientes, activadas, vencidas o revocadas. El código
+solo está disponible al emitir la invitación. Volver a emitir una invitación para
+el mismo correo y laboratorio invalida la anterior.
+
+En **Actividad**, abre **Ver auditoría administrativa** para consultar las
+operaciones de laboratorio y operadores, con fecha y cuenta autora. Las consultas
+requieren una sesión de administrador y se limitan al laboratorio seleccionado.
+El recorrido automatizado usa cuentas ficticias para verificar paginación, separación
+entre laboratorios y la exclusión de códigos y datos de auditoría internos.
