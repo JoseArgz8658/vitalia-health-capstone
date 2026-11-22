@@ -171,7 +171,7 @@ test('resumen obtiene conteos totales sin pacientes ni documentos y exige membre
   expect(sql).toContain('o.lab_id=l.id');
   expect(sql).toContain("p.status='pending'");
   expect(sql).not.toMatch(/email|password_hash|pdf_data/);
-  expect(params).toEqual([lab]);
+  expect(params).toEqual([lab,operator]);
 
   const deniedQuery=jest.fn().mockResolvedValue({rows:[]});
   const deniedService=createSilMainService({query:deniedQuery});
