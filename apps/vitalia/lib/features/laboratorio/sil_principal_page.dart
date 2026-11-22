@@ -808,6 +808,96 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     await original.saveTo('derivacion-pendiente-$id.pdf');
   }
 
+  static const _pendingClosureReasons = <(String,String)>[
+    ('unreadable_document','Documento ilegible o incompleto'),
+    ('duplicate_request','Solicitud duplicada'),
+    ('incorrect_information','Información incorrecta'),
+    ('patient_mismatch','No corresponde al paciente'),
+    ('request_withdrawn','Solicitud retirada'),
+    ('other','Otro motivo administrativo'),
+  ];
+
+  Future<void> _requestPendingClosure() async {
+    final lab=_labId,id=_pendingRequestId;
+    if(_busy||lab==null||id==null)return;
+    final reason=await showDialog<String>(
+      context:context,
+      builder:(dialogContext)=>SimpleDialog(
+        title:const Text('Motivo de cierre'),
+        children:[
+          const Padding(
+            padding:EdgeInsets.fromLTRB(24,0,24,12),
+            child:Text('Selecciona un motivo administrativo. '
+              'No ingreses información clínica ni datos personales.'),
+          ),
+          for(final (code,label) in _pendingClosureReasons)
+            SimpleDialogOption(
+              onPressed:()=>Navigator.pop(dialogContext,code),
+              child:Text(label),
+            ),
+          TextButton(
+            onPressed:()=>Navigator.pop(dialogContext),
+            child:const Text('Volver'),
+          ),
+        ],
+      ),
+    );
+    if(!mounted||reason==null||lab!=_labId||id!=_pendingRequestId)return;
+    final label=_pendingClosureReasons
+      .firstWhere((item)=>item.$1==reason).$2;
+    final confirmed=await showDialog<bool>(
+      context:context,
+      builder:(dialogContext)=>AlertDialog(
+        title:const Text('¿Cerrar esta derivación pendiente?'),
+        content:Text('Motivo: $label. La derivación saldrá de la lista '
+          'de pendientes y no podrá convertirse en una orden. '
+          'El PDF se conservará para trazabilidad interna.'),
+        actions:[
+          TextButton(
+            onPressed:()=>Navigator.pop(dialogContext,false),
+            child:const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed:()=>Navigator.pop(dialogContext,true),
+            child:const Text('Confirmar cierre'),
+          ),
+        ],
+      ),
+    );
+    if(confirmed!=true||!mounted||lab!=_labId||id!=_pendingRequestId)return;
+    await _execute(()=>_cancelPendingRequest(lab,id,reason),showNotice:false);
+  }
+
+  Future<void> _cancelPendingRequest(
+      String lab,String pendingId,String reason) async {
+    await widget.api.silMainRequest(
+      '/labs/$lab/medical-requests/pending/$pendingId/cancel',
+      body:{'reason':reason},
+    );
+    if(!mounted||lab!=_labId)return;
+    setState((){
+      _pendingRequestId=null;
+      _medicalRequestFile=null;
+      _requestPatient.clear();
+      _requestInviteEmail.clear();
+      _requestIdentityEvidence.clear();
+      _requestIdentitySuggestions={};
+      _requestPatientVerified=false;
+      _requestPatientStatus=null;
+      _requestExams.clear();
+      _requestPreviewNotice=null;
+      _requestIdentityChecked=false;
+      _requestHumanChecked=false;
+      _requestPrescriber.clear();
+      _requestDate.clear();
+    });
+    await _loadPendingRequests();
+    if(mounted && lab==_labId){
+      setState(()=>_notice='Derivación cerrada y registrada en auditoría. '
+        'No se creó ninguna orden.');
+    }
+  }
+
   Future<void> _completePendingRequest() async {
     final lab=_labId,id=_pendingRequestId;
     final patientId=_requireUuid(_requestPatient.text);
@@ -1600,6 +1690,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               onPressed:_busy?null:()=>_execute(_downloadPendingRequest,showNotice:false),
               icon:const Icon(Icons.download_outlined),
               label:const Text('Descargar derivación pendiente original'),
+            ),
+            const SizedBox(height:8),
+            OutlinedButton.icon(
+              onPressed:_busy?null:_requestPendingClosure,
+              icon:const Icon(Icons.block_outlined),
+              label:const Text('Cerrar derivación pendiente'),
             ),
             const SizedBox(height:6),
             const Text('El archivo está guardado en Vitalia. '
