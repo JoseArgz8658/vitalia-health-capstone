@@ -463,3 +463,13 @@ test('Camino B exige rol, no almacena códigos en caché y valida el canje',asyn
     .send({...claim,patientId:patient}).expect(400);
   expect(operatorApp.service.redeemPatientLinkCode).toHaveBeenCalledTimes(1);
 });
+
+test('la verificación de dirección se restringe a administradores y al territorio seleccionado',async()=>{
+  const path='/api/sil/main/labs/'+lab+'/sites/verify-address';
+  const body={address:'Calle Ficticia 123',commune:'Conchalí',region:'Metropolitana de Santiago'};
+  const admin=demo('administrador');
+  const operatorSession=demo();
+  expect((await request(operatorSession.application).post(path).set(bearer).send(body)).status).toBe(403);
+  expect((await request(admin.application).post(path).set(bearer)
+    .send({...body,region:'Ñuble'})).status).toBe(400);
+});

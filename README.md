@@ -573,3 +573,18 @@ Las fechas de la copia revisada requieren DD-MM-AAAA. Si se corrige información
 Si Windows bloquea impellerc.exe, revisar la directiva de control de aplicaciones antes de cambiar seguridad. Desactivar protecciones no es requisito general del manual.
 
 Android, web compilada con Nginx, restauración de respaldos, instalación completa en otro equipo y accesos AWS del resto del equipo quedan por comprobar. Los registros de esta sesión están en CAM-078.
+
+### Verificación de direcciones de sedes
+
+En Google Cloud, habilita la facturación y **Address Validation API**. Crea una clave
+restringida a esa API y define `GOOGLE_MAPS_ADDRESS_VALIDATION_KEY` en el archivo
+local `.env` de Docker Compose. Recrea la API después de cambiar la configuración.
+La clave se usa exclusivamente en el servidor.
+
+En Administración → Sedes, selecciona región y comuna, escribe calle y número y
+pulsa **Verificar con Google Maps**. Se envía únicamente la dirección ingresada y
+su territorio. La consulta es orientativa y devuelve el resultado en el formulario
+sin guardar contenido del proveedor ni cambiar la dirección ingresada. Las
+coincidencias parciales, correcciones del proveedor y respuestas fuera de la
+comuna requieren revisión manual. Si Google no está configurado, se conserva el
+formulario manual. Aplica cuotas en Google Cloud para controlar el consumo.

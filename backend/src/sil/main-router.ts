@@ -1,3 +1,4 @@
+import {verifySiteAddress} from './site-address-validation';
 import {readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {validateTerritorialCatalog} from '../database/territorial-catalog';
@@ -164,16 +165,32 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     const {id,role}=res.locals.account;
     res.json(await main.listSites(req.params.labId as string,id,role));
   });
-  router.post(sitePath,administrator,labPath,async(req,res)=>{
-    const data=siteInput.extend({siteId:uuid.optional()}).strict().safeParse(req.body);
-    if(!data.success){res.status(400).json({error:{code:'INVALID_SITE'}});return;}
-    const {siteId,...fields}=data.data;
+  const hasSelectedTerritory=async(fields:{region:string;commune:string})=>{
     const catalog=await getSiteTerritories();
     const region=catalog.regions.find(item=>item.name===fields.region);
     const provinceCodes=new Set(catalog.provinces
       .filter(item=>item.regionCode===region?.code).map(item=>item.code));
-    if(!catalog.communes.some(item=>item.name===fields.commune &&
-        provinceCodes.has(item.provinceCode))){
+    return catalog.communes.some(item=>item.name===fields.commune &&
+      provinceCodes.has(item.provinceCode));
+  };
+  const allowAddressCheck=createLoginAttemptLimiter();
+  router.post(sitePath+'/verify-address',administrator,labPath,async(req,res)=>{
+    const data=siteInput.pick({address:true,commune:true,region:true}).strict().safeParse(req.body);
+    if(!data.success||!await hasSelectedTerritory(data.data)){
+      res.status(400).json({error:{code:'INVALID_SITE_TERRITORY'}});return;
+    }
+    const {id,role}=res.locals.account;
+    await main.listSites(req.params.labId as string,id,role);
+    if(!allowAddressCheck(id)){
+      res.status(429).json({error:{code:'RATE_LIMITED'}});return;
+    }
+    res.json(await verifySiteAddress(data.data,process.env.GOOGLE_MAPS_ADDRESS_VALIDATION_KEY));
+  });
+  router.post(sitePath,administrator,labPath,async(req,res)=>{
+    const data=siteInput.extend({siteId:uuid.optional()}).strict().safeParse(req.body);
+    if(!data.success){res.status(400).json({error:{code:'INVALID_SITE'}});return;}
+    const {siteId,...fields}=data.data;
+    if(!await hasSelectedTerritory(fields)){
       res.status(400).json({error:{code:'INVALID_SITE_TERRITORY'}});return;
     }
 

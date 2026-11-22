@@ -99,6 +99,9 @@ class _SilAdminSitesState extends State<SilAdminSites> {
         field: site?[field] as String? ?? '',
     };
     final key = GlobalKey<FormState>();
+    var checkingAddress = false;
+    String? addressStatus;
+    String addressDraft = values['address']!;
     final accepted = await showDialog<bool>(
       context: context,
       builder: (dialog) => StatefulBuilder(
@@ -145,6 +148,8 @@ class _SilAdminSitesState extends State<SilAdminSites> {
                       region = value;
                       commune = null;
                       values['address'] = '';
+                      addressDraft = '';
+                      addressStatus = null;
                     }),
                     validator: (value) => value == null ? 'Selecciona la región.' : null,
                   ),
@@ -164,6 +169,8 @@ class _SilAdminSitesState extends State<SilAdminSites> {
                     onChanged: region == null ? null : (value) => update(() {
                       commune = value;
                       values['address'] = '';
+                      addressDraft = '';
+                      addressStatus = null;
                     }),
                     validator: (value) => value == null ? 'Selecciona la comuna.' : null,
                   ),
@@ -185,6 +192,10 @@ class _SilAdminSitesState extends State<SilAdminSites> {
                               ? (commune == null ? 'Primero selecciona la comuna.' : 'Dirección dentro de ${commune!['name']}.')
                               : null,
                         ),
+                        onChanged: field == 'address' ? (value) => update(() {
+                          addressDraft = value.trim();
+                          addressStatus = null;
+                        }) : null,
                         onSaved: (value) => values[field] = (value ?? '').trim(),
                         validator: (value) {
                           final text = (value ?? '').trim();
@@ -200,6 +211,52 @@ class _SilAdminSitesState extends State<SilAdminSites> {
                         },
                       ),
                     ),
+                  if (commune != null)
+                    OutlinedButton.icon(
+                      onPressed: checkingAddress || addressDraft.length < 3
+                          ? null
+                          : () async {
+                              final payload = {
+                                'address': addressDraft,
+                                'region': region!['name'],
+                                'commune': commune!['name'],
+                              };
+                              update(() {
+                                checkingAddress = true;
+                                addressStatus = null;
+                              });
+                              String status;
+                              try {
+                                final result = await widget.api.silMainRequest(
+                                  '$_path/verify-address', body: payload,
+                                );
+                                status = switch (result['status']) {
+                                  'verified' => 'Google Maps confirmó la calle y el número en la comuna seleccionada.',
+                                  'needs_review' => 'Google Maps no pudo confirmar la dirección exacta. Revisa la calle, el número y la comuna.',
+                                  'not_configured' => 'La verificación con Google Maps aún no está configurada.',
+                                  _ => 'La verificación no está disponible. Intenta nuevamente.',
+                                };
+                              } on AuthFailure catch (error) {
+                                if (context.mounted && error.status == 401) widget.onExpired();
+                                status = error.status == 429
+                                    ? 'Alcanzaste el límite de consultas. Intenta más tarde.'
+                                    : 'No se pudo consultar la dirección.';
+                              }
+                              if (!context.mounted) return;
+                              update(() {
+                                checkingAddress = false;
+                                if (addressDraft == payload['address'] &&
+                                    region?['name'] == payload['region'] &&
+                                    commune?['name'] == payload['commune']) {
+                                  addressStatus = status;
+                                }
+                              });
+                            },
+                      icon: const Icon(Icons.location_searching),
+                      label: Text(checkingAddress ? 'Verificando…' : 'Verificar con Google Maps'),
+                    ),
+                  if (addressStatus != null)
+                    Semantics(liveRegion: true, child: Text(addressStatus!)),
                 ],
               ),
             ),
