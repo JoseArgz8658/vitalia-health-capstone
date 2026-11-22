@@ -307,7 +307,7 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
 // La interfaz administrativa se comprueba con sesión real, no con mocks.
 // Solo se leen los datos sintéticos y las acciones ya autorizadas; no
 // se revocan permisos necesarios para el resto del recorrido.
-async function adminJourney(browser) {
+async function adminJourney(browser, base) {
   const page=await browser.newPage({viewport:{width:1440,height:1050}});
   try {
     await signIn(page,'admin','#/administracion');
@@ -332,8 +332,29 @@ async function adminJourney(browser) {
     await page.getByText('reviewer@example.invalid',{exact:true}).waitFor();
     assert.ok(await nav('Retirar permiso de revisión').count()>0,
       'El permiso concedido debe figurar en la administración.');
-    assert.ok(await nav('Autorizar revisión').count()>0,
-      'El administrador debe poder identificar permisos pendientes.');
+    // En esta copia sintética ambos operadores tienen permiso concedido.
+    // Probar el ciclo de revocación y restitución, dejando el estado original
+    // para que el recorrido del operador continúe sin cambios.
+    const permissionPath='/api/sil/main'+base+'/staff/review-permission';
+    const permissionResponse=()=>page.waitForResponse(r=>
+      new URL(r.url()).pathname===permissionPath &&
+      r.request().method()==='POST');
+    const revoke=nav('Retirar permiso de revisión').first();
+    const revoked=permissionResponse();
+    await (await reach(page,revoke,'Revocar revisión')).click();
+    const revokedResult=await revoked;
+    assert.equal(revokedResult.status(),200);
+    const revokedInput=revokedResult.request().postDataJSON();
+    assert.equal(revokedInput.enabled,false);
+    const grant=nav('Autorizar revisión');
+    await (await reach(page,grant,'Restituir revisión')).waitFor();
+    const granted=permissionResponse();
+    await grant.click();
+    const grantedResult=await granted;
+    assert.equal(grantedResult.status(),200);
+    assert.deepEqual(grantedResult.request().postDataJSON(),{
+      accountId:revokedInput.accountId,enabled:true,
+    },'Solo se restituye el permiso que se revocó en el ensayo.');
 
     await nav('Actividad').click();
     await page.getByText('Actividad del laboratorio',{exact:true})
@@ -356,7 +377,7 @@ async function browserJourney(order, base, sampleOrder, samplePdf) {
   const {chromium}=require(process.env.VITALIA_JOURNEY_PLAYWRIGHT);
   const browser=await chromium.launch({channel:'msedge'});
   try {
-    await adminJourney(browser);
+    await adminJourney(browser,base);
     const publishedId=await operatorJourney(browser,order,base,sampleOrder,samplePdf);
     const page=await browser.newPage({viewport:{width:390,height:844}});
     try {
