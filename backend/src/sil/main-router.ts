@@ -299,6 +299,7 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
 
   const allowPatientLinkAttempt=createLoginAttemptLimiter();
   router.post('/patient/link-code',patient,async(req,res)=>{
+    res.set('Cache-Control','private, no-store');
     if(!z.object({}).strict().safeParse(req.body).success){
       res.status(400).json({error:{code:'INVALID_LINK_REQUEST'}});return;
     }
@@ -306,6 +307,7 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
   });
 
   router.post('/labs/:labId/patient-link-code',staff,labPath,async(req,res)=>{
+    res.set('Cache-Control','private, no-store');
     const account=res.locals.account;
     if(account.role!=='operador_laboratorio'){
       res.status(403).json({error:{code:'FORBIDDEN'}});return;
