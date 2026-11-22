@@ -725,12 +725,16 @@ async function main() {
       [otherLab.split('/').at(-1)]);
     assert.equal(linkAudit.rows[0].total,1);
     const siteInput={name:'Sede Norte ficticia',address:'Avenida de Ensayo 10',
-      commune:'Comuna de prueba',region:'Región ficticia',email:'sede@example.invalid'};
+      commune:'Santiago',region:'Metropolitana de Santiago',email:'sede@example.invalid'};
     const northSites=base+'/sites';
     const southSites=otherLab+'/sites';
     await call('uploader','POST',northSites,403,{json:siteInput});
     await call('patient','GET',northSites,403);
     await call('uploader','GET',southSites,403);
+    const siteCatalog=await (await call('admin','GET','/site-territories',200)).json();
+    assert.equal(siteCatalog.regions.length,16);
+    await call('uploader','GET','/site-territories',403);
+    await admin(northSites,400,{...siteInput,commune:'Ancud'});
     const northSite=(await (await admin(northSites,201,siteInput)).json()).site;
     const southSite=(await (await admin(southSites,201,{...siteInput,name:'Sede Sur ficticia'})).json()).site;
     await admin(northSites,409,{...siteInput,name:siteInput.name.toUpperCase()});

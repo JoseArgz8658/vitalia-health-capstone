@@ -140,7 +140,7 @@ class AuthApi {
     }
     final candidate=Uri.tryParse(path);
     final allowed=RegExp(
-      r'^/(?:labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|summary|sites(?:/state)?|staff(?:/(?:review-permission|membership))?|patients|patient-invitations|patient-link-code|operator-invitations(?:/revoke)?|administrative-audit))?)?|patient/(?:profile|sites|link-code|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
+      r'^/(?:site-territories|labs(?:/[a-f0-9-]{36}(?:/(?:orders(?:/[a-f0-9-]{36}/(?:report/publish|clinical(?:/(?:samples|results|review|audit))?))?|summary|sites(?:/state)?|staff(?:/(?:review-permission|membership))?|patients|patient-invitations|patient-link-code|operator-invitations(?:/revoke)?|administrative-audit))?)?|patient/(?:profile|sites|link-code|reports(?:/overview|/[a-f0-9-]{36}/chat)?))$',
     );
     final pendingPath=RegExp(
       r'^/labs/[a-f0-9-]{36}/medical-requests/pending(?:/[a-f0-9-]{36}/(?:complete|cancel))?$',

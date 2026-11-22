@@ -317,3 +317,11 @@ En el portal, **Inicio** reúne saludo, cantidad total de informes, última
 publicación, comparación y contacto. **Mis informes** permite buscar en los
 documentos publicados del paciente por examen, folio o laboratorio, con
 páginas de hasta 50. Los datos de sede de un informe se ven en **Más opciones**.
+
+En **Sedes**, el encabezado identifica al laboratorio principal y cada sede
+muestra dirección, región, comuna y datos de contacto. Al editar o registrar
+una sede, el catálogo territorial de Vitalia habilita la comuna después de
+elegir la región. Si se modifica la región o la comuna, se solicita de nuevo
+la calle y el número. La API verifica el par región-comuna. La dirección
+manual debe cotejarse con la ubicación real de la sede. Las sedes antiguas
+con un territorio libre se pueden consultar y deben corregirse al editarlas.

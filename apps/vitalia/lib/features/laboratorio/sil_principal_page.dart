@@ -3092,7 +3092,13 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         SilWorkspaceHeading(title: 'Sedes', actions: [_labSelector()]),
         if (_labId case final String labId) ...[
           const SizedBox(height: 16),
-          SilAdminSites(key: ValueKey(labId), api: widget.api, labId: labId, onExpired: widget.onExpired),
+          SilAdminSites(
+            key: ValueKey(labId),
+            api: widget.api,
+            labId: labId,
+            labName: _labs.firstWhere((lab) => lab['id'] == labId)['displayName'] as String,
+            onExpired: widget.onExpired,
+          ),
         ],
       ],
     ),

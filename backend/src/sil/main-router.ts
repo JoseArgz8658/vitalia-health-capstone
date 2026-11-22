@@ -1,3 +1,6 @@
+import {readFile} from 'node:fs/promises';
+import {resolve} from 'node:path';
+import {validateTerritorialCatalog} from '../database/territorial-catalog';
 import express,{Router,type ErrorRequestHandler} from 'express';
 import {z} from 'zod';
 import {type AuthServices} from '../auth/router';
@@ -10,6 +13,18 @@ import {SilEducationNotFound,SilEducationBusy,SilEducationUnavailable}
 import {
   SilMainAccessDenied,SilMainNotFound,SilMainConflict,type SilMainServices
 } from './main-service';
+
+let siteTerritories: ReturnType<typeof readSiteTerritories>|undefined;
+async function readSiteTerritories(){
+ const file=await readFile(resolve(__dirname,'../../database/catalogs/chile-cut-2018.json'),'utf8');
+ return validateTerritorialCatalog(JSON.parse(file));
+}
+function getSiteTerritories(){
+ return siteTerritories??=readSiteTerritories().catch(error=>{
+   siteTerritories=undefined;
+   throw error;
+ });
+}
 
 const uuid=z.uuid();
 const examCode=z.string().regex(/^[a-z0-9_]{3,40}$/);
@@ -134,11 +149,14 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     name:z.string().trim().min(2).max(120),
     address:z.string().trim().min(3).max(200),
     commune:z.string().trim().min(2).max(100),
-    region:z.string().trim().min(2).max(100).optional(),
+    region:z.string().trim().min(2).max(100),
     phone:z.string().trim().regex(/^[+0-9 ()-]{5,32}$/).optional(),
     email:z.string().trim().toLowerCase().pipe(z.email().max(254)).optional(),
   });
   const sitePath='/labs/:labId/sites';
+  router.get('/site-territories',administrator,async(_req,res)=>{
+    res.json(await getSiteTerritories());
+  });
   router.get(sitePath,staff,labPath,async(req,res)=>{
     const {id,role}=res.locals.account;
     res.json(await main.listSites(req.params.labId as string,id,role));
@@ -147,6 +165,15 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     const data=siteInput.extend({siteId:uuid.optional()}).strict().safeParse(req.body);
     if(!data.success){res.status(400).json({error:{code:'INVALID_SITE'}});return;}
     const {siteId,...fields}=data.data;
+    const catalog=await getSiteTerritories();
+    const region=catalog.regions.find(item=>item.name===fields.region);
+    const provinceCodes=new Set(catalog.provinces
+      .filter(item=>item.regionCode===region?.code).map(item=>item.code));
+    if(!catalog.communes.some(item=>item.name===fields.commune &&
+        provinceCodes.has(item.provinceCode))){
+      res.status(400).json({error:{code:'INVALID_SITE_TERRITORY'}});return;
+    }
+
     res.status(siteId?200:201).json(await main.saveSite(
       req.params.labId as string,res.locals.account.id,fields,siteId));
   });
