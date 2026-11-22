@@ -7,7 +7,6 @@ import 'package:vitalia_health/features/acceso/credenciales_paciente.dart';
 import 'package:vitalia_health/features/acceso/recuperar_portal_sil_page.dart';
 import 'package:vitalia_health/features/laboratorio/paciente_informes_sil_page.dart';
 import 'package:vitalia_health/features/laboratorio/sil_workspace.dart';
-import 'package:vitalia_health/features/laboratorio/portal_visual_sil.dart';
 
 const _email = 'portal-qa@example.invalid';
 const _password = 'Contraseña DEMO nueva';
@@ -291,14 +290,10 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(find.text('Hola, Paciente'), findsOneWidget);
-    expect(find.text('Ir a mis informes'), findsOneWidget);
-    expect(find.text('Informes disponibles'), findsOneWidget);
-    expect(find.text('Última publicación'), findsOneWidget);
-    expect(find.text('Consulta conjunta'), findsOneWidget);
-    // La portada calmada evita ilustraciones decorativas de pacientes.
-    final hero = tester.widget<PortalHeroSil>(find.byType(PortalHeroSil));
-    expect(hero.calm, isTrue);
-    expect(hero.showLaboratoryArt, isFalse);
+    expect(find.text('Ir a mis informes'), findsNothing);
+    expect(find.text('Informes publicados'), findsOneWidget);
+    expect(find.textContaining('Última publicación ·'), findsOneWidget);
+    expect(find.text('Historial y orientación'), findsOneWidget);
     expect(find.byIcon(Icons.family_restroom), findsNothing);
     // Con un único PDF, la ayuda no duplica el acceso a la comparación.
     expect(find.text('Cómo leer mis resultados'), findsOneWidget);
@@ -319,7 +314,7 @@ void main() {
     await tester.tapAt(const Offset(600, 450));
     await tester.pumpAndSettle();
     expect(find.text('Ver resultados'), findsOneWidget);
-    expect(find.text('Ir a mis informes'), findsOneWidget);
+    expect(find.text('Ir a mis informes'), findsNothing);
     expect(tester.takeException(), isNull);
   });
   testWidgets('comparación solo destacada con dos informes publicados',

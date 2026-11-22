@@ -309,7 +309,8 @@ void main() {
     expect(find.text('104'),findsWidgets);
     expect(find.text('70'),findsOneWidget);
     expect(find.text('14'),findsWidgets);
-    expect(find.text('Total del laboratorio'),findsNWidgets(5));
+    expect(find.text('Total de órdenes'), findsOneWidget);
+    expect(find.text('Accesos rápidos'), findsNothing);
     expect(find.text('Totales actuales del laboratorio seleccionado.'),
       findsOneWidget);
     expect(find.text('Revisión interna (14)'),findsOneWidget);
@@ -335,10 +336,44 @@ void main() {
       api:api,role:'operador_laboratorio',onExpired:(){},onLogout:(){},
     )));
     await tester.pumpAndSettle();
-    expect(find.text('Solo lista reciente (máx. 50)'),findsNWidgets(5));
-    expect(find.textContaining('no representan el total del laboratorio'),
+    expect(find.text('Cifras parciales de los registros recientes cargados.'),
       findsOneWidget);
+    expect(find.text('Totales actuales del laboratorio seleccionado.'), findsNothing);
     expect(tester.takeException(),isNull);
+  });
+
+  testWidgets('administración móvil abre y cancela formularios desde el directorio', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api = _StationApi();
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home: SilPrincipalPage(
+      api: api, role: 'administrador', onExpired: () {}, onLogout: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Directorio de laboratorios'), findsOneWidget);
+    expect(find.text('Nombre del laboratorio'), findsNothing);
+    await tester.tap(find.widgetWithText(FilledButton, 'Registrar laboratorio'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nombre del laboratorio'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'Cancelar'));
+    await tester.pumpAndSettle();
+
+    final operators = find.widgetWithText(TextButton, 'Operadores y permisos');
+    await tester.ensureVisible(operators);
+    await tester.tap(operators);
+    await tester.pumpAndSettle();
+    expect(find.text('operador@laboratorio.invalid'), findsOneWidget);
+    expect(find.text('Correo del nuevo operador'), findsNothing);
+    final invite = find.widgetWithText(FilledButton, 'Invitar operador');
+    await tester.ensureVisible(invite);
+    await tester.tap(invite);
+    await tester.pumpAndSettle();
+    expect(find.text('Correo del nuevo operador'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'Cancelar'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('administración muestra operadores y autoriza revisión desde un botón', (tester) async {
@@ -361,7 +396,7 @@ void main() {
     // La gestión de personas tiene una pestaña propia, sin perder sus acciones.
     await tester.tap(find.widgetWithText(TextButton,'Operadores y permisos'));
     await tester.pumpAndSettle();
-    expect(find.text('Operadores y permisos de revisión'),findsOneWidget);
+    expect(find.text('Directorio de operadores'),findsOneWidget);
     expect(find.text('operador@laboratorio.invalid'),findsOneWidget);
     final authorize=find.widgetWithText(OutlinedButton,'Autorizar revisión');
     await tester.ensureVisible(authorize);
@@ -376,7 +411,7 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton,'Actividad'));
     await tester.pumpAndSettle();
     expect(find.text('Estado administrativo'),findsOneWidget);
-    expect(find.textContaining('no constituye un historial de'),findsOneWidget);
+    expect(find.textContaining('El historial de auditoría administrativa requiere'),findsOneWidget);
     expect(find.text('Gestión de órdenes'),findsNothing);
     expect(find.text('1 operadores asociados'), findsOneWidget);
 

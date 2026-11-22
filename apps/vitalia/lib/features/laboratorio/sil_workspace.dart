@@ -2,6 +2,135 @@ import 'package:flutter/material.dart';
 
 import '../../core/tema_vitalia.dart';
 
+/// Encabezado de una vista de trabajo con una zona de acciones adaptable.
+class SilWorkspaceHeading extends StatelessWidget {
+  const SilWorkspaceHeading({
+    super.key,
+    required this.title,
+    this.description,
+    this.actions = const [],
+    this.section = false,
+  });
+
+  final String title;
+  final String? description;
+  final List<Widget> actions;
+  final bool section;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final heading = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          header: true,
+          child: Text(
+            title,
+            style: (section ? text.titleLarge : text.headlineMedium)?.copyWith(
+              color: ColoresVitalia.texto,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        if (description case final String detail) ...[
+          const SizedBox(height: 4),
+          Text(
+            detail,
+            style: text.bodyMedium?.copyWith(
+              color: ColoresVitalia.textoSecundario,
+            ),
+          ),
+        ],
+      ],
+    );
+    if (actions.isEmpty) return heading;
+    final buttons = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: actions,
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 760) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [heading, const SizedBox(height: 12), buttons],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(flex: 5, child: heading),
+            const SizedBox(width: 20),
+            Flexible(
+              flex: 6,
+              child: Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: buttons,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Superficie de lectura para listas y vistas con divisiones internas.
+class SilWorkspaceSurface extends StatelessWidget {
+  const SilWorkspaceSurface({
+    super.key,
+    required this.child,
+    this.padding = EdgeInsets.zero,
+  });
+
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: ColoresVitalia.blanco,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.all(Radius.circular(12)),
+      side: BorderSide(color: ColoresVitalia.borde),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: Padding(padding: padding, child: child),
+  );
+}
+
+class SilWorkspaceStatus extends StatelessWidget {
+  const SilWorkspaceStatus({
+    super.key,
+    required this.label,
+    this.positive = false,
+  });
+
+  final String label;
+  final bool positive;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: positive ? ColoresVitalia.verdeSuave : ColoresVitalia.fondoAzul,
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: positive
+              ? ColoresVitalia.verde
+              : ColoresVitalia.textoSecundario,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    ),
+  );
+}
 /// Firma común de las pantallas SIL.
 class SilWorkspaceBrand extends StatelessWidget {
   const SilWorkspaceBrand({super.key});

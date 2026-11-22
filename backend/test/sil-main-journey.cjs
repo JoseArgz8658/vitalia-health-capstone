@@ -335,6 +335,10 @@ async function adminJourney(browser, base) {
     // Los resúmenes de la columna secundaria pueden estar fuera del
     // viewport; comprobamos controles operativos de la administración.
     await nav('Registrar laboratorio').waitFor({timeout:10000});
+    if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+      await page.screenshot({path:resolve(
+        process.env.VITALIA_JOURNEY_SCREENSHOTS, 'administrador-laboratorios.png')});
+    }
 
     await nav('Operadores y permisos').click();
     // Flutter Canvas muestra los textos en pantalla, pero no todos son
@@ -360,6 +364,11 @@ async function adminJourney(browser, base) {
         path:resolve(process.env.VITALIA_JOURNEY_SCREENSHOTS,
           'administrador-operadores.png'),
       });
+      await page.setViewportSize({width:390,height:844});
+      await nav('Invitar operador').waitFor();
+      await page.screenshot({path:resolve(
+        process.env.VITALIA_JOURNEY_SCREENSHOTS, 'administrador-movil.png')});
+      await page.setViewportSize({width:1440,height:1050});
     }
     // En esta copia sintética ambos operadores tienen permiso concedido.
     // Probar el ciclo de revocación y restitución, dejando el estado original
@@ -412,8 +421,6 @@ async function browserJourney(order, base, sampleOrder, samplePdf) {
     const page=await browser.newPage({viewport:{width:390,height:844}});
     try {
       await signIn(page,'patient');
-      // Hay otro acceso "Mis informes" en el contenido. Restringir al
-      // menú superior accesible, no seleccionar por coincidencia global.
       const patientNav=page.getByLabel('Navegación del paciente');
       await patientNav.getByRole('button',
         {name:'Mis informes',exact:true}).waitFor();
@@ -454,6 +461,13 @@ async function browserJourney(order, base, sampleOrder, samplePdf) {
 
       const downloadButton=page.getByRole('button',{name:'Descargar PDF',exact:true}).first();
       await downloadButton.waitFor({timeout:20000});
+      if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+        await page.setViewportSize({width:1440,height:1050});
+        await downloadButton.waitFor();
+        await page.screenshot({path:resolve(
+          process.env.VITALIA_JOURNEY_SCREENSHOTS, 'paciente-escritorio.png')});
+        await page.setViewportSize({width:390,height:844});
+      }
       const downloaded=page.waitForEvent('download');
       const response=page.waitForResponse(r=>r.url().endsWith(
         '/patient/reports/'+publishedId+'/file'));

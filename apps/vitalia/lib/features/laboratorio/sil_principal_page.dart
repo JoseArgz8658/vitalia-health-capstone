@@ -37,6 +37,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _inviteEmail = TextEditingController();
   final _staffAccount = TextEditingController();
   List<Map<String,dynamic>> _labStaff = [];
+  bool _staffLoaded = false;
   final _invitedPatientEmail = TextEditingController();
   final _patientSearch = TextEditingController();
   List<Map<String,dynamic>> _patients = [];
@@ -242,13 +243,19 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   Future<void> _loadStaff() async {
     final lab=_labId;
     if(!_admin || lab==null){
-      if(mounted)setState(()=>_labStaff=[]);
+      if (mounted) setState(() {
+        _labStaff = [];
+        _staffLoaded = false;
+      });
       return;
     }
     final result=await widget.api.silMainRequest('/labs/$lab/staff');
     if(!mounted || _labId!=lab)return;
-    setState(()=>_labStaff=(result['staff'] as List? ?? [])
-      .map((value)=>Map<String,dynamic>.from(value as Map)).toList());
+    setState(() {
+      _labStaff = (result['staff'] as List? ?? [])
+        .map((value) => Map<String, dynamic>.from(value as Map)).toList();
+      _staffLoaded = true;
+    });
   }
 
   Future<void> _loadOrders() async {
@@ -399,6 +406,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   void _resetLab(String? value) {
     _labId = value;
     _labStaff = [];
+    _staffLoaded = false;
     _staffAccount.clear();
     _activeSection = _StationSection.dashboard;
     _patients = [];
@@ -1067,8 +1075,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   Widget _ordersPanel({bool recent = false}){
     final list=recent ? _orders.take(5) : _orderPage;
     return _section(
-      recent ? 'Actividad reciente' : 'Órdenes del laboratorio',
-      'Consulta postanalítica del laboratorio seleccionado.',
+      recent ? 'Órdenes recientes' : 'Órdenes del laboratorio',
+      recent ? 'Últimas órdenes del laboratorio.' : 'Filtra y abre una orden para continuar su gestión.',
       Icons.assignment_outlined,
       [
         if (!recent) ...[
@@ -1080,34 +1088,49 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                 onDeleted: _busy ? null : () => _showPatientOrders(null),
               ),
             ),
-          if (_operator)
-            _field(_orderSearch, 'Folio o correo del paciente',
-              identifier: 'sil-order-search'),
-          DropdownButtonFormField<String>(
-            key: ValueKey((_labId, _orderStatus)),
-            initialValue: _orderStatus,
-            isExpanded: true,
-            decoration: const InputDecoration(labelText: 'Estado de la orden'),
-            items: [
-              const DropdownMenuItem(value: '', child: Text('Todos los estados')),
-              for (final status in ['registered', 'report_attached', 'report_published'])
-                DropdownMenuItem(value: status, child: Text(_status(status))),
-            ],
-            onChanged: _busy ? null : (value) => _execute(
-              () => _loadOrderPage(offset: 0, status: value, search: _orderSearch.text.trim()),
-              showNotice: false,
-            ),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _execute(
-              () => _loadOrderPage(offset: 0, search: _orderSearch.text.trim()),
-              showNotice: false,
-            ),
-            icon: const Icon(Icons.search),
-            label: const Text('Buscar órdenes'),
-          ),
-          const SizedBox(height: 8),
+          LayoutBuilder(builder: (context, constraints) {
+            final search = _field(_orderSearch, 'Folio o correo del paciente',
+              identifier: 'sil-order-search');
+            final statusFilter = DropdownButtonFormField<String>(
+              key: ValueKey((_labId, _orderStatus)),
+              initialValue: _orderStatus,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Estado de la orden'),
+              items: [
+                const DropdownMenuItem(value: '', child: Text('Todos los estados')),
+                for (final status in ['registered', 'report_attached', 'report_published'])
+                  DropdownMenuItem(value: status, child: Text(_status(status))),
+              ],
+              onChanged: _busy ? null : (value) => _execute(
+                () => _loadOrderPage(offset: 0, status: value, search: _orderSearch.text.trim()),
+                showNotice: false,
+              ),
+            );
+            final submit = OutlinedButton.icon(
+              onPressed: _busy ? null : () => _execute(
+                () => _loadOrderPage(offset: 0, search: _orderSearch.text.trim()),
+                showNotice: false,
+              ),
+              icon: const Icon(Icons.search),
+              label: const Text('Buscar órdenes'),
+            );
+            if (constraints.maxWidth < 640) {
+              return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                search,
+                statusFilter,
+                const SizedBox(height: 8),
+                Align(alignment: AlignmentDirectional.centerStart, child: submit),
+              ]);
+            }
+            return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(flex: 5, child: search),
+              const SizedBox(width: 10),
+              Expanded(flex: 4, child: statusFilter),
+              const SizedBox(width: 10),
+              submit,
+            ]);
+          }),
+          const SizedBox(height: 12),
         ],
         if (list.isEmpty)
           Padding(
@@ -1128,11 +1151,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         else
           for(final order in list.take(50))
             Container(
-              margin:const EdgeInsets.only(bottom:8),
-              padding:const EdgeInsets.all(12),
-              decoration:BoxDecoration(
-                color:ColoresVitalia.fondoAzul,
-                borderRadius:BorderRadius.circular(10),
+              padding:const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: ColoresVitalia.bordeTenue)),
               ),
               child:Row(
                 children:[
@@ -1211,98 +1232,337 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     );
   }
 
-  Widget _adminPanel({bool showLaboratory = true, bool showOperators = true}){
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children:[
-      if (showLaboratory) _section('Registrar laboratorio',
-        'Crea una organización real del sistema, sin generar datos clínicos.',
-        Icons.add_business_outlined,[
-        _field(_name,'Nombre del laboratorio'),
-        _action('Registrar laboratorio',Icons.add,_createLab),
-      ]),
-      if(showOperators && _labId!=null)
-        _section('Invitar operador de laboratorio',
-          'Crea una invitación con código de un solo uso. El destinatario '
-          'activa una cuenta nueva con rol de operador.',
-          Icons.mark_email_read_outlined,[
-          _field(_inviteEmail,'Correo del nuevo operador'),
-          const Text(
-            'El código de acceso debe entregarse por un canal '
-            'oficial. No se envían correos automáticamente.',
-            style:TextStyle(fontSize:12,
-              color:ColoresVitalia.textoSecundario),
+  Future<void> _adminEditor({
+    required String title,
+    required String label,
+    required String submitLabel,
+    required TextEditingController controller,
+    required Future<void> Function() submit,
+    String? instruction,
+    TextInputType? keyboardType,
+  }) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        scrollable: true,
+        content: SizedBox(
+          width: 400,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (instruction != null) ...[
+                Text(instruction),
+                const SizedBox(height: 14),
+              ],
+              TextField(
+                autofocus: true,
+                controller: controller,
+                keyboardType: keyboardType,
+                textInputAction: TextInputAction.done,
+                decoration: InputDecoration(labelText: label),
+                onSubmitted: (_) => Navigator.of(dialogContext).pop(true),
+              ),
+            ],
           ),
-          const SizedBox(height:12),
-          _action('Crear invitación',Icons.person_add_alt_1,_inviteOperator),
-        ]),
-      if(showOperators && _labId!=null)
-        _section('Operadores y permisos de revisión',
-          'Cada operador autorizado aparece aquí después de activar su invitación. '
-          'La revisión requiere un permiso explícito del administrador.',
-          Icons.admin_panel_settings_outlined,[
-          OutlinedButton.icon(
-            onPressed:_busy?null:()=>_execute(_loadStaff,showNotice:false),
-            icon:const Icon(Icons.refresh),
-            label:const Text('Actualizar operadores'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
           ),
-          const SizedBox(height:10),
-          if(_labStaff.isEmpty)
-            const Padding(
-              padding:EdgeInsets.symmetric(vertical:12),
-              child:Text('Todavía no hay operadores vinculados a este laboratorio. '
-                'Crea una invitación y pide al destinatario que active su acceso.'),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(submitLabel),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (accepted == true) await _execute(submit);
+  }
+
+  Widget _laboratoryDirectory() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      SilWorkspaceHeading(
+        section: true,
+        title: 'Directorio de laboratorios',
+        description: 'Selecciona un laboratorio para gestionar su personal.',
+        actions: [
+          if (_labId != null)
+            OutlinedButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () =>
+                        setState(() => _adminSection = _AdminSection.operators),
+              icon: const Icon(Icons.people_outline),
+              label: const Text('Gestionar operadores'),
             ),
-          for(final member in _labStaff)
-            Card(
-              child:Padding(
-                padding:const EdgeInsets.all(14),
-                child:Column(
-                  crossAxisAlignment:CrossAxisAlignment.stretch,
-                  children:[
-                    Text(member['email'] as String,
-                      overflow:TextOverflow.ellipsis,
-                      style:const TextStyle(fontWeight:FontWeight.w700)),
-                    const SizedBox(height:6),
-                    Text(member['active']==true
-                      ?member['canReviewReports']==true
-                        ?'Operador activo · revisión autorizada'
-                        :'Operador activo · sin permiso de revisión'
-                      :'Operador desactivado',
-                      style:const TextStyle(fontSize:12)),
-                    const SizedBox(height:8),
-                    Align(
-                      alignment:Alignment.centerRight,
-                      child:OutlinedButton.icon(
-                        onPressed:_busy||member['active']!=true?null
-                          :()=>_execute(()=>_setReviewPermission(
-                            member['accountId'] as String,
-                            member['canReviewReports']!=true,
-                          )),
-                        icon:Icon(member['canReviewReports']==true
-                          ?Icons.remove_moderator_outlined
-                          :Icons.verified_user_outlined),
-                        label:Text(member['canReviewReports']==true
-                          ?'Retirar permiso de revisión'
-                          :'Autorizar revisión'),
-                      ),
+          FilledButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _adminEditor(
+                    title: 'Registrar laboratorio',
+                    label: 'Nombre del laboratorio',
+                    submitLabel: 'Registrar laboratorio',
+                    controller: _name,
+                    submit: _createLab,
+                  ),
+            icon: const Icon(Icons.add_business_outlined),
+            label: const Text('Registrar laboratorio'),
+          ),
+        ],
+      ),
+      const SizedBox(height: 14),
+      SilWorkspaceSurface(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_labs.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  _busy
+                      ? 'Cargando laboratorios…'
+                      : 'Registra un laboratorio para comenzar.',
+                ),
+              ),
+            for (final (index, lab) in _labs.indexed) ...[
+              if (index > 0) const Divider(height: 1),
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
+                selected: lab['id'] == _labId,
+                selectedTileColor: ColoresVitalia.azulSuave,
+                leading: const Icon(Icons.business_outlined),
+                title: Text(
+                  lab['displayName'] as String,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(switch (lab['active']) {
+                  true => 'Activo',
+                  false => 'Inactivo',
+                  _ => 'Estado sin informar',
+                }),
+                trailing: lab['id'] == _labId
+                    ? const Tooltip(
+                        message: 'Laboratorio seleccionado',
+                        child: Icon(
+                          Icons.check_circle_outline,
+                          color: ColoresVitalia.verde,
+                        ),
+                      )
+                    : const Icon(Icons.chevron_right),
+                onTap: _busy || lab['id'] == _labId
+                    ? null
+                    : () => _selectLab(lab['id'] as String),
+              ),
+            ],
+          ],
+        ),
+      ),
+    ],
+  );
+
+  Widget _staffRow(Map<String, dynamic> member, {required bool wide}) {
+    final active = member['active'] == true;
+    final canReview = member['canReviewReports'] == true;
+    final email = Text(
+      member['email'] as String,
+      style: const TextStyle(fontWeight: FontWeight.w700),
+    );
+    final accountState = SilWorkspaceStatus(
+      label: active ? 'Activa' : 'Desactivada',
+      positive: active,
+    );
+    final reviewState = SilWorkspaceStatus(
+      label: active && canReview ? 'Autorizada' : 'Sin autorización',
+      positive: active && canReview,
+    );
+    final action = OutlinedButton.icon(
+      onPressed: _busy || !active
+          ? null
+          : () => _execute(
+              () => _setReviewPermission(
+                member['accountId'] as String,
+                !canReview,
+              ),
+            ),
+      icon: Icon(
+        canReview
+            ? Icons.remove_moderator_outlined
+            : Icons.verified_user_outlined,
+      ),
+      label: Text(
+        canReview ? 'Retirar permiso de revisión' : 'Autorizar revisión',
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: wide
+          ? Row(
+              children: [
+                Expanded(flex: 4, child: email),
+                Expanded(
+                  flex: 2,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: accountState,
+                  ),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: reviewState,
+                  ),
+                ),
+                Flexible(
+                  flex: 4,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: action,
+                  ),
+                ),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                email,
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    accountState,
+                    SilWorkspaceStatus(
+                      label: active && canReview
+                          ? 'Revisión autorizada'
+                          : 'Sin permiso de revisión',
+                      positive: active && canReview,
                     ),
                   ],
                 ),
-              ),
+                const SizedBox(height: 10),
+                action,
+              ],
             ),
-          const SizedBox(height:12),
-          ExpansionTile(
-            tilePadding:EdgeInsets.zero,
-            title:const Text('Vincular una cuenta operadora existente'),
-            subtitle:const Text('Solo cuentas ya activas con rol de operador'),
-            children:[
-              _field(_staffAccount,'UUID de una cuenta operadora existente'),
-              const SizedBox(height:8),
-              _action('Vincular al laboratorio',Icons.person_add_alt_1,_grantStaff),
-            ],
-          ),
-        ]),
-    ]);
+    );
   }
+
+  Widget _staffDirectory() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      SilWorkspaceHeading(
+        section: true,
+        title: 'Directorio de operadores',
+        actions: [
+          OutlinedButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _execute(_loadStaff, showNotice: false),
+            icon: const Icon(Icons.refresh),
+            label: const Text('Actualizar operadores'),
+          ),
+          OutlinedButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _adminEditor(
+                    title: 'Vincular operador',
+                    label: 'Identificador de la cuenta operadora',
+                    submitLabel: 'Vincular al laboratorio',
+                    controller: _staffAccount,
+                    submit: _grantStaff,
+                    instruction:
+                        'La cuenta debe estar activa y tener rol de operador.',
+                  ),
+            icon: const Icon(Icons.link),
+            label: const Text('Vincular cuenta'),
+          ),
+          FilledButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _adminEditor(
+                    title: 'Invitar operador',
+                    label: 'Correo del nuevo operador',
+                    submitLabel: 'Crear invitación',
+                    controller: _inviteEmail,
+                    submit: _inviteOperator,
+                    keyboardType: TextInputType.emailAddress,
+                    instruction: 'Entrega el código de un solo uso al destinatario por el canal oficial del laboratorio.',
+                  ),
+            icon: const Icon(Icons.person_add_alt_1_outlined),
+            label: const Text('Invitar operador'),
+          ),
+        ],
+      ),
+      const SizedBox(height: 14),
+      SilWorkspaceSurface(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide =
+                constraints.maxWidth >= 810 &&
+                MediaQuery.textScalerOf(context).scale(14) <= 17;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_labStaff.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Text(
+                      !_staffLoaded
+                          ? (_busy
+                                ? 'Cargando operadores…'
+                                : 'Actualiza para consultar el personal.')
+                          : 'Todavía no hay operadores vinculados a este laboratorio.',
+                    ),
+                  ),
+                if (_labStaff.isNotEmpty && wide)
+                  ColoredBox(
+                    color: ColoresVitalia.fondoAzul,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      child: DefaultTextStyle.merge(
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                        child: const Row(
+                          children: [
+                            Expanded(flex: 4, child: Text('Cuenta')),
+                            Expanded(flex: 2, child: Text('Estado')),
+                            Expanded(
+                              flex: 3,
+                              child: Text('Revisión de informes'),
+                            ),
+                            Expanded(
+                              flex: 4,
+                              child: Align(
+                                alignment: AlignmentDirectional.centerEnd,
+                                child: Text('Permisos'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                for (final (index, member) in _labStaff.indexed) ...[
+                  if (index > 0 || wide) const Divider(height: 1),
+                  _staffRow(member, wide: wide),
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+    ],
+  );
 
   Future<void> _checkPatientActivation() async {
     final lab = _labId;
@@ -1552,7 +1812,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             const SizedBox(height:9),
             DropdownButtonFormField<String>(
               key:ValueKey((_labId,_pendingRequestId,'pending-referrals')),
-              value:_pendingRequestId,
+              initialValue: _pendingRequestId,
               isExpanded:true,
               decoration:const InputDecoration(
                 border:OutlineInputBorder(),labelText:'Derivación pendiente guardada',
@@ -1634,7 +1894,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         Icons.badge_outlined, [
         if (_attachToExistingOrder)
           DropdownButtonFormField<String>(
-            value:_requestOrderId,
+            initialValue: _requestOrderId,
             isExpanded:true,
             decoration:const InputDecoration(
               border:OutlineInputBorder(),labelText:'Orden del paciente',
@@ -1790,7 +2050,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         Semantics(
           identifier:'sil-upload-order',
           child:DropdownButtonFormField<String>(
-            value:_uploadOrderId,
+            initialValue: _uploadOrderId,
             isExpanded:true,
             decoration:const InputDecoration(
               border:OutlineInputBorder(),labelText:'Orden disponible',
@@ -1866,7 +2126,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         identifier: 'sil-review-order',
         child: DropdownButtonFormField<String>(
           key: ValueKey((_labId, _reviewOffset, _reviewOrderId, 'review-queue')),
-          value: _reviewOrderId,
+          initialValue: _reviewOrderId,
           isExpanded: true,
           decoration: const InputDecoration(
             border: OutlineInputBorder(),
@@ -1978,14 +2238,25 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     });
   }
 
-  void _openSection(_StationSection section) {
+  void _openSection(_StationSection section, {String? orderStatus}) {
     if (_busy || section == _activeSection) return;
-    setState(() => _activeSection = section);
+    setState(() {
+      _activeSection = section;
+      if (orderStatus != null) {
+        _orderSearch.clear();
+        _activeOrderSearch = '';
+        _ordersPatient = null;
+        _orderPage = [];
+      }
+    });
     if (section == _StationSection.patients) {
       _execute(() => _loadPatients(offset: 0), showNotice: false);
     } else if (section == _StationSection.orders) {
       _execute(() async {
-        await _loadOrderPage(offset: _orderOffset);
+        await _loadOrderPage(
+          offset: orderStatus == null ? _orderOffset : 0,
+          status: orderStatus,
+        );
         await _loadPatients(offset: 0, search: _orderPatientSearch.text.trim());
       }, showNotice: false);
     } else if (section == _StationSection.review && _canReview) {
@@ -2110,300 +2381,215 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ],
   );
 
-  Widget _adminIndicators() => LayoutBuilder(
-    builder: (context, constraints) {
-      final active = _labStaff.where((staff) => staff['active'] == true).length;
-      final reviewers = _labStaff.where((staff) =>
-        staff['active'] == true && staff['canReviewReports'] == true).length;
-      final stats = [
-        ('Laboratorios administrados', '${_labs.length}', Icons.business_outlined),
-        ('Operadores activos', '$active', Icons.people_outline),
-        ('Permisos de revisión', '$reviewers', Icons.verified_user_outlined),
-      ];
-      final cols = constraints.maxWidth >= 900 ? 3 :
-          constraints.maxWidth >= 570 ? 2 : 1;
-      const spacing = 12.0;
-      final cardWidth = (constraints.maxWidth - (cols - 1) * spacing) / cols;
-      return Wrap(spacing: spacing, runSpacing: spacing, children: [
-        for (final item in stats)
-          SizedBox(
-            width: cardWidth,
-            child: SilWorkspaceSummaryStat(
-              label: item.$1,
-              value: item.$2,
-              icon: item.$3,
-            ),
-          ),
-      ]);
-    },
-  );
-
   Widget _adminContent() => switch (_adminSection) {
-    _AdminSection.laboratories => SilWorkspaceColumns(
-      primary: _adminPanel(showOperators: false),
-      primaryFlex: 6,
-      secondaryFlex: 5,
-      secondary: _section(
-        'Laboratorio seleccionado',
-        'Consulta el contexto sobre el que trabajarás.',
-        Icons.business_outlined,
-        [
-          Text(_labs.where((lab) => lab['id'] == _labId)
-              .map((lab) => lab['displayName'] as String).firstOrNull
-              ?? 'Todavía no hay un laboratorio seleccionado.'),
-          const SizedBox(height: 10),
-          Text('${_labs.length} laboratorio(s) registrados en esta cuenta.'),
-          if (_labId != null) ...[
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : () => setState(
-                () => _adminSection = _AdminSection.operators),
-              icon: const Icon(Icons.people_outline),
-              label: const Text('Gestionar operadores'),
-            ),
-          ],
-        ],
-      ),
-    ),
-    _AdminSection.operators => _labId == null
-        ? _section('Selecciona un laboratorio',
-            'Registra primero un laboratorio para habilitar operadores.',
-            Icons.info_outline, [])
-        : SilWorkspaceColumns(
-            primary: _adminPanel(showLaboratory: false),
-            secondary: _section('Estado de operadores',
-                'Información del laboratorio seleccionado.',
-                Icons.people_outline, [
-                  Text('${_labStaff.length} operadores en la lista'),
-                  const SizedBox(height: 8),
-                  Text('${_labStaff.where((staff) => staff['active'] == true && staff['canReviewReports'] == true).length} con permiso de revisión'),
-                ]),
-            primaryFlex: 7, secondaryFlex: 4,
-          ),
-    _AdminSection.activity => _labId == null
-        ? _section('Selecciona un laboratorio',
-            'La actividad requiere un laboratorio seleccionado.',
-            Icons.info_outline, [])
-        : _section(
-            'Estado administrativo',
-            'Consulta el personal y sus permisos en el laboratorio seleccionado.',
-            Icons.history_outlined, [
-              Text('${_labStaff.length} operadores asociados'),
-              const SizedBox(height: 8),
-              Text('${_labStaff.where((staff) =>
-                staff['active'] == true &&
-                staff['canReviewReports'] == true).length} '
-                'operadores con permiso de revisión'),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _busy ? null :
-                  () => _execute(_loadStaff,showNotice:false),
-                icon: const Icon(Icons.refresh),
-                label: const Text('Actualizar estado administrativo'),
+    _AdminSection.laboratories => _laboratoryDirectory(),
+    _AdminSection.operators =>
+      _labId == null
+          ? const SilWorkspaceHeading(
+              section: true,
+              title: 'Selecciona un laboratorio',
+              description:
+                  'Registra un laboratorio para gestionar su personal.',
+            )
+          : _staffDirectory(),
+    _AdminSection.activity =>
+      _labId == null
+          ? const SilWorkspaceHeading(
+              section: true,
+              title: 'Selecciona un laboratorio',
+              description: 'El estado administrativo corresponde al laboratorio seleccionado.',
+            )
+          : SilWorkspaceSurface(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  SilWorkspaceHeading(
+                    section: true,
+                    title: 'Estado administrativo',
+                    description: 'Resumen del personal y sus permisos.',
+                    actions: [
+                      OutlinedButton.icon(
+                        onPressed: _busy
+                            ? null
+                            : () => _execute(_loadStaff, showNotice: false),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Actualizar estado administrativo'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (_staffLoaded)
+                    Wrap(
+                      spacing: 32,
+                      runSpacing: 10,
+                      children: [
+                        Text('${_labStaff.length} operadores asociados'),
+                        Text(
+                          '${_labStaff.where((member) => member['active'] == true && member['canReviewReports'] == true).length} '
+                          'operadores con permiso de revisión',
+                        ),
+                      ],
+                    )
+                  else
+                    Text(
+                      _busy
+                          ? 'Cargando personal…'
+                          : 'Datos de personal pendientes de consulta.',
+                    ),
+                  const Divider(height: 28),
+                  const Text(
+                    'El historial de auditoría administrativa requiere una fuente autorizada.',
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              const Text('Este resumen no constituye un historial de '
-                'auditoría administrativa. La auditoría detallada '
-                'deberá consultarse por un mecanismo autorizado.'),
-            ]),
+            ),
   };
 
-
-  Widget _operatorMetrics() {
-    // Si el resumen está disponible, son totales de este laboratorio.
-    // Sin él, mostrar las cifras recientes con un alcance explícito.
-    final counts = <({IconData icon, String label, int value,
-      _StationSection destination, Color color, Color tint})>[
-      (icon: Icons.note_add_outlined, label: 'Derivaciones pendientes',
-        value: _summaryCount('pendingRequests',_pendingRequests.length),
-        destination: _StationSection.requests,
-        color: const Color(0xFFB54B5D), tint: ColoresVitalia.errorSuave),
-      (icon: Icons.assignment_outlined, label: 'Total de órdenes',
-        value: _summaryCount('ordersTotal',_orders.length),
-        destination: _StationSection.orders,
-        color: OperatorPalette.blue, tint: ColoresVitalia.azulSuave),
-      (icon: Icons.inventory_2_outlined, label: 'Órdenes registradas',
-        value: _summaryCount('registered',
-          _orders.where((o) => o['status'] == 'registered').length),
-        destination: _StationSection.orders,
-        color: const Color(0xFF99630F), tint: ColoresVitalia.advertenciaSuave),
-      (icon: Icons.fact_check_outlined, label: 'PDF pendientes de revisión',
-        value: _summaryCount('inReview',_orders.where(_isReviewable).length),
-        destination: _canReview ? _StationSection.review : _StationSection.orders,
-        color: const Color(0xFF7454A8), tint: ColoresVitalia.pendienteSuave),
-      (icon: Icons.picture_as_pdf_outlined, label: 'Informes publicados',
-        value: _summaryCount('published',
-          _orders.where((o) => o['status'] == 'report_published').length),
-        destination: _StationSection.orders,
-        color: OperatorPalette.teal, tint: ColoresVitalia.verdeSuave),
-    ];
-    return LayoutBuilder(builder: (context, constraints) {
-      final columns = constraints.maxWidth >= 1060 ? 5 :
-          constraints.maxWidth >= 700 ? 3 :
-          constraints.maxWidth >= 430 ? 2 : 1;
-      const gap = 10.0;
-      final width = (constraints.maxWidth - (columns - 1) * gap) / columns;
-      return Wrap(spacing: gap, runSpacing: gap, children: [
-        for (final item in counts)
-          SizedBox(
-            width: width,
-            child: OperatorMetricCard(
-              icon: item.icon,
-              label: item.label,
-              count: item.value,
-              accent: item.color,
-              tint: item.tint,
-              caption: _operatorSummary != null
-                ? 'Total del laboratorio'
-                : 'Solo lista reciente (máx. 50)',
-              onTap: _busy ? null : () => _openSection(item.destination),
-            ),
-          ),
-      ]);
-    });
-  }
-
   Widget _dashboard() {
-    final pending = _summaryCount(
-      'inReview',_orders.where(_isReviewable).length);
     final isTotal = _operatorSummary != null;
-    final shortcuts = _section('Accesos rápidos',
-      'Inicia o continúa una tarea desde el mismo panel.',
-      Icons.bolt_outlined, [
-        OperatorActionTile(
-          icon: Icons.note_add_outlined,
-          label: 'Iniciar recepción',
-          subtitle: 'Adjuntar y comprobar una solicitud PDF',
-          onTap: _busy ? null : () => _openSection(_StationSection.requests),
-        ),
-        const SizedBox(height: 9),
-        OperatorActionTile(
-          icon: Icons.post_add_outlined,
-          label: 'Gestionar órdenes',
-          subtitle: 'Buscar o crear una orden interna',
-          onTap: _busy ? null : () => _openSection(_StationSection.orders),
-        ),
-        const SizedBox(height: 9),
-        OperatorActionTile(
-          icon: Icons.people_outline,
-          label: 'Consultar pacientes',
-          subtitle: 'Directorio del laboratorio activo',
-          onTap: _busy ? null : () => _openSection(_StationSection.patients),
-        ),
-        if (_canReview) ...[
-          const SizedBox(height: 9),
-          OperatorActionTile(
-            icon: Icons.fact_check_outlined,
-            label: 'Revisar informes',
-            subtitle: 'Validación y autorización externa',
-            count: pending,
-            onTap: _busy ? null : () => _openSection(_StationSection.review),
-          ),
-        ],
-      ]);
-    final queues = _section('Colas del laboratorio',
-      isTotal
-          ? 'Totales actuales del laboratorio seleccionado.'
-          : 'Solo registros recientes cargados; no representan el total del laboratorio.',
-      Icons.work_outline, [
-        _queueLink(Icons.note_add_outlined, 'Derivaciones pendientes',
-          _summaryCount('pendingRequests',_pendingRequests.length),
-          _StationSection.requests, total: isTotal),
-        _queueLink(Icons.assignment_outlined, 'Órdenes del laboratorio',
-          _summaryCount('ordersTotal',_orders.length),
-          _StationSection.orders, total: isTotal),
-        if (_canReview)
-          _queueLink(Icons.fact_check_outlined, 'Informes por revisar',
-            pending, _StationSection.review, total: isTotal),
-      ]);
-    final notices = _section('Trabajo seguro',
-      'La publicación es una acción independiente.',
-      Icons.shield_outlined, [
-        const OperatorInfoNote(
-          icon: Icons.verified_user_outlined,
-          title: 'Comprobación humana',
-          description: 'Las sugerencias del PDF no crean ni autorizan órdenes automáticamente. Antes de publicar, verifica el documento original.',
-          color: OperatorPalette.teal,
-          background: ColoresVitalia.verdeSuave,
-        ),
-        const SizedBox(height: 10),
-        OutlinedButton.icon(
-          onPressed: _busy ? null : () => _execute(_loadLabs,showNotice:false),
-          icon: const Icon(Icons.refresh_outlined),
-          label: const Text('Actualizar estación'),
-        ),
-      ]);
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      OperatorHero(
-        eyebrow: 'Estación del operador',
-        title: 'Panel del laboratorio',
-        subtitle: 'Prioriza solicitudes, revisiones y órdenes del laboratorio activo.',
-        compact: true,
-        actions: [
-          FilledButton.icon(
-            onPressed: _busy ? null : () => _openSection(_StationSection.requests),
-            icon: const Icon(Icons.note_add_outlined),
-            label: const Text('Recibir solicitud de exámenes'),
-            style: FilledButton.styleFrom(
-              foregroundColor: OperatorPalette.navy,
-              backgroundColor: Colors.white,
-            ),
-          ),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _openSection(_StationSection.orders),
-            icon: const Icon(Icons.assignment_outlined),
-            label: const Text('Ver órdenes'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.white,
-              side: const BorderSide(color: Color(0xFFA5D0DC)),
-            ),
-          ),
-        ],
+    final tasks = [
+      (
+        Icons.note_add_outlined,
+        'Derivaciones pendientes',
+        _summaryCount('pendingRequests', _pendingRequests.length),
+        _StationSection.requests,
       ),
-      const SizedBox(height: 14),
-      _operatorMetrics(),
-      const SizedBox(height: 14),
-      LayoutBuilder(builder: (context, constraints) {
-        if (constraints.maxWidth < 1020) {
-          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            queues,
-            const SizedBox(height: 12),
-            _ordersPanel(recent: true),
-            const SizedBox(height: 12),
-            shortcuts,
-            const SizedBox(height: 12),
-            notices,
-          ]);
-        }
-        return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(flex: 7, child: Column(children: [
-            queues,
-            const SizedBox(height: 12),
-            _ordersPanel(recent: true),
-          ])),
-          const SizedBox(width: 14),
-          Expanded(flex: 3, child: Column(children: [
-            shortcuts,
-            const SizedBox(height: 12),
-            notices,
-          ])),
-        ]);
-      }),
-    ]);
-  }
+      (
+        Icons.inventory_2_outlined,
+        'Órdenes registradas',
+        _summaryCount(
+          'registered',
+          _orders.where((o) => o['status'] == 'registered').length,
+        ),
+        _StationSection.orders,
+      ),
+      if (_canReview)
+        (
+          Icons.fact_check_outlined,
+          'Informes por revisar',
+          _summaryCount('inReview', _orders.where(_isReviewable).length),
+          _StationSection.review,
+        ),
+    ];
+    final totals = [
+      ('Total de órdenes', _summaryCount('ordersTotal', _orders.length)),
+      (
+        'Informes publicados',
+        _summaryCount(
+          'published',
+          _orders.where((o) => o['status'] == 'report_published').length,
+        ),
+      ),
+    ];
 
-  Widget _queueLink(IconData icon, String title, int count,
-      _StationSection section, {bool total = false}) =>
-    ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: ColoresVitalia.azul),
-      title: Text(title),
-      subtitle: Text(total
-          ? '$count en el laboratorio'
-          : '$count en la lista reciente (parcial)'),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: _busy ? null : () => _openSection(section),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SilWorkspaceHeading(
+          title: 'Panel del laboratorio',
+          actions: [
+            _labSelector(),
+            IconButton.outlined(
+              onPressed: _busy
+                  ? null
+                  : () => _execute(_loadLabs, showNotice: false),
+              tooltip: 'Actualizar estación',
+              icon: const Icon(Icons.refresh),
+            ),
+            FilledButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () => _openSection(_StationSection.requests),
+              icon: const Icon(Icons.note_add_outlined),
+              label: const Text('Recibir solicitud de exámenes'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        SilWorkspaceColumns(
+          primaryFlex: 5,
+          secondaryFlex: 7,
+          primary: SilWorkspaceSurface(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 15, 16, 12),
+                  child: SilWorkspaceHeading(
+                    section: true,
+                    title: 'Tareas del laboratorio',
+                    description: isTotal
+                        ? 'Totales actuales del laboratorio seleccionado.'
+                        : 'Cifras parciales de los registros recientes cargados.',
+                  ),
+                ),
+                for (final task in tasks) ...[
+                  const Divider(height: 1),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    leading: Icon(task.$1, color: ColoresVitalia.azul),
+                    title: Text(
+                      task.$2,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SilWorkspaceStatus(
+                          label: '${task.$3}',
+                          positive: task.$3 > 0,
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.chevron_right),
+                      ],
+                    ),
+                    onTap: _busy
+                        ? null
+                        : () => _openSection(
+                            task.$4,
+                            orderStatus: task.$4 == _StationSection.orders
+                                ? 'registered'
+                                : null,
+                          ),
+                  ),
+                ],
+                const Divider(height: 1),
+                ColoredBox(
+                  color: ColoresVitalia.fondoAzul,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Wrap(
+                      spacing: 24,
+                      runSpacing: 8,
+                      children: [
+                        for (final total in totals)
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${total.$2}',
+                                style: Theme.of(context).textTheme.titleLarge,
+                              ),
+                              Text(
+                                total.$1,
+                                style: Theme.of(context).textTheme.labelMedium,
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          secondary: _ordersPanel(recent: true),
+        ),
+      ],
     );
+  }
 
   Widget _operatorSubpage({
     required String title,
@@ -2413,11 +2599,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      OperatorHero(
-        eyebrow: 'Estación del operador',
+      SilWorkspaceHeading(
         title: title,
-        subtitle: description,
-        compact: true,
+        description: description,
+        actions: [_labSelector()],
       ),
       const SizedBox(height: 14),
       if (support != null) ...[
@@ -2435,16 +2620,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _StationSection.orders => _operatorSubpage(
         title: 'Órdenes',
         description: 'Busca órdenes existentes, consulta su estado y continúa con la siguiente tarea.',
-        support: OperatorNextStep(
-          icon: Icons.note_add_outlined,
-          title: '¿Recibiste una derivación médica?',
-          message: 'Comienza en «Recibir solicitud»: desde ahí se conserva el PDF, se identifica al paciente y se crea la orden. Esta pantalla sirve para buscar órdenes ya registradas.',
-          action: OutlinedButton.icon(
-            onPressed: _busy ? null : () => _openSection(_StationSection.requests),
-            icon: const Icon(Icons.upload_file_outlined),
-            label: const Text('Recibir solicitud médica'),
-          ),
-        ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           _ordersPanel(),
           const SizedBox(height: 12),
@@ -2540,15 +2715,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     };
   }
 
-  String get _sectionTitle => switch (_activeSection) {
-    _StationSection.dashboard => 'Panel del laboratorio',
-    _StationSection.orders => 'Gestión de órdenes',
-    _StationSection.requests => 'Recepción de derivaciones',
-    _StationSection.patients => 'Pacientes del laboratorio',
-    _StationSection.clinical => 'Seguimiento de muestras',
-    _StationSection.review => 'Revisión y publicación',
-  };
-
   Widget _labSelector() {
     if (_labs.isEmpty) {
       if (_busy) return const SizedBox.shrink();
@@ -2559,7 +2725,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 320),
       child: DropdownButtonFormField<String>(
-        value: _labId,
+        initialValue: _labId,
         isExpanded: true,
         decoration: const InputDecoration(
           border: OutlineInputBorder(), labelText: 'Laboratorio', isDense: true,
@@ -2621,27 +2787,18 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Wrap(
-                            spacing: 24,
-                            runSpacing: 14,
-                            alignment: WrapAlignment.spaceBetween,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Semantics(header: true, child: Text(
-                                _admin ? switch (_adminSection) {
-                                  _AdminSection.laboratories => 'Administración de laboratorios',
-                                  _AdminSection.operators => 'Operadores y permisos',
-                                  _AdminSection.activity => 'Actividad del laboratorio',
-                                } : 'Laboratorio activo',
-                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: ColoresVitalia.texto,
-                                ),
-                              )),
-                              _labSelector(),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
+                          if (_admin) ...[
+                            SilWorkspaceHeading(
+                              title: switch (_adminSection) {
+                                _AdminSection.laboratories => 'Administración de laboratorios',
+                                _AdminSection.operators => 'Operadores y permisos',
+                                _AdminSection.activity => 'Actividad del laboratorio',
+                              },
+                              actions: _adminSection == _AdminSection.laboratories
+                                ? const [] : [_labSelector()],
+                            ),
+                            const SizedBox(height: 18),
+                          ],
                           if (_busy) const LinearProgressIndicator(
                             semanticsLabel: 'Cargando operación',
                           ),
@@ -2658,11 +2815,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                                 ),
                               ),
                             ),
-                          if (_operator) _station(),
-                          if (_admin && _labId != null) ...[
-                            _adminIndicators(),
-                            const SizedBox(height: 14),
-                          ],
+                          if (_operator)
+                            _labId == null ? _labSelector() : _station(),
                           if (_admin) _adminContent(),
                           const SizedBox(height: 20),
                           const Text(
