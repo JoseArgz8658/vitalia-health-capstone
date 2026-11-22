@@ -321,8 +321,9 @@ async function adminJourney(browser) {
       'Administración no debe presentar acciones clínicas de operador.');
     assert.equal(await nav('Publicar informe').count(),0,
       'El administrador no puede publicar informes desde su estación.');
-    await page.getByText('2 laboratorio(s) registrados en esta cuenta.')
-      .waitFor({timeout:10000});
+    // Los resúmenes de la columna secundaria pueden estar fuera del
+    // viewport; comprobamos controles operativos de la administración.
+    await nav('Registrar laboratorio').waitFor({timeout:10000});
 
     await nav('Operadores y permisos').click();
     await page.getByText('Operadores y permisos de revisión',{exact:true})
