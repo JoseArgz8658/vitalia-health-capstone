@@ -740,18 +740,30 @@ export function createSilMainService(db:Pool) {
       }>(
         `SELECT
           (SELECT count(*) FROM public.vitalia_sil_main_orders o
-             WHERE o.lab_id=l.id) AS "ordersTotal",
+             WHERE o.lab_id=l.id AND (st.site_access_mode='all' OR EXISTS(
+               SELECT 1 FROM public.vitalia_sil_main_staff_sites ss
+               WHERE ss.lab_id=l.id AND ss.account_id=$2 AND ss.site_id=o.site_id))) AS "ordersTotal",
           (SELECT count(*) FROM public.vitalia_sil_main_orders o
-             WHERE o.lab_id=l.id AND o.status='registered') AS registered,
+             WHERE o.lab_id=l.id AND (st.site_access_mode='all' OR EXISTS(
+               SELECT 1 FROM public.vitalia_sil_main_staff_sites ss
+               WHERE ss.lab_id=l.id AND ss.account_id=$2 AND ss.site_id=o.site_id)) AND o.status='registered') AS registered,
           (SELECT count(*) FROM public.vitalia_sil_main_orders o
-             WHERE o.lab_id=l.id AND o.status='report_attached') AS "inReview",
+             WHERE o.lab_id=l.id AND (st.site_access_mode='all' OR EXISTS(
+               SELECT 1 FROM public.vitalia_sil_main_staff_sites ss
+               WHERE ss.lab_id=l.id AND ss.account_id=$2 AND ss.site_id=o.site_id)) AND o.status='report_attached') AS "inReview",
           (SELECT count(*) FROM public.vitalia_sil_main_orders o
-             WHERE o.lab_id=l.id AND o.status='report_published') AS published,
+             WHERE o.lab_id=l.id AND (st.site_access_mode='all' OR EXISTS(
+               SELECT 1 FROM public.vitalia_sil_main_staff_sites ss
+               WHERE ss.lab_id=l.id AND ss.account_id=$2 AND ss.site_id=o.site_id)) AND o.status='report_published') AS published,
           (SELECT count(*) FROM public.vitalia_sil_main_pending_requests p
-             WHERE p.lab_id=l.id AND p.status='pending') AS "pendingRequests"
+             WHERE p.lab_id=l.id AND (st.site_access_mode='all' OR EXISTS(
+               SELECT 1 FROM public.vitalia_sil_main_staff_sites ss
+               WHERE ss.lab_id=l.id AND ss.account_id=$2 AND ss.site_id=p.site_id)) AND p.status='pending') AS "pendingRequests"
         FROM public.vitalia_sil_main_laboratories l
+        JOIN public.vitalia_sil_main_staff st ON st.lab_id=l.id
+          AND st.account_id=$2 AND st.kind='operator' AND st.active
         WHERE l.id=$1 AND l.active`,
-        [labId]);
+        [labId,operatorId]);
       if(!result.rows.length)throw new SilMainNotFound();
       const counts=result.rows[0];
       // PostgreSQL devuelve count() como bigint de texto.
@@ -793,14 +805,22 @@ export function createSilMainService(db:Pool) {
            AND ($4::text IS NULL OR o.order_number::text=$5 OR strpos(lower(a.email),lower($4))>0)
            AND ($6::text IS NULL OR o.status=$6)
            AND ($7::uuid IS NULL OR o.patient_id=$7)
+           AND ($8::boolean OR EXISTS (
+             SELECT 1 FROM public.vitalia_sil_main_staff st
+             WHERE st.lab_id=o.lab_id AND st.account_id=$9 AND st.active AND st.kind='operator'
+               AND (st.site_access_mode='all' OR EXISTS(
+                 SELECT 1 FROM public.vitalia_sil_main_staff_sites ss
+                 WHERE ss.lab_id=o.lab_id AND ss.account_id=$9 AND ss.site_id=o.site_id))))
          ORDER BY o.created_at DESC,o.id LIMIT $2 OFFSET $3`,
-        [labId,limit+1,offset,search,folio,filters.status??null,filters.patientId??null]);
+        [labId,limit+1,offset,search,folio,filters.status??null,filters.patientId??null,
+          role==='administrador',accountId]);
       return {orders:results.rows.slice(0,limit),hasMore:results.rows.length>limit};
     },
 
     async clinicalDetails(labId:string,orderId:string,operatorId:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
+        await requireOrderSite(tx,labId,orderId,operatorId);
         const status=await clinicalOrder(tx,labId,orderId);
         const containers=await containersFor(tx,orderId);
         const analytes=await analytesFor(tx,orderId);
@@ -818,6 +838,7 @@ export function createSilMainService(db:Pool) {
     async recentOrderActivity(labId:string,orderId:string,operatorId:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
+        await requireOrderSite(tx,labId,orderId,operatorId);
         const order=await tx.query(
           'SELECT 1 FROM public.vitalia_sil_main_orders WHERE id=$1 AND lab_id=$2',
           [orderId,labId]);
@@ -837,6 +858,7 @@ export function createSilMainService(db:Pool) {
     async receiveSample(labId:string,orderId:string,operatorId:string,code:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
+        await requireOrderSite(tx,labId,orderId,operatorId);
         if(await clinicalOrder(tx,labId,orderId)!=='registered')throw new SilMainConflict();
         const container=(await containersFor(tx,orderId)).find(item=>item.code===code);
         if(!container||container.barcode)throw new SilMainConflict();
@@ -874,6 +896,7 @@ export function createSilMainService(db:Pool) {
       values:{examCode:string;analyte:string;numericValue:number}[]){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
+        await requireOrderSite(tx,labId,orderId,operatorId);
         if(await clinicalOrder(tx,labId,orderId)!=='registered')throw new SilMainConflict();
         const containers=await containersFor(tx,orderId);
         if(!containers.length||containers.some(item=>!item.barcode))throw new SilMainConflict();
@@ -900,6 +923,7 @@ export function createSilMainService(db:Pool) {
       decision:'approved'|'returned',reason?:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx,true);
+        await requireOrderSite(tx,labId,orderId,operatorId);
         if(await clinicalOrder(tx,labId,orderId)!=='registered')throw new SilMainConflict();
         const result=await tx.query(
           `UPDATE public.vitalia_sil_main_result_sets SET status=$2
@@ -1041,14 +1065,20 @@ export function createSilMainService(db:Pool) {
                 created_at AS "createdAt",status,site_id AS "siteId"
          FROM public.vitalia_sil_main_pending_requests
          WHERE lab_id=$1 AND status='pending'
+           AND EXISTS(SELECT 1 FROM public.vitalia_sil_main_staff st
+             WHERE st.lab_id=$1 AND st.account_id=$4 AND st.kind='operator' AND st.active
+               AND (st.site_access_mode='all' OR EXISTS (
+                 SELECT 1 FROM public.vitalia_sil_main_staff_sites ss
+                 WHERE ss.lab_id=$1 AND ss.account_id=$4 AND ss.site_id=site_id)))
          ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`,
-        [labId,limit,offset]);
+        [labId,limit,offset,operatorId]);
       return {pending:found.rows};
     },
 
     async downloadPendingMedicalRequest(labId:string,pendingId:string,operatorId:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
+        await requirePendingSite(tx,labId,pendingId,operatorId);
         const response=await tx.query<{fileName:string;bytes:Buffer;sha256:string}>(
           `SELECT file_name AS "fileName",pdf_data AS bytes,pdf_sha256 AS sha256
            FROM public.vitalia_sil_main_pending_requests
@@ -1070,6 +1100,7 @@ export function createSilMainService(db:Pool) {
       examCodes:string[],input:Omit<MedicalRequestInput,'fileName'>,siteId?:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
+        await requirePendingSite(tx,labId,pendingId,operatorId);
         const response=await tx.query<{fileName:string;bytes:Buffer;sha256:string;patientEmail:string|null;siteId:string|null}>(
           `SELECT file_name AS "fileName",pdf_data AS bytes,pdf_sha256 AS sha256,
                   patient_email AS "patientEmail",site_id AS "siteId"
@@ -1119,6 +1150,7 @@ export function createSilMainService(db:Pool) {
         'patient_mismatch'|'request_withdrawn'|'other'){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
+        await requirePendingSite(tx,labId,pendingId,operatorId);
         const current=await tx.query<{status:string}>(
           `SELECT status FROM public.vitalia_sil_main_pending_requests
            WHERE id=$1 AND lab_id=$2 FOR UPDATE`,[pendingId,labId]);
@@ -1153,6 +1185,7 @@ export function createSilMainService(db:Pool) {
       checkMedicalRequest(input,bytes);
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
+        await requireOrderSite(tx,labId,orderId,operatorId);
         const order=await tx.query<{patientId:string;status:string}>(
           `SELECT patient_id AS "patientId",status
            FROM public.vitalia_sil_main_orders
@@ -1166,6 +1199,7 @@ export function createSilMainService(db:Pool) {
     async downloadMedicalRequest(labId:string,orderId:string,actorId:string){
       return transaction(async tx=>{
         await operator(labId,actorId,tx);
+        await requireOrderSite(tx,labId,orderId,actorId);
         const file=await tx.query<{
           id:string;fileName:string;bytes:Buffer;sha256:string
         }>(
@@ -1194,6 +1228,7 @@ export function createSilMainService(db:Pool) {
         throw new SilMainConflict();
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
+        await requireOrderSite(tx,labId,orderId,operatorId);
         const row=await tx.query<{
           patientId:string;status:string;displayName:string
         }>(
@@ -1234,6 +1269,7 @@ export function createSilMainService(db:Pool) {
     async reportForReview(labId:string,orderId:string,operatorId:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx,true);
+        await requireOrderSite(tx,labId,orderId,operatorId);
         const rows=await tx.query<{
           id:string;fileName:string;data:Buffer;sha256:string
         }>(
@@ -1260,6 +1296,7 @@ export function createSilMainService(db:Pool) {
     async publishReport(labId:string,orderId:string,operatorId:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx,true);
+        await requireOrderSite(tx,labId,orderId,operatorId);
         const report=await tx.query<{id:string}>(
           `UPDATE public.vitalia_sil_main_reports r
            SET published_at=CURRENT_TIMESTAMP,published_by=$3
