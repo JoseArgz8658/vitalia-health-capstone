@@ -16,6 +16,8 @@ function demo(role='operador_laboratorio',authenticated=true){
     laboratoriesFor:jest.fn().mockResolvedValue({laboratories:[]}),
     createLaboratory:jest.fn().mockResolvedValue({laboratory:{id:lab}}),
     listStaff:jest.fn().mockResolvedValue({staff:[]}),
+    setStaffSites:jest.fn().mockResolvedValue({membership:{siteAccessMode:'selected'}}),
+    inviteOperator:jest.fn().mockResolvedValue({invitation:{code:'x'.repeat(43)}}),
     setReviewPermission:jest.fn().mockResolvedValue({membership:{canReviewReports:true}}),
     setStaffMembershipActive:jest.fn().mockResolvedValue({membership:{active:false,canReviewReports:false}}),
     reportForReview:jest.fn().mockResolvedValue({fileName:'revision.pdf',bytes:Buffer.from('%PDF-1.4')}),
@@ -327,6 +329,10 @@ test('cierre de derivación es transaccional y registra solo motivo codificado',
     query:jest.fn(async(sql,params=[])=>{
       if(sql==='BEGIN'||sql==='COMMIT'||sql==='ROLLBACK')return {rows:[]};
       if(sql.includes('FROM public.vitalia_sil_main_staff'))return {rows:[{allowed:1}]};
+      if(sql.includes('FROM public.vitalia_sil_main_pending_requests p')) {
+        if(params[1]!==lab)return {rows:[]};
+        return {rows:[{allowed:1}]};
+      }
       if(sql.includes('SELECT status FROM public.vitalia_sil_main_pending_requests')){
         if(params[1]!==lab)return {rows:[]};
         return {rows:[{status}]};
@@ -472,4 +478,49 @@ test('la verificación de dirección se restringe a administradores y al territo
   expect((await request(operatorSession.application).post(path).set(bearer).send(body)).status).toBe(403);
   expect((await request(admin.application).post(path).set(bearer)
     .send({...body,region:'Ñuble'})).status).toBe(400);
+});
+
+test('administración valida y asigna sedes; otros roles no pueden hacerlo',async()=>{
+  const path='/api/sil/main/labs/'+lab+'/staff/sites';
+  const chosen='66666666-6666-4666-8666-666666666666';
+  const access={mode:'selected',siteIds:[chosen]};
+  const admin=demo('administrador');
+  await request(admin.application).post(path).set(bearer)
+    .send({accountId:operator,siteAccess:access}).expect(200);
+  expect(admin.service.setStaffSites).toHaveBeenCalledWith(lab,operator,operator,access);
+  for(const role of ['operador_laboratorio','paciente']){
+    const denied=demo(role);
+    await request(denied.application).post(path).set(bearer)
+      .send({accountId:operator,siteAccess:access}).expect(403);
+    expect(denied.service.setStaffSites).not.toHaveBeenCalled();
+  }
+  for(const invalid of [
+    {accountId:operator,siteAccess:{mode:'selected',siteIds:[]}},
+    {accountId:operator,siteAccess:{mode:'all',siteIds:[chosen]}},
+    {accountId:operator,siteAccess:{mode:'selected',siteIds:['invalido']}},
+    {accountId:operator,siteAccess:{mode:'all',siteIds:[]},password:'secret'},
+  ]){
+    await request(admin.application).post(path).set(bearer).send(invalid).expect(400);
+  }
+  expect(admin.service.setStaffSites).toHaveBeenCalledTimes(1);
+});
+
+test('alta y vinculación admiten varias sedes sin cambiar contrato antiguo',async()=>{
+  const admin=demo('administrador');
+  const chosen=[
+    '66666666-6666-4666-8666-666666666666',
+    '77777777-7777-4777-8777-777777777777',
+  ];
+  const access={mode:'selected',siteIds:chosen};
+  await request(admin.application).post('/api/sil/main/labs/'+lab+'/staff')
+    .set(bearer).send({email:'operador@example.invalid',siteAccess:access}).expect(201);
+  expect(admin.service.grantStaff).toHaveBeenCalledWith(
+    lab,{email:'operador@example.invalid'},operator,access);
+  await request(admin.application).post('/api/sil/main/labs/'+lab+'/operator-invitations')
+    .set(bearer).send({email:'nuevo@example.invalid',siteAccess:access}).expect(201);
+  expect(admin.service.inviteOperator).toHaveBeenCalledWith(
+    lab,'nuevo@example.invalid',operator,access);
+  await request(admin.application).post('/api/sil/main/labs/'+lab+'/operator-invitations')
+    .set(bearer).send({email:'nuevo@example.invalid',
+      siteAccess:{mode:'selected',siteIds:[]}}).expect(400);
 });
