@@ -179,7 +179,7 @@ class _SilPatientSearchDialogState extends State<SilPatientSearchDialog> {
                               child: ListView.separated(
                                 key: const ValueKey('sil-patient-search-results'),
                                 itemCount: _patients.length,
-                                separatorBuilder: (_, _) => const Divider(height: 1),
+                                separatorBuilder: (context, index) => const Divider(height: 1),
                                 itemBuilder: (context, index) {
                                   final patient = _patients[index];
                                   final name = _displayName(patient);
