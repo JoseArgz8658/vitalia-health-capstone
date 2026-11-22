@@ -6,7 +6,7 @@ solicitudes, ordenes, revision y publicacion de informes ya autorizados, con dat
 
 ## 1. Condiciones antes de compilar o desplegar
 
-El backend usa la base principal `vitalia`, esquema postanalitico **042** una vez aplicado mediante el procedimiento controlado (la instalacion 041 existente no se modifica automaticamente)
+El backend usa la base principal `vitalia`, esquema postanalitico **043** una vez aplicado mediante el procedimiento controlado (la instalacion 041 existente no se modifica automaticamente)
 integrado mediante el procedimiento controlado. El codigo distingue:
 
 | Elemento | Configuracion esperada |
@@ -24,7 +24,7 @@ contiene estos valores hasta que se vuelva a compilar.
 
 **Importante:** `deploy/configurar.ps1` prepara variables generales pero
 **no** instala ni autoriza el SIL principal. En la base principal, el comando
-`migrate-all` solo verifica el esquema; **no aplica** las migraciones 041 ni 042.
+`migrate-all` solo verifica el esquema; **no aplica** las migraciones 041, 042 ni 043.
 Si el esquema no esta preparado, detener el proceso. El procedimiento de
 migracion controlada exige respaldo, ensayo aislado y aprobacion explicita.
 No modificar una base existente para satisfacer esta guia.
@@ -54,7 +54,7 @@ docker compose exec api node dist/database/migrate-all.js
 ```
 
 En `vitalia` ese comando ejecuta una **consulta de solo lectura**: requiere
-las migraciones SIL hasta la 042 y la tabla de derivaciones pendientes con cierre administrativo.
+las migraciones SIL hasta la 043 y la tabla de derivaciones pendientes con cierre administrativo.
 No ejecutar el migrador general contra `vitalia_dev` para estas comprobaciones,
 porque ese entorno tiene una politica de migraciones diferente.
 
@@ -160,3 +160,23 @@ el servidor local, Docker ni el volumen principal. No ejecutar
 **Pruebas automáticas:** Jest verifica permisos, motivos, atomicidad y
 auditoria; el recorrido CI en Edge/PostgreSQL temporal comprueba cierre,
 ausencia de nuevas ordenes y bloqueo de finalizacion posterior.
+
+## 8. Ciclo de vida de operadores por laboratorio (esquema 043)
+
+El administrador puede suspender o reactivar el acceso de un operador al
+laboratorio seleccionado mediante `POST /labs/:labId/staff/membership`.
+El cambio es transaccional, exige el rol administrador, registra el actor
+en auditoría y se limita a una membresía existente. No elimina cuentas,
+contraseñas, documentos ni asociaciones en otros laboratorios.
+
+Al suspender también se retira el permiso de revisión. Reactivar el acceso
+**no** lo repone: el administrador debe otorgarlo explícitamente. Una cuenta
+sin rol global activo de operador no puede reactivarse mediante esta ruta.
+Las sesiones conservan su identidad, pero las operaciones en el laboratorio
+quedan bloqueadas por la membresía inactiva.
+
+La migración `043_sil_main_operator_membership.sql` sólo amplía los
+eventos permitidos de auditoría y no reescribe registros anteriores.
+La instalación en `vitalia` principal requiere respaldo, ensayo aislado
+y aplicación explícita. No iniciar un backend nuevo contra un esquema
+anterior a la versión requerida.

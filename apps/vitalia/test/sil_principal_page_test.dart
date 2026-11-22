@@ -5,6 +5,9 @@ import 'package:vitalia_health/features/laboratorio/sil_principal_page.dart';
 
 class _StationApi extends AuthApi {
   final reviewActions=<Map<String,dynamic>>[];
+  final staffMembershipActions=<Map<String,dynamic>>[];
+  bool staffActive=true;
+  bool staffReview=false;
   final pendingCompletions=<Map<String,dynamic>>[];
   final pendingClosures=<Map<String,dynamic>>[];
   final requestPaths=<String>[];
@@ -103,6 +106,13 @@ class _StationApi extends AuthApi {
         'hasMore':false,
       };
     }
+    if(requestPath=='/labs/$allowedLab/staff/membership' && body!=null){
+      staffMembershipActions.add(body);
+      staffActive=body['active']==true;
+      if(!staffActive)staffReview=false;
+      return {'membership':{'active':staffActive,
+        'canReviewReports':staffReview}};
+    }
     if(requestPath=='/labs/$allowedLab/staff/review-permission' && body!=null){
       reviewActions.add(body);
       return {'membership':{'canReviewReports':body['enabled']}};
@@ -141,8 +151,8 @@ class _StationApi extends AuthApi {
           {
             'accountId':'55555555-5555-4555-8555-555555555555',
             'email':'operador@laboratorio.invalid',
-            'active':true,
-            'canReviewReports':false,
+            'active':staffActive,
+            'canReviewReports':staffReview,
           },
         ],
       },
@@ -410,6 +420,54 @@ void main() {
     expect(find.text('Cifras parciales de los registros recientes cargados.'),
       findsOneWidget);
     expect(find.text('Totales actuales del laboratorio seleccionado.'), findsNothing);
+    expect(tester.takeException(),isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('administrador confirma suspensión y reactivación por laboratorio',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(()=>tester.binding.setSurfaceSize(null));
+    final api=_StationApi();
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home:SilPrincipalPage(
+      api:api,role:'administrador',onExpired:(){},onLogout:(){},
+    )));
+    await tester.pumpAndSettle();
+    final operators=find.widgetWithText(TextButton,'Operadores y permisos');
+    await tester.ensureVisible(operators);
+    await tester.tap(operators);
+    await tester.pumpAndSettle();
+    final menu=find.byTooltip('Administrar acceso al laboratorio');
+    await tester.ensureVisible(menu);
+    await tester.tap(menu);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Suspender acceso').last);
+    await tester.pumpAndSettle();
+    expect(find.text('¿Suspender acceso?'),findsOneWidget);
+    await tester.tap(find.text('Cancelar'));
+    await tester.pumpAndSettle();
+    expect(api.staffMembershipActions,isEmpty);
+    await tester.ensureVisible(menu);
+    await tester.tap(menu);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Suspender acceso').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirmar suspensión'));
+    await tester.pumpAndSettle();
+    expect(api.staffMembershipActions,[{
+      'accountId':'55555555-5555-4555-8555-555555555555',
+      'active':false,
+    }]);
+    expect(find.text('Desactivada'),findsOneWidget);
+    await tester.ensureVisible(menu);
+    await tester.tap(menu);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reactivar acceso').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirmar reactivación'));
+    await tester.pumpAndSettle();
+    expect(api.staffMembershipActions.last['active'],true);
+    expect(find.text('Activa'),findsWidgets);
     expect(tester.takeException(),isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 

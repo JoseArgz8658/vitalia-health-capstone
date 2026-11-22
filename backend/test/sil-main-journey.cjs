@@ -1068,6 +1068,41 @@ async function main() {
         await browserJourney(ready,base,sampleOrder,samplePdf);
       }
     }
+    if(!manual) {
+      // Ensayo real de suspensión por laboratorio, después del recorrido Edge.
+      const membership=base+'/staff/membership';
+      await call('uploader','POST',membership,403,{json:{
+        accountId:ids.uploader,active:false,
+      }});
+      await call('admin','POST',membership,400,{json:{
+        accountId:ids.uploader,active:'false',
+      }});
+      const suspended=(await (await call('admin','POST',membership,200,{json:{
+        accountId:ids.uploader,active:false,
+      }})).json()).membership;
+      assert.equal(suspended.active,false);
+      assert.equal(suspended.canReviewReports,false);
+      await call('uploader','GET',base+'/summary',403);
+      await call('admin','POST',membership,409,{json:{
+        accountId:ids.uploader,active:false,
+      }});
+      const restored=(await (await call('admin','POST',membership,200,{json:{
+        accountId:ids.uploader,active:true,
+      }})).json()).membership;
+      assert.equal(restored.active,true);
+      assert.equal(restored.canReviewReports,false,
+        'Reactivar no debe recuperar permisos de revisión.');
+      await call('uploader','GET',base+'/summary',200);
+      const history=(await db.query(
+        `SELECT action,details FROM public.vitalia_sil_main_audit
+         WHERE lab_id=$1 AND action IN
+         ('operator_membership_disabled','operator_membership_enabled')
+         ORDER BY created_at`,[base.slice(6)])).rows;
+      assert.deepEqual(history.map(x=>x.action),
+        ['operator_membership_disabled','operator_membership_enabled']);
+      assert.ok(history.every(x=>x.details.accountId===ids.uploader));
+      console.log('API: suspensión y reactivación por laboratorio auditadas.');
+    }
   } finally {
     if(webServer)await new Promise(done=>webServer.close(done));
     if(server)await new Promise(done=>server.close(done));

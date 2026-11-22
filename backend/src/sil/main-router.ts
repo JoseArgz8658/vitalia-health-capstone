@@ -169,6 +169,16 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       res.locals.account.id));
   });
 
+  router.post('/labs/:labId/staff/membership',administrator,labPath,async(req,res)=>{
+    const data=z.object({accountId:uuid,active:z.boolean()}).strict().safeParse(req.body);
+    if(!data.success){
+      res.status(400).json({error:{code:'INVALID_STAFF_MEMBERSHIP'}});return;
+    }
+    res.json(await main.setStaffMembershipActive(
+      req.params.labId as string,data.data.accountId,
+      res.locals.account.id,data.data.active));
+  });
+
   router.post('/labs/:labId/staff/review-permission',administrator,labPath,async(req,res)=>{
     const data=z.object({accountId:uuid,enabled:z.boolean()}).strict().safeParse(req.body);
     if(!data.success){

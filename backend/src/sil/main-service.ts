@@ -43,7 +43,8 @@ export function createSilMainService(db:Pool) {
       'sample_received'|'results_recorded'|'results_approved'|'results_returned'|
       'patient_invited'|'patient_activated'|
       'pending_request_saved'|'pending_request_downloaded'|'pending_request_completed'|
-      'pending_request_cancelled',
+      'pending_request_cancelled'|'operator_membership_disabled'|
+      'operator_membership_enabled',
     orderId:string|null=null,details:Record<string,unknown>={}) {
     await tx.query(
       `INSERT INTO public.vitalia_sil_main_audit
@@ -316,6 +317,48 @@ export function createSilMainService(db:Pool) {
             {accountId,enabled});
         }
         return {membership:{labId,accountId,canReviewReports:enabled}};
+      });
+    },
+
+    // Suspende o restablece solamente la membresía de ESTE laboratorio;
+    // no elimina la cuenta ni altera permisos en otros laboratorios.
+    async setStaffMembershipActive(labId:string,accountId:string,
+      adminId:string,enabled:boolean){
+      return transaction(async tx=>{
+        const lab=await tx.query(
+          'SELECT 1 FROM public.vitalia_sil_main_laboratories WHERE id=$1 AND active FOR UPDATE',
+          [labId]);
+        if(!lab.rows.length)throw new SilMainNotFound();
+        const existing=await tx.query<{active:boolean;roleActive:boolean}>(
+          `SELECT s.active,
+             EXISTS(SELECT 1 FROM public.vitalia_account_roles r
+               WHERE r.account_id=s.account_id
+                 AND r.role_code='operador_laboratorio' AND r.active)
+               AS "roleActive"
+           FROM public.vitalia_sil_main_staff s
+           WHERE s.lab_id=$1 AND s.account_id=$2 AND s.kind='operator'
+           FOR UPDATE`,[labId,accountId]);
+        const current=existing.rows[0];
+        if(!current)throw new SilMainNotFound();
+        if(current.active===enabled || (enabled&&!current.roleActive))
+          throw new SilMainConflict();
+        const updated=await tx.query<{active:boolean;canReviewReports:boolean}>(
+          `UPDATE public.vitalia_sil_main_staff
+           SET active=$3,can_review_reports=CASE
+             WHEN $3::boolean THEN can_review_reports ELSE false END
+           WHERE lab_id=$1 AND account_id=$2
+             AND kind='operator' AND active<>$3
+           RETURNING active,can_review_reports AS "canReviewReports"`,
+          [labId,accountId,enabled]);
+        const membership=updated.rows[0];
+        if(!membership)throw new SilMainConflict();
+        await audit(tx,labId,adminId,enabled?
+          'operator_membership_enabled':'operator_membership_disabled',
+          null,{accountId});
+        return {membership:{
+          labId,accountId,active:membership.active,
+          canReviewReports:membership.canReviewReports,
+        }};
       });
     },
 
