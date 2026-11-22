@@ -143,7 +143,7 @@ async function reach(page, locator, description) {
 async function adminJourney(browser) {
   const page=await browser.newPage({viewport:{width:1440,height:1050}});
   try {
-    await signIn(page,'admin','#/laboratorio');
+    await signIn(page,'admin','#/administracion');
     const button=name=>page.getByRole('button',{name,exact:true});
     await page.getByText('Administración de laboratorios',{exact:true}).waitFor();
     await button('Laboratorios').waitFor();
