@@ -8,6 +8,9 @@ class _StationApi extends AuthApi {
   final staffMembershipActions=<Map<String,dynamic>>[];
   bool staffActive=true;
   bool staffReview=false;
+  bool sitesForOperator=false;
+  final operatorSiteActions=<Map<String,dynamic>>[];
+  final operatorInvitations=<Map<String,dynamic>>[];
   final pendingCompletions=<Map<String,dynamic>>[];
   final pendingClosures=<Map<String,dynamic>>[];
   final requestPaths=<String>[];
@@ -140,7 +143,24 @@ class _StationApi extends AuthApi {
       reviewActions.add(body);
       return {'membership':{'canReviewReports':body['enabled']}};
     }
-    if (requestPath.endsWith('/sites')) return {'sites': []};
+    if (requestPath=='/labs/$allowedLab/staff/sites' && body!=null) {
+      operatorSiteActions.add(body);
+      return {'membership':body};
+    }
+    if (requestPath=='/labs/$allowedLab/operator-invitations' && body!=null) {
+      operatorInvitations.add(body);
+      return {'invitation':{
+        'code':'a' * 43,
+        'email':body['email'],
+      }};
+    }
+    if (requestPath.endsWith('/sites')) return {'sites':sitesForOperator
+      ? [
+          {'id':'66666666-6666-4666-8666-666666666666','name':'Sede Norte',
+            'commune':'Santiago','active':true},
+          {'id':'77777777-7777-4777-8777-777777777777','name':'Sede Sur',
+            'commune':'Providencia','active':true},
+        ] : []};
     return switch (requestPath) {
       '/labs' => {
         'laboratories': [
@@ -177,6 +197,9 @@ class _StationApi extends AuthApi {
             'email':'operador@laboratorio.invalid',
             'active':staffActive,
             'canReviewReports':staffReview,
+            'siteAccessMode':sitesForOperator?'selected':'all',
+            'siteIds':sitesForOperator
+              ? ['66666666-6666-4666-8666-666666666666']:<String>[],
           },
         ],
       },
@@ -589,16 +612,50 @@ void main() {
     await tester.tap(operators);
     await tester.pumpAndSettle();
     expect(find.text('operador@laboratorio.invalid'), findsOneWidget);
-    expect(find.text('Correo del nuevo operador'), findsNothing);
-    final invite = find.widgetWithText(FilledButton, 'Invitar operador');
+    expect(find.text('Correo del operador'), findsNothing);
+    final invite = find.widgetWithText(FilledButton, 'Agregar operador');
     await tester.ensureVisible(invite);
     await tester.tap(invite);
     await tester.pumpAndSettle();
-    expect(find.text('Correo del nuevo operador'), findsOneWidget);
+    expect(find.text('Correo del operador'), findsOneWidget);
     await tester.tap(find.widgetWithText(TextButton, 'Cancelar'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+
+  testWidgets('administrador asigna dos sedes y confirma el alcance en la API', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1100));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api=_StationApi()..sitesForOperator=true;
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home: SilPrincipalPage(
+      api:api,role:'administrador',onExpired:(){},onLogout:(){},
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton,'Operadores y permisos'));
+    await tester.pumpAndSettle();
+    final edit=find.widgetWithText(OutlinedButton,'Asignar sedes').first;
+    await tester.ensureVisible(edit);
+    await tester.tap(edit);
+    await tester.pumpAndSettle();
+    expect(find.text('Solo sedes seleccionadas'),findsOneWidget);
+    final second=find.widgetWithText(CheckboxListTile,'Sede Sur');
+    await tester.ensureVisible(second);
+    await tester.tap(second);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton,'Guardar asignación'));
+    await tester.pumpAndSettle();
+    expect(api.operatorSiteActions,singleElement);
+    expect(api.operatorSiteActions.single['siteAccess'],{
+      'mode':'selected',
+      'siteIds':[
+        '66666666-6666-4666-8666-666666666666',
+        '77777777-7777-4777-8777-777777777777',
+      ],
+    });
+    expect(tester.takeException(),isNull);
+  },variant:TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('administración muestra operadores y autoriza revisión desde un botón', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
