@@ -159,7 +159,48 @@ Finder _field(String label) => find.byWidgetPredicate(
 );
 
 
+Future<void> _selectSavedReferral(WidgetTester tester) async {
+  final stored = _field('Derivación pendiente guardada');
+  await tester.ensureVisible(stored);
+  await tester.tap(stored);
+  await tester.pumpAndSettle();
+  await tester.tap(find.textContaining('derivacion-ejemplo.pdf').last);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _findSavedReferralPatient(WidgetTester tester) async {
+  final search = find.widgetWithText(FilledButton, 'Buscar paciente activado');
+  await tester.ensureVisible(search);
+  await tester.tap(search);
+  await tester.pumpAndSettle();
+}
+
 void main() {
+
+  testWidgets('Las estaciones mantienen navegación en Android', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    for (final role in ['operador_laboratorio', 'administrador']) {
+      final api = _StationApi();
+      addTearDown(api.close);
+      await tester.pumpWidget(MaterialApp(
+        home: SilPrincipalPage(
+          key: ValueKey(role),
+          api: api,
+          role: role,
+          onExpired: () {},
+          onLogout: () {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Abre Vitalia en un computador'), findsNothing);
+      expect(api.requestPaths, contains('/labs'));
+      expect(find.text(role == 'administrador'
+          ? 'Administración de laboratorios' : 'Panel del laboratorio'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
   testWidgets('se recupera un PDF pendiente y no se crea orden sin validación', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
     addTearDown(()=>tester.binding.setSurfaceSize(null));
@@ -172,33 +213,35 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton,'Recibir solicitud'));
     await tester.pumpAndSettle();
-    expect(find.text('Guardar derivación pendiente'),findsOneWidget);
-    final submit=find.widgetWithText(FilledButton,'Crear orden con solicitud');
-    expect(tester.widget<FilledButton>(submit).onPressed,isNull);
-    final stored=find.byWidgetPredicate((widget)=>
-      widget is DropdownButtonFormField<String> &&
-      widget.decoration.labelText=='Derivación pendiente guardada');
-    await tester.ensureVisible(stored);
-    await tester.tap(stored);
+    expect(find.text('Guardar derivación pendiente'), findsNothing);
+    expect(find.text('Buscar paciente activado'), findsNothing);
+    final submit = find.widgetWithText(FilledButton, 'Crear orden con solicitud');
+    expect(submit, findsNothing);
+    await _selectSavedReferral(tester);
+    expect(find.text('Datos identificatorios sugeridos por el PDF'), findsOneWidget);
+    expect(find.text('Ana Prueba'), findsNothing);
+    await tester.ensureVisible(find.text('Datos identificatorios sugeridos por el PDF'));
+    await tester.tap(find.text('Datos identificatorios sugeridos por el PDF'));
     await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('derivacion-ejemplo.pdf').last);
+    expect(find.text('Ana Prueba'), findsOneWidget);
+    expect(find.text('Descargar derivación pendiente original'), findsOneWidget);
+    expect(submit, findsNothing);
+    final invite = find.widgetWithText(OutlinedButton, 'Emitir invitación de paciente');
+    expect(invite, findsNothing);
+    await tester.ensureVisible(find.text('Invitar a un paciente nuevo'));
+    await tester.tap(find.text('Invitar a un paciente nuevo'));
     await tester.pumpAndSettle();
-    expect(find.text('Datos identificatorios sugeridos por el PDF'),findsOneWidget);
-    expect(find.text('Ana Prueba'),findsOneWidget);
-    expect(find.text('Descargar derivación pendiente original'),findsOneWidget);
-    expect(find.text('Referencia de solicitud'),findsNothing);
-    final date=find.byWidgetPredicate((widget)=>widget is TextField &&
-        widget.decoration?.labelText=='Fecha de solicitud médica (AAAA-MM-DD)');
-    expect(tester.widget<TextField>(date).controller!.text,'2024-01-01');
-    final invite = find.widgetWithText(OutlinedButton,'Emitir invitación de paciente');
     expect(tester.widget<OutlinedButton>(invite).onPressed, isNull,
       reason: 'Antes de invitar debe cotejarse la identidad.');
-    final button = find.widgetWithText(FilledButton,'Crear orden con solicitud');
-    expect(tester.widget<FilledButton>(button).onPressed, isNull,
-      reason: 'La cuenta debe estar activada y el PDF cotejado.');
+    await _findSavedReferralPatient(tester);
+    expect(find.text('Referencia de solicitud'), findsNothing);
+    final date = find.widgetWithText(TextField, 'Fecha de solicitud médica (AAAA-MM-DD)');
+    expect(tester.widget<TextField>(date).controller!.text, '2024-01-01');
+    expect(tester.widget<FilledButton>(submit).onPressed, isNull,
+      reason: 'La cuenta está activa, pero aún falta cotejar el PDF.');
     expect(api.pendingCompletions, isEmpty);
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('fecha médica propone hoy cuando el PDF pendiente carece de fecha legible', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
@@ -212,14 +255,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton,'Recibir solicitud'));
     await tester.pumpAndSettle();
-    final stored=find.byWidgetPredicate((widget)=>
-      widget is DropdownButtonFormField<String> &&
-      widget.decoration.labelText=='Derivación pendiente guardada');
-    await tester.ensureVisible(stored);
-    await tester.tap(stored);
-    await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('derivacion-ejemplo.pdf').last);
-    await tester.pumpAndSettle();
+    await _selectSavedReferral(tester);
+    await _findSavedReferralPatient(tester);
     final date=find.byWidgetPredicate((widget)=>widget is TextField &&
       widget.decoration?.labelText=='Fecha de solicitud médica (AAAA-MM-DD)');
     final today=DateTime.now().toIso8601String().substring(0,10);
@@ -227,12 +264,12 @@ void main() {
     expect(find.text('Referencia de solicitud'),findsNothing);
     expect(find.textContaining('Vitalia lo asigna automáticamente'),findsOneWidget);
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('desde derivación permite localizar paciente activado sin escribir UUID', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final api=_StationApi();
+    final api=_StationApi()..showPending=true;
     addTearDown(api.close);
     await tester.pumpWidget(MaterialApp(
       home:SilPrincipalPage(
@@ -248,28 +285,16 @@ void main() {
     await tester.tap(requests);
     await tester.pumpAndSettle();
 
-    expect(find.text('Paciente de esta derivación'),findsOneWidget);
-    final invite=find.widgetWithText(OutlinedButton,'Emitir invitación de paciente');
-    expect(invite,findsOneWidget);
-    expect(tester.widget<OutlinedButton>(invite).onPressed,isNull,
-      reason:'No se emiten invitaciones desde una derivación sin PDF.');
-    final emailField=find.byWidgetPredicate((widget)=>
-      widget is TextField && widget.decoration?.labelText=='Correo del paciente');
-    await tester.ensureVisible(emailField);
-    await tester.enterText(emailField,'prueba@example.invalid');
-    await tester.pumpAndSettle();
-
-    final search=find.widgetWithText(OutlinedButton,'Buscar paciente activado');
-    await tester.ensureVisible(search);
-    await tester.tap(search);
-    await tester.pumpAndSettle();
+    expect(find.text('Buscar paciente activado'), findsNothing);
+    await _selectSavedReferral(tester);
+    await _findSavedReferralPatient(tester);
     expect(find.textContaining('Cuenta activada y vinculada'),findsOneWidget);
     // El identificador técnico queda en el estado del programa, no en el formulario.
-    expect(find.text('Paciente encontrado en este laboratorio'), findsOneWidget);
+    expect(find.text('3. Revisar la solicitud y los exámenes'), findsOneWidget);
     expect(find.text('Seleccionar paciente por identificador (avanzado)'), findsNothing);
     expect(find.text('UUID del paciente vinculado'), findsNothing);
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('órdenes manuales seleccionan paciente activo por nombre, nunca por UUID', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1050));
@@ -294,7 +319,7 @@ void main() {
     expect(patientSelection, findsOneWidget);
     expect(find.text('Buscar paciente por nombre o correo'), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('panel usa totales completos sin confundirlos con las últimas órdenes', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
@@ -309,7 +334,8 @@ void main() {
     expect(find.text('104'),findsWidgets);
     expect(find.text('70'),findsOneWidget);
     expect(find.text('14'),findsWidgets);
-    expect(find.text('Total del laboratorio'),findsNWidgets(5));
+    expect(find.text('Total de órdenes'), findsOneWidget);
+    expect(find.text('Accesos rápidos'), findsNothing);
     expect(find.text('Totales actuales del laboratorio seleccionado.'),
       findsOneWidget);
     expect(find.text('Revisión interna (14)'),findsOneWidget);
@@ -324,7 +350,7 @@ void main() {
       reason:'Nunca mostrar cifras del laboratorio anterior.');
     expect(find.text('0'),findsWidgets);
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('si falla resumen muestra alcance parcial en vez de fingir totales', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
@@ -335,11 +361,45 @@ void main() {
       api:api,role:'operador_laboratorio',onExpired:(){},onLogout:(){},
     )));
     await tester.pumpAndSettle();
-    expect(find.text('Solo lista reciente (máx. 50)'),findsNWidgets(5));
-    expect(find.textContaining('no representan el total del laboratorio'),
+    expect(find.text('Cifras parciales de los registros recientes cargados.'),
       findsOneWidget);
+    expect(find.text('Totales actuales del laboratorio seleccionado.'), findsNothing);
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('administración en una ventana estrecha abre y cancela formularios desde el directorio', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api = _StationApi();
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home: SilPrincipalPage(
+      api: api, role: 'administrador', onExpired: () {}, onLogout: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Administración de laboratorios'), findsOneWidget);
+    expect(find.text('Nombre del laboratorio'), findsNothing);
+    await tester.tap(find.widgetWithText(FilledButton, 'Registrar laboratorio'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nombre del laboratorio'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'Cancelar'));
+    await tester.pumpAndSettle();
+
+    final operators = find.widgetWithText(TextButton, 'Operadores y permisos');
+    await tester.ensureVisible(operators);
+    await tester.tap(operators);
+    await tester.pumpAndSettle();
+    expect(find.text('operador@laboratorio.invalid'), findsOneWidget);
+    expect(find.text('Correo del nuevo operador'), findsNothing);
+    final invite = find.widgetWithText(FilledButton, 'Invitar operador');
+    await tester.ensureVisible(invite);
+    await tester.tap(invite);
+    await tester.pumpAndSettle();
+    expect(find.text('Correo del nuevo operador'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, 'Cancelar'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('administración muestra operadores y autoriza revisión desde un botón', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
@@ -361,7 +421,7 @@ void main() {
     // La gestión de personas tiene una pestaña propia, sin perder sus acciones.
     await tester.tap(find.widgetWithText(TextButton,'Operadores y permisos'));
     await tester.pumpAndSettle();
-    expect(find.text('Operadores y permisos de revisión'),findsOneWidget);
+    expect(find.text('Directorio de operadores'),findsOneWidget);
     expect(find.text('operador@laboratorio.invalid'),findsOneWidget);
     final authorize=find.widgetWithText(OutlinedButton,'Autorizar revisión');
     await tester.ensureVisible(authorize);
@@ -376,7 +436,7 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton,'Actividad'));
     await tester.pumpAndSettle();
     expect(find.text('Estado administrativo'),findsOneWidget);
-    expect(find.textContaining('no constituye un historial de'),findsOneWidget);
+    expect(find.textContaining('El historial de auditoría administrativa requiere'),findsOneWidget);
     expect(find.text('Gestión de órdenes'),findsNothing);
     expect(find.text('1 operadores asociados'), findsOneWidget);
 
@@ -403,7 +463,7 @@ void main() {
     expect(clinicalRequests, isEmpty,
       reason: 'El panel administrativo solo necesita información del personal.');
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('revisión encuentra informes antiguos con paginación y borra confirmaciones', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
@@ -428,7 +488,7 @@ void main() {
       [_StationApi.ownOrder,_StationApi.otherOrder]);
     expect(find.text('Página 1'),findsOneWidget);
     final publish=find.widgetWithText(FilledButton,'Publicar informe');
-    expect(tester.widget<FilledButton>(publish).onPressed,isNull);
+    expect(publish, findsNothing);
 
     final next=find.widgetWithText(OutlinedButton,'Revisiones siguientes');
     await tester.ensureVisible(next);
@@ -443,12 +503,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('VH-000080').last);
     await tester.pumpAndSettle();
-    expect(tester.widget<FilledButton>(publish).onPressed,isNull,
-      reason:'Ver un informe no autoriza su publicación.');
-    expect(tester.widget<CheckboxListTile>(
-      find.widgetWithText(CheckboxListTile,
-        'Confirmo que revisé el PDF y su autorización externa')).onChanged,isNull,
-      reason:'No se puede confirmar sin descargar primero el PDF original.');
+    expect(find.text('Descargar PDF para revisión'), findsOneWidget);
+    expect(publish, findsNothing, reason: 'Se requiere descargar el original.');
+    expect(find.text('Confirmo que revisé el PDF y su autorización externa'), findsNothing);
 
     final previous=find.widgetWithText(OutlinedButton,'Revisiones anteriores');
     await tester.ensureVisible(previous);
@@ -457,9 +514,9 @@ void main() {
     expect(find.text('Página 1'),findsOneWidget);
     expect(reviewDropdown().value,isNull,
       reason:'El informe seleccionado no debe persistir al cambiar de página.');
-    expect(tester.widget<FilledButton>(publish).onPressed,isNull);
+    expect(publish, findsNothing);
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   for (final width in [390.0, 1280.0]) {
     testWidgets('revisión incluye los informes propios del laboratorio a ${width.toInt()} px', (
@@ -499,7 +556,7 @@ void main() {
         _StationApi.otherOrder,
       ]);
       final reviewButton = find.widgetWithText(FilledButton, 'Publicar informe');
-      expect(tester.widget<FilledButton>(reviewButton).onPressed, isNull);
+      expect(reviewButton, findsNothing);
 
       final laboratory = _field('Laboratorio');
       await tester.ensureVisible(laboratory);
@@ -515,24 +572,28 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Directorio de pacientes'), findsOneWidget);
       expect(find.text('Ana Prueba'), findsOneWidget);
+      expect(find.text('Emitir código de activación'), findsNothing);
+      await tester.ensureVisible(find.text('Invitar paciente'));
+      await tester.tap(find.text('Invitar paciente'));
+      await tester.pumpAndSettle();
       expect(find.text('Emitir código de activación'), findsOneWidget);
       final requests = find.widgetWithText(TextButton, 'Recibir solicitud');
       await tester.ensureVisible(requests);
       await tester.tap(requests);
       await tester.pumpAndSettle();
-      expect(find.text('Leer PDF y sugerir datos'), findsOneWidget);
-      expect(find.text('Crear orden con solicitud'), findsOneWidget);
+      expect(find.text('Leer PDF y sugerir datos'), findsNothing);
+      expect(find.text('Crear orden con solicitud'), findsNothing);
       final linkOrder = find.widgetWithText(SwitchListTile, 'Vincular a una orden existente');
       await tester.ensureVisible(linkOrder);
       await tester.tap(linkOrder);
       await tester.pumpAndSettle();
-      expect(find.text('Registrar solicitud'), findsOneWidget);
+      expect(find.text('Registrar solicitud'), findsNothing);
       final clinicalTab = find.widgetWithText(TextButton, 'Muestras y resultados');
       await tester.ensureVisible(clinicalTab);
       await tester.tap(clinicalTab);
       await tester.pumpAndSettle();
       expect(_field('Orden para muestras y resultados'), findsOneWidget);
       expect(tester.takeException(), isNull);
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
   }
 }

@@ -7,7 +7,6 @@ import 'package:vitalia_health/features/acceso/credenciales_paciente.dart';
 import 'package:vitalia_health/features/acceso/recuperar_portal_sil_page.dart';
 import 'package:vitalia_health/features/laboratorio/paciente_informes_sil_page.dart';
 import 'package:vitalia_health/features/laboratorio/sil_workspace.dart';
-import 'package:vitalia_health/features/laboratorio/portal_visual_sil.dart';
 
 const _email = 'portal-qa@example.invalid';
 const _password = 'Contraseña DEMO nueva';
@@ -240,7 +239,13 @@ void main() {
     expect(find.text('Nombre'), findsOneWidget);
     expect(find.text('Paciente De prueba'), findsWidgets);
     await _tap(tester, 'Cerrar');
+    expect(find.textContaining('Dra. Elisa Muñoz'), findsNothing);
+    expect(find.text('Descargar PDF'), findsNothing);
+    await _tap(tester, 'Más opciones');
     expect(find.textContaining('Dra. Elisa Muñoz'), findsOneWidget);
+    expect(find.text('Descargar PDF'), findsOneWidget);
+    await _tap(tester, 'Ocultar opciones');
+    expect(find.text('Descargar PDF'), findsNothing);
     final search = find.widgetWithText(
         TextField, 'Buscar por orden, examen o laboratorio');
     await _type(tester, search, 'inexistente');
@@ -254,6 +259,7 @@ void main() {
     expect(find.text('«Control de seguimiento.»'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
+    await _tap(tester, 'Más opciones');
     await _tap(tester, 'Preguntar sobre el informe');
     await _tap(tester, 'Lectura fácil');
     await _tap(tester, 'Rango de referencia');
@@ -291,14 +297,12 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(find.text('Hola, Paciente'), findsOneWidget);
-    expect(find.text('Ir a mis informes'), findsOneWidget);
-    expect(find.text('Informes disponibles'), findsOneWidget);
-    expect(find.text('Última publicación'), findsOneWidget);
-    expect(find.text('Consulta conjunta'), findsOneWidget);
-    // La portada calmada evita ilustraciones decorativas de pacientes.
-    final hero = tester.widget<PortalHeroSil>(find.byType(PortalHeroSil));
-    expect(hero.calm, isTrue);
-    expect(hero.showLaboratoryArt, isFalse);
+    expect(find.text('Ir a mis informes'), findsNothing);
+    expect(find.text('Informes publicados'), findsOneWidget);
+    expect(find.textContaining('Última publicación ·'), findsOneWidget);
+    expect(find.text('Historial y orientación'), findsOneWidget);
+    expect(find.text('Sobre Vitalia'), findsOneWidget);
+    expect(find.text('Privacidad y uso responsable'), findsOneWidget);
     expect(find.byIcon(Icons.family_restroom), findsNothing);
     // Con un único PDF, la ayuda no duplica el acceso a la comparación.
     expect(find.text('Cómo leer mis resultados'), findsOneWidget);
@@ -319,7 +323,7 @@ void main() {
     await tester.tapAt(const Offset(600, 450));
     await tester.pumpAndSettle();
     expect(find.text('Ver resultados'), findsOneWidget);
-    expect(find.text('Ir a mis informes'), findsOneWidget);
+    expect(find.text('Ir a mis informes'), findsNothing);
     expect(tester.takeException(), isNull);
   });
   testWidgets('comparación solo destacada con dos informes publicados',

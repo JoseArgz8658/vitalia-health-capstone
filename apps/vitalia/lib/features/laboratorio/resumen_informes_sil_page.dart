@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
-import 'portal_visual_sil.dart';
 import 'portal_ayuda_sil.dart';
+import 'sil_workspace.dart';
 
 class ResumenInformesSilPage extends StatefulWidget {
   const ResumenInformesSilPage({
@@ -27,7 +27,7 @@ enum _Section { results, comparison, referral }
 
 class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
   static const _mainSil =
-      bool.fromEnvironment('VITALIA_SIL_MAIN_MODE',defaultValue:false);
+      bool.fromEnvironment('VITALIA_SIL_MAIN_MODE', defaultValue: false);
   late final _selected = <String>{
     if (widget.initialReportId case final String id) id,
   };
@@ -120,9 +120,9 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
                     child: Text(
                       title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: ColoresVitalia.texto,
-                      ),
+                            fontWeight: FontWeight.w800,
+                            color: ColoresVitalia.texto,
+                          ),
                     ),
                   ),
                 ],
@@ -286,48 +286,15 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
     final theme = Theme.of(context);
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: ColoresVitalia.azulSuave,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.library_books_outlined,
-                    color: ColoresVitalia.azul,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Elige hasta cuatro informes',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          )),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Usa uno para entender sus cifras o varios para compararlos.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: ColoresVitalia.textoSecundario,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            Text(
+              'Elige hasta cuatro informes',
+              style: theme.textTheme.titleLarge,
             ),
-            const SizedBox(height: 13),
+            const SizedBox(height: 20),
             Material(
               color: ColoresVitalia.fondoAzul,
               borderRadius: BorderRadius.circular(12),
@@ -337,7 +304,6 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
                 initiallyExpanded:
                     _selected.isEmpty && widget.reports.length <= 6,
                 title: Text('${_selected.length} seleccionados'),
-                subtitle: const Text('Máximo cuatro documentos publicados'),
                 children: [
                   if (widget.reports.isEmpty)
                     const Padding(
@@ -385,22 +351,8 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
               child: FilledButton.icon(
                 onPressed: _loading || _selected.isEmpty ? null : _analyze,
                 icon: const Icon(Icons.analytics_outlined),
-                label: Text(_loading
-                    ? 'Leyendo los documentos…'
-                    : 'Leer informes'),
-              ),
-            ),
-            const SizedBox(height: 11),
-            Text(
-              _selected.length < 2
-                  ? 'Para una comparación descriptiva necesitas al menos '
-                      'dos informes con valores compatibles.'
-                  : 'Los cálculos solo agrupan cifras del mismo examen, '
-                      'analito, unidad y laboratorio.',
-              style: const TextStyle(
-                color: ColoresVitalia.textoSecundario,
-                fontSize: 12,
-                height: 1.45,
+                label: Text(
+                    _loading ? 'Leyendo los documentos…' : 'Leer informes'),
               ),
             ),
           ],
@@ -411,85 +363,13 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
 
   Widget _contentArea() {
     final overview = _overview;
-    final theme = Theme.of(context);
     if (overview == null) {
-      return Card(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(13),
-                decoration: BoxDecoration(
-                  color: ColoresVitalia.verdeSuave,
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: const Icon(Icons.auto_graph_outlined,
-                    color: ColoresVitalia.verde, size: 27),
-              ),
-              const SizedBox(height: 15),
-              Text(
-                'Una lectura más clara de tus informes',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 9),
-              const Text(
-                'Selecciona los documentos publicados que quieras revisar '
-                'y pulsa «Leer informes». Aquí aparecerán sus cifras '
-                'detectadas y las observaciones de su derivación.',
-                style: TextStyle(
-                  height: 1.5,
-                  color: ColoresVitalia.textoSecundario,
-                ),
-              ),
-              const SizedBox(height: 16),
-              for (final item in const [
-                (
-                  Icons.fact_check_outlined,
-                  'Resultados del documento',
-                  'Conservamos la referencia de la orden original.',
-                ),
-                (
-                  Icons.compare_arrows_outlined,
-                  'Comparación responsable',
-                  'Solo se comparan cifras compatibles.',
-                ),
-                (
-                  Icons.notes_outlined,
-                  'Observación de derivación',
-                  'Puedes leer el texto detectado en la solicitud.',
-                ),
-              ]) ...[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(item.$1, color: ColoresVitalia.azul, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(item.$2,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 2),
-                          Text(item.$3,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: ColoresVitalia.textoSecundario,
-                              )),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-              ],
-            ],
-          ),
+      return const SilWorkspaceSurface(
+        padding: EdgeInsets.all(28),
+        child: SilWorkspaceHeading(
+          section: true,
+          title: 'Resultados',
+          description: 'Elige un informe y pulsa «Leer informes».',
         ),
       );
     }
@@ -497,12 +377,8 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        PortalEncabezadoSeccionSil(
-          title: 'Tu lectura guiada',
-          subtitle:
-              'Selecciona lo que necesitas comprender de los documentos.',
-        ),
-        const SizedBox(height: 13),
+        const SilWorkspaceHeading(section: true, title: 'Resultados'),
+        const SizedBox(height: 18),
         Wrap(
           spacing: 8,
           runSpacing: 7,
@@ -544,8 +420,7 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
           child: const Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.info_outline,
-                  size: 20, color: ColoresVitalia.azul),
+              Icon(Icons.info_outline, size: 20, color: ColoresVitalia.azul),
               SizedBox(width: 9),
               Expanded(
                 child: Text(
@@ -579,19 +454,6 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
             onPressed: () => PortalAyudaSil.preguntasFrecuentes(context),
             icon: const Icon(Icons.help_outline),
           ),
-          if (!narrow)
-            Padding(
-              padding: const EdgeInsets.only(right: 18),
-              child: Center(
-                child: Chip(
-                  avatar: const Icon(Icons.lock_outline, size: 16),
-                  label: Text(
-                    _mainSil ? 'Consulta privada · Vitalia' : 'Consulta privada · DEMO',
-                  ),
-                  backgroundColor: ColoresVitalia.azulSuave,
-                ),
-              ),
-            ),
         ],
       ),
       body: SafeArea(
@@ -606,19 +468,10 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  PortalHeroSil(
-                    eyebrow: _mainSil
-                        ? 'Explorador de informes · Vitalia Health'
-                        : 'Explorador de informes · SIL DEMO',
+                  const SilWorkspaceHeading(
                     title: 'Comprende mejor tus exámenes',
-                    subtitle:
-                        'Consulta las cifras de tus documentos publicados, '
-                        'revisa las observaciones de la derivación y compara '
-                        'mediciones cuando correspondan.',
-                    icon: Icons.monitor_heart_outlined,
-                    compact: narrow,
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 24),
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final selector = _selector();
@@ -631,7 +484,7 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             SizedBox(width: 400, child: selector),
-                            const SizedBox(width: 18),
+                            const SizedBox(width: 24),
                             Expanded(child: details),
                           ],
                         );
@@ -662,18 +515,13 @@ class _ResumenInformesSilPageState extends State<ResumenInformesSilPage> {
                           )),
                     ),
                   ],
-                  const SizedBox(height: 37),
-                  PortalAyudaFooterSil(
-                    reports: widget.reports,
-                    onReports: () => Navigator.pop(context),
-                  ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 28),
                   Text(
                     _mainSil
                         ? 'Vitalia Health · Lectura educativa. '
-                          'Conserva siempre el PDF autorizado original.'
+                            'Conserva siempre el PDF autorizado original.'
                         : 'Vitalia Health · Lectura educativa sobre documentos '
-                          'ficticios. Conserva siempre el informe original.',
+                            'ficticios. Conserva siempre el informe original.',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontSize: 12,

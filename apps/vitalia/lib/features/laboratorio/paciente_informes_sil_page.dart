@@ -7,7 +7,6 @@ import '../../core/tema_vitalia.dart';
 import 'clave_recuperacion_sil_dialog.dart';
 import 'resumen_informes_sil_page.dart';
 import 'sil_workspace.dart';
-import 'portal_visual_sil.dart';
 import 'portal_ayuda_sil.dart';
 
 /// Solo demostración local: consulta privada de PDFs autorizados externamente.
@@ -40,6 +39,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
   final _filter = TextEditingController();
   final Map<String, List<Map<String, String>>> _conversations = {};
   String? _activeChatReport;
+  String? _expandedReportId;
   String? _chatBusyReport;
   String? _chatError;
   late Future<Map<String, dynamic>> _profileRequest;
@@ -78,6 +78,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       setState(() {
         _reports = reports;
         _conversations.removeWhere((id, _) => !ids.contains(id));
+        if (!ids.contains(_expandedReportId)) _expandedReportId = null;
         if (!ids.contains(_activeChatReport)) {
           _activeChatReport = null;
           _question.clear();
@@ -617,486 +618,353 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     ));
   }
 
-  Widget _reportCard(Map<String, dynamic> report) {
+  Widget _reportRow(Map<String, dynamic> report) {
     final theme = Theme.of(context);
     final exams = _examNames(report);
     final id = report['id'] as String;
+    final detailsOpen = _expandedReportId == id;
     final chatOpen = _activeChatReport == id;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      child: Padding(
-        padding: const EdgeInsets.all(19),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(11),
-                  decoration: BoxDecoration(
-                    color: ColoresVitalia.azulSuave,
-                    borderRadius: BorderRadius.circular(13),
+    final details = [
+      if (exams.length > 1) exams.join(' · '),
+      if (report['prescriberName'] != null)
+        'Solicitó: ${report['prescriberName']}',
+      if (report['requestDate'] != null)
+        'Fecha de solicitud: ${_date(report['requestDate'])}',
+      if (report['documentReference'] != null)
+        'Referencia de solicitud: ${report['documentReference']}',
+    ];
+    final meta = theme.textTheme.bodySmall?.copyWith(
+      color: ColoresVitalia.textoSecundario,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 3),
+                child: Icon(
+                  Icons.description_outlined,
+                  color: ColoresVitalia.azul,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      switch (exams.length) {
+                        0 => report['fileName'] as String,
+                        1 => exams.first,
+                        2 => '${exams.first} y 1 examen más',
+                        _ =>
+                          '${exams.first} y ${exams.length - 1} exámenes más',
+                      },
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: ColoresVitalia.texto,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${report['issuingLaboratory']}',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 7),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(_date(report['publishedAt']), style: meta),
+                        Text('Orden ${report['orderNumber']}', style: meta),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              FilledButton.icon(
+                onPressed: () => _openOverview(id),
+                icon: const Icon(Icons.analytics_outlined, size: 18),
+                label: const Text('Ver resultados'),
+              ),
+              Semantics(
+                expanded: detailsOpen,
+                child: TextButton.icon(
+                  onPressed: _chatBusyReport != null
+                      ? null
+                      : () => setState(() {
+                          _expandedReportId = detailsOpen ? null : id;
+                          _activeChatReport = null;
+                          _question.clear();
+                          _chatError = null;
+                        }),
+                  icon: Icon(
+                    detailsOpen ? Icons.expand_less : Icons.expand_more,
                   ),
-                  child: const Icon(
-                    Icons.description_outlined,
-                    color: ColoresVitalia.azul,
-                    size: 23,
+                  label: Text(
+                    detailsOpen ? 'Ocultar opciones' : 'Más opciones',
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        exams.isEmpty
-                            ? report['fileName'] as String
-                            : exams.join(' · '),
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: ColoresVitalia.texto,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text(
-                        '${report['issuingLaboratory']}',
-                        style: const TextStyle(
-                          color: ColoresVitalia.textoSecundario,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 13),
+              ),
+            ],
+          ),
+          if (detailsOpen) ...[
+            const Divider(height: 22),
+            if (details.isNotEmpty) ...[
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
+                children: [
+                  for (final detail in details) Text(detail, style: meta),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
             Wrap(
               spacing: 8,
               runSpacing: 6,
               children: [
-                Chip(
-                  avatar: const Icon(Icons.verified_outlined, size: 16),
-                  label: const Text('Publicado'),
-                  backgroundColor: ColoresVitalia.verdeSuave,
-                  side: BorderSide.none,
-                ),
-                Chip(
-                  avatar: const Icon(Icons.tag_outlined, size: 16),
-                  label: Text('Orden ${report['orderNumber']}'),
-                ),
-                Chip(
-                  avatar: const Icon(Icons.calendar_month_outlined, size: 16),
-                  label: Text(_date(report['publishedAt'])),
-                ),
-              ],
-            ),
-            if (report['prescriberName'] != null ||
-                report['requestDate'] != null ||
-                report['documentReference'] != null) ...[
-              const Divider(height: 24),
-              if (report['prescriberName'] != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text('Solicitó: ${report['prescriberName']}'),
-                ),
-              if (report['requestDate'] != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Text(
-                    'Fecha de solicitud: ${_date(report['requestDate'])}',
-                  ),
-                ),
-              if (report['documentReference'] != null)
-                Text(
-                  'Referencia de solicitud: ${report['documentReference']}',
-                ),
-            ],
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton.icon(
-                  onPressed: () => _openOverview(id),
-                  icon: const Icon(Icons.analytics_outlined, size: 19),
-                  label: const Text('Ver resultados'),
-                ),
                 OutlinedButton.icon(
-                  onPressed:
-                      _downloading == null ? () => _download(report) : null,
-                  icon: const Icon(Icons.download_outlined, size: 19),
+                  onPressed: _downloading == null
+                      ? () => _download(report)
+                      : null,
+                  icon: const Icon(Icons.download_outlined, size: 18),
                   label: Text(
                     _downloading == id
                         ? 'Preparando descarga…'
                         : 'Descargar PDF',
                   ),
                 ),
-                OutlinedButton.icon(
-                  onPressed:
-                      _chatBusyReport == null ? () => _toggleChat(id) : null,
-                  icon: const Icon(Icons.chat_bubble_outline, size: 19),
+                TextButton.icon(
+                  onPressed: _chatBusyReport == null
+                      ? () => _toggleChat(id)
+                      : null,
+                  icon: const Icon(Icons.chat_bubble_outline, size: 18),
                   label: Text(
-                    chatOpen ? 'Cerrar asistente' : 'Preguntar sobre el informe',
+                    chatOpen
+                        ? 'Cerrar asistente'
+                        : 'Preguntar sobre el informe',
                   ),
                 ),
               ],
             ),
             if (chatOpen) _chatPanel(report),
           ],
-        ),
+        ],
       ),
     );
   }
 
-  Widget _portalTools(ThemeData theme) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(21),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(11),
-                    decoration: BoxDecoration(
-                      color: ColoresVitalia.verdeSuave,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      _reports.length >= 2
-                          ? Icons.compare_arrows_outlined
-                          : Icons.menu_book_outlined,
-                      color: ColoresVitalia.verde,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    _reports.length >= 2
-                        ? 'Compara tus informes'
-                        : 'Una lectura con más claridad',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 9),
-                  Text(
-                    _reports.length >= 2
-                        ? 'Selecciona hasta cuatro documentos publicados. '
-                            'Comparamos cifras solo cuando el examen, '
-                            'analito, unidad y laboratorio coinciden.'
-                        : 'Tu informe puede incluir cifras y términos '
-                            'difíciles. Conoce cómo revisarlo, qué '
-                            'significan las unidades y cuándo consultar '
-                            'al laboratorio.',
-                    style: const TextStyle(
-                      color: ColoresVitalia.textoSecundario,
-                      height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: _reports.length >= 2
-                          ? () => _openOverview()
-                          : () => PortalAyudaSil.preguntasFrecuentes(context),
-                      icon: Icon(
-                        _reports.length >= 2
-                            ? Icons.compare_arrows_outlined
-                            : Icons.help_outline,
-                      ),
-                      label: Text(
-                        _reports.length >= 2
-                            ? 'Comparar informes'
-                            : 'Cómo leer mis resultados',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 13),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(19),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Tu recorrido en Vitalia',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  for (final step in const [
-                    (
-                      Icons.file_copy_outlined,
-                      'Abre un informe',
-                      'Encuentra su orden y fecha de publicación.',
-                    ),
-                    (
-                      Icons.query_stats_outlined,
-                      'Consulta sus cifras',
-                      'Comprueba los valores en el PDF original.',
-                    ),
-                    (
-                      Icons.forum_outlined,
-                      'Resuelve tus dudas',
-                      'Pregunta por los términos del documento.',
-                    ),
-                  ]) ...[
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(step.$1,
-                            color: ColoresVitalia.azul, size: 20),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(step.$2,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w700)),
-                              const SizedBox(height: 2),
-                              Text(step.$3,
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      color: ColoresVitalia.textoSecundario)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 13),
-          Container(
-            padding: const EdgeInsets.all(17),
-            decoration: BoxDecoration(
-              color: ColoresVitalia.azulSuave,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: ColoresVitalia.borde),
-            ),
-            child: const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.verified_user_outlined,
-                    color: ColoresVitalia.azul, size: 22),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Espacio privado: únicamente se muestran informes '
-                    'publicados para tu cuenta. Las explicaciones son '
-                    'educativas, no diagnósticos.',
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.5,
-                      color: ColoresVitalia.texto,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-
-  Widget _reportList(ThemeData theme, String query,
-          List<Map<String, dynamic>> visibleReports) =>
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_reports.isNotEmpty) ...[
-            TextField(
-              controller: _filter,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                labelText: 'Buscar por orden, examen o laboratorio',
-                helperText: 'Busca en los informes recientes.',
-                helperMaxLines: 2,
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: query.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Limpiar búsqueda',
-                        onPressed: () => setState(_filter.clear),
-                        icon: const Icon(Icons.close),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-                query.isEmpty
-                    ? 'Informes recientes · ${_reports.length}'
-                    : 'Coincidencias · ${visibleReports.length}',
-                style: theme.textTheme.labelLarge),
-            const SizedBox(height: 8),
-          ],
-          if (_loading) const LinearProgressIndicator(),
-          if (_error != null) ...[
-            Semantics(
-                liveRegion: true,
-                child: Text(_error!,
-                    style: TextStyle(color: theme.colorScheme.error))),
-            const SizedBox(height: 12),
-          ],
-          if (!_loading && visibleReports.isEmpty && _error == null)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(query.isEmpty
-                    ? 'Aún no tienes informes publicados. Aparecerán aquí cuando el laboratorio los publique.'
-                    : 'No encontramos informes que coincidan con tu búsqueda.'),
-              ),
-            ),
-          for (final report in visibleReports) _reportCard(report),
-        ],
-      );
-
-  void _accountAction(String action) {
-    switch (action) {
-      case 'profile':
-        _openProfile();
-        break;
-      case 'refresh':
-        if (!_loading) _refresh();
-        break;
-      case 'recovery':
-        _openRecovery();
-        break;
-      case 'logout':
-        widget.onLogout();
-        break;
-      case 'help':
-        PortalAyudaSil.preguntasFrecuentes(context);
-        break;
-      case 'contact':
-        PortalAyudaSil.contacto(context, _reports);
-        break;
-    }
-  }
-
-  Widget _accountMenu({bool includeProfileAndRefresh = true}) =>
-      PopupMenuButton<String>(
-        tooltip: 'Mi cuenta',
-        icon: FutureBuilder<Map<String, dynamic>>(
-          future: _profileRequest,
-          builder: (context, snapshot) {
-            final profile = snapshot.data?['profile'] as Map?;
-            final names = profile?['hasProfile'] == true
-                ? (profile?['givenNames'] as String? ?? '').trim()
-                : '';
-            final initial = names.isNotEmpty
-                ? names.substring(0, 1).toUpperCase()
-                : 'P';
-            return CircleAvatar(
-              radius: 18,
-              backgroundColor: ColoresVitalia.azulSuave,
-              child: Text(
-                initial,
-                style: const TextStyle(
-                  color: ColoresVitalia.azulActivo,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            );
-          },
+  Widget _portalTools() => SilWorkspaceSurface(
+    padding: const EdgeInsets.all(22),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SilWorkspaceHeading(
+          section: true,
+          title: 'Historial y orientación',
         ),
-        onSelected: _accountAction,
-        itemBuilder: (context) => [
-          if (includeProfileAndRefresh) ...[
-            const PopupMenuItem(
-              value: 'profile',
-              child: ListTile(
-                dense: true,
-                leading: Icon(Icons.person_outline),
-                title: Text('Mi perfil'),
-              ),
+        const SizedBox(height: 14),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: OutlinedButton.icon(
+            onPressed: _reports.length >= 2
+                ? () => _openOverview()
+                : () => PortalAyudaSil.preguntasFrecuentes(context),
+            icon: Icon(
+              _reports.length >= 2 ? Icons.compare_arrows : Icons.help_outline,
             ),
-            const PopupMenuItem(
-              value: 'refresh',
-              child: ListTile(
-                dense: true,
-                leading: Icon(Icons.refresh),
-                title: Text('Actualizar informes'),
-              ),
-            ),
-          ],
-          const PopupMenuItem(
-              value: 'recovery',
-              child: ListTile(
-                dense: true,
-                leading: Icon(Icons.key_outlined),
-                title: Text('Configurar recuperación'),
-              ),
-            ),
-          const PopupMenuDivider(),
-          const PopupMenuItem(
-            value: 'help',
-            child: ListTile(
-              dense: true,
-              leading: Icon(Icons.help_outline),
-              title: Text('Centro de ayuda'),
+            label: Text(
+              _reports.length >= 2
+                  ? 'Comparar informes'
+                  : 'Cómo leer mis resultados',
             ),
           ),
-          const PopupMenuItem(
-            value: 'contact',
-            child: ListTile(
-              dense: true,
-              leading: Icon(Icons.support_agent_outlined),
-              title: Text('Contacto del laboratorio'),
+        ),
+        const Divider(height: 24),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(
+            onPressed: () => PortalAyudaSil.contacto(context, _reports),
+            icon: const Icon(Icons.support_agent_outlined),
+            label: const Text('Contacto del laboratorio'),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _reportList(
+    ThemeData theme,
+    String query,
+    List<Map<String, dynamic>> visibleReports,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const SilWorkspaceHeading(section: true, title: 'Informes publicados'),
+      const SizedBox(height: 10),
+      if (_reports.isNotEmpty) ...[
+        TextField(
+          controller: _filter,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            labelText: 'Buscar por orden, examen o laboratorio',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: query.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Limpiar búsqueda',
+                    onPressed: () => setState(_filter.clear),
+                    icon: const Icon(Icons.close),
+                  ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (query.isNotEmpty) ...[
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              'Coincidencias · ${visibleReports.length}',
+              style: theme.textTheme.labelLarge,
             ),
           ),
+          const SizedBox(height: 8),
         ],
-      );
+      ],
+      if (_loading)
+        const LinearProgressIndicator(semanticsLabel: 'Cargando informes'),
+      if (_error != null) ...[
+        Semantics(
+          liveRegion: true,
+          child: Text(
+            _error!,
+            style: TextStyle(color: theme.colorScheme.error),
+          ),
+        ),
+        const SizedBox(height: 12),
+      ],
+      if (!_loading && visibleReports.isEmpty && _error == null)
+        SilWorkspaceSurface(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            query.isEmpty
+                ? 'Aún no tienes informes publicados. Aparecerán aquí cuando el laboratorio los publique.'
+                : 'No encontramos informes que coincidan con tu búsqueda.',
+          ),
+        ),
+      if (visibleReports.isNotEmpty)
+        SilWorkspaceSurface(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final (index, report) in visibleReports.indexed) ...[
+                if (index > 0) const Divider(height: 1),
+                _reportRow(report),
+              ],
+            ],
+          ),
+        ),
+    ],
+  );
+
+  Widget _accountMenu() => PopupMenuButton<String>(
+    tooltip: 'Mi cuenta',
+    icon: FutureBuilder<Map<String, dynamic>>(
+      future: _profileRequest,
+      builder: (context, snapshot) {
+        final profile = snapshot.data?['profile'] as Map?;
+        final names = profile?['hasProfile'] == true
+            ? (profile?['givenNames'] as String? ?? '').trim()
+            : '';
+        return CircleAvatar(
+          radius: 18,
+          backgroundColor: ColoresVitalia.azulSuave,
+          child: Text(
+            names.isEmpty ? 'P' : names.characters.first.toUpperCase(),
+            style: const TextStyle(
+              color: ColoresVitalia.azulActivo,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        );
+      },
+    ),
+    onSelected: (action) {
+      if (action == 'profile') {
+        _openProfile();
+      } else {
+        _openRecovery();
+      }
+    },
+    itemBuilder: (context) => const [
+      PopupMenuItem(
+        value: 'profile',
+        child: ListTile(
+          dense: true,
+          leading: Icon(Icons.person_outline),
+          title: Text('Mi perfil'),
+        ),
+      ),
+      PopupMenuItem(
+        value: 'recovery',
+        child: ListTile(
+          dense: true,
+          leading: Icon(Icons.key_outlined),
+          title: Text('Configurar recuperación'),
+        ),
+      ),
+    ],
+  );
 
   Widget _patientGreeting() => FutureBuilder<Map<String, dynamic>>(
-        future: _profileRequest,
-        builder: (context, snapshot) {
-          final profile = snapshot.data?['profile'] as Map?;
-          final rawName = profile?['hasProfile'] == true
-              ? (profile?['givenNames'] as String? ?? '').trim()
-              : '';
-          final firstName = rawName.isEmpty
-              ? ''
-              : rawName.split(RegExp(r'\s+')).first;
-          return PortalHeroSil(
-            eyebrow: _mainSil ? 'Tu espacio personal · Vitalia Health' : 'Tu espacio personal · SIL DEMO',
-            title: firstName.isEmpty
-                ? 'Hola, bienvenido a Vitalia'
-                : 'Hola, $firstName',
-            subtitle: 'Tus informes publicados, sus documentos originales '
-                'y una guía sencilla para comprenderlos. '
-                'Toda tu información de laboratorio en un espacio privado.',
-            icon: Icons.favorite_outline,
-            calm: true,
-            showLaboratoryArt: false,
-            compact: MediaQuery.sizeOf(context).width < 600,
-            action: FilledButton.icon(
-              onPressed: _scrollToReports,
-              style: FilledButton.styleFrom(
-                backgroundColor: ColoresVitalia.azul,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: const Color(0xFFD2E4EA),
-                disabledForegroundColor: ColoresVitalia.azulActivo,
-              ),
-              icon: const Icon(Icons.analytics_outlined),
-              label: const Text('Ir a mis informes'),
-            ),
+    future: _profileRequest,
+    builder: (context, snapshot) {
+      final profile = snapshot.data?['profile'] as Map?;
+      final rawName = profile?['hasProfile'] == true
+          ? (profile?['givenNames'] as String? ?? '').trim()
+          : '';
+      final firstName = rawName.isEmpty
+          ? ''
+          : rawName.split(RegExp(r'\s+')).first;
+      final latest = _reports
+          .map((report) => DateTime.tryParse('${report['publishedAt'] ?? ''}'))
+          .whereType<DateTime>()
+          .fold<DateTime?>(
+            null,
+            (last, date) => last == null || date.isAfter(last) ? date : last,
           );
-        },
+      return SilWorkspaceBanner(
+        title: firstName.isEmpty
+            ? 'Hola, bienvenido a Vitalia'
+            : 'Hola, $firstName',
+        detail: latest == null
+            ? 'Aquí podrás consultar tus informes cuando estén disponibles.'
+            : 'Última publicación · ${_date(latest.toIso8601String())}',
+        action: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            backgroundColor: const Color(0xFFBEEFE3),
+            foregroundColor: const Color(0xFF102C3F),
+            side: BorderSide.none,
+          ),
+          onPressed: _scrollToReports,
+          icon: const Icon(Icons.description_outlined),
+          label: const Text('Consultar mis informes'),
+        ),
       );
+    },
+  );
 
   void _scrollToTop() {
     if (mounted) setState(() => _reportsTabSelected = false);
@@ -1120,62 +988,6 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     }
   }
 
-  Widget _dashboardIndicators() => LayoutBuilder(
-        builder: (context, constraints) {
-          final columns = constraints.maxWidth >= 880
-              ? 3
-              : constraints.maxWidth >= 540
-                  ? 2
-                  : 1;
-          final cardWidth = (constraints.maxWidth -
-                  (columns - 1) * 12) /
-              columns;
-          final publishedDates = _reports
-              .map((report) => DateTime.tryParse(
-                    '${report['publishedAt'] ?? ''}',
-                  ))
-              .whereType<DateTime>()
-              .toList()
-            ..sort();
-          final lastPublished = publishedDates.isEmpty
-              ? '—'
-              : _date(publishedDates.last.toIso8601String());
-          final indicators = [
-            PortalIndicadorSil(
-              icon: Icons.description_outlined,
-              label: 'Informes disponibles',
-              value: _loading ? '…' : '${_reports.length}',
-              detail: 'Documentos publicados para tu cuenta.',
-              onTap: _scrollToReports,
-            ),
-            PortalIndicadorSil(
-              icon: Icons.event_available_outlined,
-              label: 'Última publicación',
-              value: lastPublished,
-              detail: 'Fecha informada por el laboratorio.',
-              accent: ColoresVitalia.verde,
-            ),
-            PortalIndicadorSil(
-              icon: Icons.query_stats_outlined,
-              label: 'Consulta conjunta',
-              value: _reports.length >= 2 ? 'Hasta 4' : 'Desde 2',
-              detail: _reports.length >= 2
-                  ? 'Compara mediciones cuando sean compatibles.'
-                  : 'Disponible cuando tengas al menos dos informes.',
-              onTap: null,
-            ),
-          ];
-          return Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              for (final indicator in indicators)
-                SizedBox(width: cardWidth, child: indicator),
-            ],
-          );
-        },
-      );
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1193,27 +1005,34 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             ].join(' ').toLowerCase().contains(query))
         .toList();
 
+    const navigationLabel = 'Navegación del paciente';
+    final tabs = <SilWorkspaceTab>[
+                SilWorkspaceTab(
+                  label: 'Inicio', icon: Icons.home_outlined,
+                  selected: !_reportsTabSelected,
+                  onPressed: _scrollToTop,
+                ),
+                SilWorkspaceTab(
+                  label: 'Mis informes', icon: Icons.description_outlined,
+                  selected: _reportsTabSelected,
+                  onPressed: _scrollToReports,
+                ),
+                SilWorkspaceTab(
+                  label: 'Ayuda', icon: Icons.help_outline,
+                  selected: false,
+                  onPressed: () => PortalAyudaSil.preguntasFrecuentes(context),
+                ),
+              ];
+
     return Scaffold(
+      bottomNavigationBar: narrow
+          ? SilWorkspaceBottomNavigation(label: navigationLabel, tabs: tabs)
+          : null,
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
-        toolbarHeight: 79,
+        toolbarHeight: 58,
         elevation: 0,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(3),
-          child: Container(
-            height: 3,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF1C485E),
-                  Color(0xFF3BA4A0),
-                  Color(0xFFE2F0ED),
-                ],
-              ),
-            ),
-          ),
-        ),
         title: const SilWorkspaceBrand(),
         actions: [
           IconButton(
@@ -1233,89 +1052,47 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       body: SafeArea(
         child: Column(
           children: [
-            SilWorkspaceTopNavigation(
-              label: 'Navegación del paciente',
-              tabs: [
-                SilWorkspaceTab(
-                  label: 'Inicio', icon: Icons.home_outlined,
-                  selected: !_reportsTabSelected,
-                  onPressed: _scrollToTop,
-                ),
-                SilWorkspaceTab(
-                  label: 'Mis informes', icon: Icons.description_outlined,
-                  selected: _reportsTabSelected,
-                  onPressed: _scrollToReports,
-                ),
-                SilWorkspaceTab(
-                  label: 'Ayuda', icon: Icons.help_outline,
-                  selected: false,
-                  onPressed: () => PortalAyudaSil.preguntasFrecuentes(context),
-                ),
-              ],
-            ),
+            if (!narrow)
+              SilWorkspaceTopNavigation(label: navigationLabel, tabs: tabs),
             Expanded(
               child: SingleChildScrollView(
                 controller: _pageScroll,
           padding: EdgeInsets.symmetric(
             horizontal: narrow ? 14 : 25,
-            vertical: narrow ? 17 : 26,
+            vertical: narrow ? 22 : 36,
           ),
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1230),
+              constraints: const BoxConstraints(maxWidth: 1160),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _patientGreeting(),
-                  const SizedBox(height: 16),
-                  _dashboardIndicators(),
-                  const SizedBox(height: 28),
-                  const PortalEncabezadoSeccionSil(
-                    title: 'Tus documentos y herramientas',
-                    subtitle:
-                        'Consulta los archivos publicados y utiliza las '
-                        'herramientas que necesites.',
+                  const SizedBox(height: 26),
+                  SilWorkspaceColumns(
+                    primaryFlex: 8,
+                    secondaryFlex: 4,
+                    primary: KeyedSubtree(
+                      key: _reportsAnchor,
+                      child: _reportList(theme, query, visibleReports),
+                    ),
+                    secondary: _portalTools(),
                   ),
-                  const SizedBox(height: 15),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final reports = KeyedSubtree(
-                        key: _reportsAnchor,
-                        child: _reportList(
-                          theme,
-                          query,
-                          visibleReports,
-                        ),
-                      );
-                      final tools = _portalTools(theme);
-                      if (constraints.maxWidth >= 850) {
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(flex: 7, child: reports),
-                            const SizedBox(width: 18),
-                            Expanded(flex: 4, child: tools),
-                          ],
-                        );
-                      }
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          reports,
-                          const SizedBox(height: 16),
-                          tools,
-                        ],
-                      );
-                    },
+                  const SizedBox(height: 14),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    children: [
+                      TextButton(
+                        onPressed: () => PortalAyudaSil.sobreVitalia(context),
+                        child: const Text('Sobre Vitalia'),
+                      ),
+                      TextButton(
+                        onPressed: () => PortalAyudaSil.privacidad(context),
+                        child: const Text('Privacidad y uso responsable'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 43),
-                  PortalAyudaFooterSil(
-                    reports: _reports,
-                    onProfile: _openProfile,
-                    onRecovery: _openRecovery,
-                    onReports: _scrollToReports,
-                  ),
-                  const SizedBox(height: 18),
                   Text(
                     _mainSil
                         ? 'Vitalia Health · Integración en revisión · '
