@@ -490,27 +490,50 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   Future<void> _manageOperator({Map<String,dynamic>? member}) async {
     final lab = _labId;
     if (!_admin || _busy || lab == null) return;
-    await _execute(() async {
-      final dialog = await SilAdminOperatorDialog.open(
+    // El diálogo no debe mantener el indicador global de carga animándose:
+    // Flutter necesita estabilizar el árbol mientras el usuario decide.
+    Map<String,dynamic>? dialog;
+    try {
+      dialog = await SilAdminOperatorDialog.open(
         context: context,api: widget.api,labId: lab,
         labName: _labs.where((item) => item['id'] == lab)
             .firstOrNull?['displayName'] as String? ?? 'Laboratorio',
         member: member,
       );
-      if (dialog == null || !mounted || lab != _labId) return;
-      final siteAccess = Map<String,dynamic>.from(dialog['siteAccess'] as Map);
+    } on AuthFailure catch (error) {
+      if (!mounted) return;
+      if (error.status == 401) {
+        widget.onExpired();
+      } else {
+        setState(() => _error = error.message);
+      }
+      return;
+    } catch (_) {
+      if (mounted) setState(() => _error =
+          'No se pudieron cargar las sedes del laboratorio.');
+      return;
+    }
+    if (dialog == null || !mounted || lab != _labId) return;
+    final siteAccess = Map<String,dynamic>.from(dialog['siteAccess'] as Map);
+    final email = dialog['email'] as String;
+    final isExisting = dialog['existing'] == true;
+    await _execute(() async {
       if (member != null) {
         await widget.api.silMainRequest('/labs/$lab/staff/sites',body: {
           'accountId': member['accountId'], 'siteAccess': siteAccess,
         });
         await _loadStaff();
-        if (mounted) setState(() => _notice = 'Sedes del operador actualizadas.');
-      } else if (dialog['existing'] == true) {
-        _staffAccount.text = dialog['email'] as String;
+        if (mounted && lab == _labId) {
+          setState(() => _notice = 'Sedes del operador actualizadas.');
+        }
+      } else if (isExisting) {
+        _staffAccount.text = email;
         await _grantStaff(siteAccess: siteAccess);
-        if (mounted) setState(() => _notice = 'Operador asociado y sedes asignadas.');
+        if (mounted && lab == _labId) {
+          setState(() => _notice = 'Operador asociado y sedes asignadas.');
+        }
       } else {
-        _inviteEmail.text = dialog['email'] as String;
+        _inviteEmail.text = email;
         await _inviteOperator(siteAccess: siteAccess);
       }
     },showNotice:false);
