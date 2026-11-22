@@ -6,10 +6,10 @@ import '../../core/tema_vitalia.dart';
 /// La información y las acciones siempre son entregadas por la página que
 /// consulta la API; esta biblioteca no contiene pacientes ni cifras ficticias.
 abstract final class OperatorPalette {
-  static const navy = Color(0xFF102D45);
-  static const deep = Color(0xFF0E4561);
-  static const teal = Color(0xFF137B82);
-  static const blue = Color(0xFF2567B1);
+  static const navy = ColoresVitalia.azulActivo;
+  static const deep = Color(0xFF205C73);
+  static const teal = ColoresVitalia.verde;
+  static const blue = ColoresVitalia.azul;
   static const ink = ColoresVitalia.texto;
   static const muted = ColoresVitalia.textoSecundario;
   static const stroke = ColoresVitalia.borde;
@@ -38,7 +38,7 @@ class OperatorHero extends StatelessWidget {
       width: double.infinity,
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(19),
+        borderRadius: BorderRadius.circular(16),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -46,9 +46,9 @@ class OperatorHero extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: OperatorPalette.navy.withValues(alpha: .10),
-            blurRadius: 18,
-            offset: const Offset(0, 7),
+            color: OperatorPalette.navy.withValues(alpha: .06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -153,7 +153,7 @@ class OperatorMetricCard extends StatelessWidget {
       color: Colors.white,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         side: const BorderSide(color: OperatorPalette.stroke),
       ),
       child: InkWell(
