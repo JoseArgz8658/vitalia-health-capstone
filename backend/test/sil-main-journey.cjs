@@ -926,6 +926,64 @@ async function main() {
     assert.ok(pendingAudit.rows.some(row=>row.action==='pending_request_saved'));
     assert.ok(pendingAudit.rows.some(row=>row.action==='pending_request_downloaded'));
     assert.ok(pendingAudit.rows.some(row=>row.action==='pending_request_completed'));
+    // Cierre de una derivación distinta, sin activar paciente ni crear orden.
+    const rejectedPdf=syntheticPdf([
+      'Solicitud administrativa ficticia SOL-PEND-CLOSE-01',
+      'Paciente: Caso Sintético Vitalia',
+      'Profesional: Persona de prueba',
+      'Documento ilegible en verificación administrativa',
+    ]);
+    const rejectedUpload={bytes:rejectedPdf,headers:{
+      'Content-Type':'application/pdf',
+      'x-request-filename':'solicitud-para-cerrar.pdf',
+    }};
+    const rejected=(await (await call('uploader','POST',pendingPath,201,
+      rejectedUpload)).json()).pending;
+    const closePath=pendingPath+'/'+rejected.id+'/cancel';
+    const closure={reason:'unreadable_document'};
+    const beforeClosureOrders=(await db.query(
+      'SELECT count(*)::int AS total FROM public.vitalia_sil_main_orders WHERE lab_id=$1',
+      [base.slice(6)])).rows[0].total;
+    await call('admin','POST',closePath,403,{json:closure});
+    await call('reviewer','POST',
+      otherLab+'/medical-requests/pending/'+rejected.id+'/cancel',404,
+      {json:closure});
+    await call('uploader','POST',closePath,400,{json:{
+      ...closure,patientEmail:'no-enviar@example.invalid',
+    }});
+    const closed=(await (await call('uploader','POST',closePath,200,
+      {json:closure})).json()).pending;
+    assert.equal(closed.status,'cancelled');
+    assert.equal(closed.reason,'unreadable_document');
+    await call('uploader','POST',closePath,409,{json:closure});
+    await call('uploader','POST',
+      pendingPath+'/'+rejected.id+'/complete',404,{json:pendingData});
+    await call('uploader','GET',pendingPath+'/'+rejected.id+'/file',404);
+    const afterClosureOrders=(await db.query(
+      'SELECT count(*)::int AS total FROM public.vitalia_sil_main_orders WHERE lab_id=$1',
+      [base.slice(6)])).rows[0].total;
+    assert.equal(afterClosureOrders,beforeClosureOrders,
+      'Cerrar una derivación no debe generar órdenes.');
+    const closedRow=(await db.query(
+      `SELECT status,order_id,closure_reason,closed_by,closed_at
+       FROM public.vitalia_sil_main_pending_requests WHERE id=$1`,
+      [rejected.id])).rows[0];
+    assert.equal(closedRow.status,'cancelled');
+    assert.equal(closedRow.order_id,null);
+    assert.equal(closedRow.closure_reason,'unreadable_document');
+    assert.ok(closedRow.closed_by && closedRow.closed_at);
+    const closedAudit=(await db.query(
+      `SELECT details FROM public.vitalia_sil_main_audit
+       WHERE action='pending_request_cancelled' AND lab_id=$1
+         AND details->>'pendingId'=$2`,
+      [base.slice(6),rejected.id])).rows;
+    assert.equal(closedAudit.length,1);
+    assert.equal(closedAudit[0].details.reason,'unreadable_document');
+    const outstanding=(await (await call('uploader','GET',
+      pendingPath,200)).json()).pending;
+    assert.ok(!outstanding.some(p=>p.id===rejected.id));
+    console.log('API: cierre pendiente transaccional y auditado sin crear orden.');
+
     console.log('API: derivación pendiente recuperada, activación y orden atómica aprobadas.');
 
     console.log('API: activación y recuperación del paciente de un solo uso verificadas.');

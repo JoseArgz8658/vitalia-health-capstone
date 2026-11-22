@@ -6,6 +6,7 @@ import 'package:vitalia_health/features/laboratorio/sil_principal_page.dart';
 class _StationApi extends AuthApi {
   final reviewActions=<Map<String,dynamic>>[];
   final pendingCompletions=<Map<String,dynamic>>[];
+  final pendingClosures=<Map<String,dynamic>>[];
   final requestPaths=<String>[];
   bool showPending=false;
   bool pendingWithoutDate=false;
@@ -76,6 +77,11 @@ class _StationApi extends AuthApi {
           },
         },
       }]:[]};
+    }
+    if(requestPath=='/labs/$allowedLab/medical-requests/pending/66666666-6666-4666-8666-666666666666/cancel'){
+      pendingClosures.add(body??{});
+      showPending=false;
+      return {'pending':{'status':'cancelled'}};
     }
     if(requestPath=='/labs/$allowedLab/medical-requests/pending/66666666-6666-4666-8666-666666666666/complete'){
       pendingCompletions.add(body??{});
@@ -240,6 +246,46 @@ void main() {
     expect(tester.widget<FilledButton>(submit).onPressed, isNull,
       reason: 'La cuenta está activa, pero aún falta cotejar el PDF.');
     expect(api.pendingCompletions, isEmpty);
+    expect(tester.takeException(),isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('operador cierra derivación con motivo y doble confirmación',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(()=>tester.binding.setSurfaceSize(null));
+    final api=_StationApi()..showPending=true;
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home:SilPrincipalPage(
+      api:api,role:'operador_laboratorio',
+      onExpired:(){},onLogout:(){},
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton,'Recibir solicitud'));
+    await tester.pumpAndSettle();
+    await _selectSavedReferral(tester);
+    final close=find.text('Cerrar derivación pendiente');
+    await tester.ensureVisible(close);
+    await tester.tap(close);
+    await tester.pumpAndSettle();
+    expect(find.text('Motivo de cierre'),findsOneWidget);
+    expect(api.pendingClosures,isEmpty);
+    await tester.tap(find.text('Documento ilegible o incompleto'));
+    await tester.pumpAndSettle();
+    expect(find.text('¿Cerrar esta derivación pendiente?'),findsOneWidget);
+    await tester.tap(find.text('Cancelar'));
+    await tester.pumpAndSettle();
+    expect(api.pendingClosures,isEmpty);
+    await tester.ensureVisible(close);
+    await tester.tap(close);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Documento ilegible o incompleto'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Confirmar cierre'));
+    await tester.pumpAndSettle();
+    expect(api.pendingClosures,[{'reason':'unreadable_document'}]);
+    expect(api.pendingCompletions,isEmpty);
+    expect(find.textContaining('No se creó ninguna orden'),findsOneWidget);
+    expect(find.text('Cerrar derivación pendiente'),findsNothing);
     expect(tester.takeException(),isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 

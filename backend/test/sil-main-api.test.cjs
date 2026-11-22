@@ -1,6 +1,7 @@
 const request=require('supertest');
 const {createApp}=require('../dist/app');
-const {createSilMainService,SilMainAccessDenied}=require('../dist/sil/main-service');
+const {createSilMainService,SilMainAccessDenied,SilMainConflict,SilMainNotFound}
+  =require('../dist/sil/main-service');
 
 const token='b'.repeat(64);
 const bearer={Authorization:'Bearer '+token};
@@ -22,6 +23,9 @@ function demo(role='operador_laboratorio',authenticated=true){
     createOrder:jest.fn().mockResolvedValue({order:{id:order}}),
     listPatients:jest.fn().mockResolvedValue({patients:[],hasMore:false}),
     listOrders:jest.fn().mockResolvedValue({orders:[]}),
+    cancelPendingMedicalRequest:jest.fn().mockResolvedValue({
+      pending:{id:'66666666-6666-4666-8666-666666666666',status:'cancelled'},
+    }),
     operatorSummary:jest.fn().mockResolvedValue({summary:{
       ordersTotal:104,registered:20,inReview:14,published:70,pendingRequests:8,
     }}),
@@ -268,4 +272,80 @@ test('el directorio solo admite operadores y valida los parámetros de búsqueda
   await request(application).get(path+'?limit=51').set(bearer).expect(400);
   await request(demo('paciente').application).get(path).set(bearer).expect(403);
   await request(demo('administrador').application).get(path).set(bearer).expect(403);
+});
+
+const pendingId='66666666-6666-4666-8666-666666666666';
+const closurePath='/api/sil/main/labs/'+lab+
+  '/medical-requests/pending/'+pendingId+'/cancel';
+
+test('solo operador cierra una derivación con motivo controlado',async()=>{
+  const valid=demo();
+  const body={reason:'unreadable_document'};
+  await request(valid.application).post(closurePath).set(bearer)
+    .send(body).expect(200);
+  expect(valid.service.cancelPendingMedicalRequest)
+    .toHaveBeenCalledWith(lab,pendingId,operator,body.reason);
+  for(const role of ['paciente','administrador','profesional']){
+    const denied=demo(role);
+    await request(denied.application).post(closurePath).set(bearer)
+      .send(body).expect(403);
+    expect(denied.service.cancelPendingMedicalRequest).not.toHaveBeenCalled();
+  }
+  await request(demo('operador_laboratorio',false).application)
+    .post(closurePath).set(bearer).send(body).expect(401);
+  await request(valid.application).post(closurePath.replace(pendingId,'bad-id'))
+    .set(bearer).send(body).expect(404);
+  for(const bad of [{reason:'secretos'}, {reason:'unreadable_document',note:'dato privado'},
+    {reason:''}, {}]){
+    await request(valid.application).post(closurePath).set(bearer)
+      .send(bad).expect(400);
+  }
+  expect(valid.service.cancelPendingMedicalRequest).toHaveBeenCalledTimes(1);
+});
+
+test('cierre de derivación es transaccional y registra solo motivo codificado',async()=>{
+  let status='pending';
+  const pendingAudit=[];
+  const tx={
+    query:jest.fn(async(sql,params=[])=>{
+      if(sql==='BEGIN'||sql==='COMMIT'||sql==='ROLLBACK')return {rows:[]};
+      if(sql.includes('FROM public.vitalia_sil_main_staff'))return {rows:[{allowed:1}]};
+      if(sql.includes('SELECT status FROM public.vitalia_sil_main_pending_requests')){
+        if(params[1]!==lab)return {rows:[]};
+        return {rows:[{status}]};
+      }
+      if(sql.includes('UPDATE public.vitalia_sil_main_pending_requests')){
+        expect(params).toEqual([pendingId,lab,operator,'request_withdrawn']);
+        expect(status).toBe('pending');
+        status='cancelled';
+        return {rowCount:1,rows:[{id:pendingId}]};
+      }
+      if(sql.includes('INSERT INTO public.vitalia_sil_main_audit')){
+        pendingAudit.push(params);
+        return {rowCount:1,rows:[]};
+      }
+      throw Error('SQL inesperado en cierre: '+sql);
+    }),
+    release:jest.fn(),
+  };
+  const db={connect:jest.fn().mockResolvedValue(tx),query:jest.fn()};
+  const service=createSilMainService(db);
+  const response=await service.cancelPendingMedicalRequest(
+    lab,pendingId,operator,'request_withdrawn');
+  expect(response.pending).toEqual({
+    id:pendingId,status:'cancelled',reason:'request_withdrawn',
+  });
+  expect(status).toBe('cancelled');
+  expect(tx.query.mock.calls.some(([sql])=>sql==='COMMIT')).toBe(true);
+  expect(pendingAudit).toHaveLength(1);
+  expect(pendingAudit[0][4]).toBe('pending_request_cancelled');
+  expect(JSON.parse(pendingAudit[0][5])).toEqual({
+    pendingId,reason:'request_withdrawn',
+  });
+  await expect(service.cancelPendingMedicalRequest(
+    lab,pendingId,operator,'request_withdrawn')).rejects.toBeInstanceOf(SilMainConflict);
+  expect(pendingAudit).toHaveLength(1);
+  await expect(service.cancelPendingMedicalRequest(
+    '77777777-7777-4777-8777-777777777777',pendingId,
+    operator,'other')).rejects.toBeInstanceOf(SilMainNotFound);
 });

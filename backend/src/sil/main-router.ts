@@ -333,6 +333,28 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
         res.locals.account.id,patientId,patientEmail,examCodes,request));
     });
 
+  router.post('/labs/:labId/medical-requests/pending/:pendingId/cancel',
+    staff,labPath,async(req,res)=>{
+      if(res.locals.account.role!=='operador_laboratorio'){
+        res.status(403).json({error:{code:'FORBIDDEN'}});return;
+      }
+      if(!uuid.safeParse(req.params.pendingId).success){
+        res.status(404).json({error:{code:'NOT_FOUND'}});return;
+      }
+      const parsed=z.object({
+        reason:z.enum([
+          'unreadable_document','duplicate_request','incorrect_information',
+          'patient_mismatch','request_withdrawn','other',
+        ]),
+      }).strict().safeParse(req.body);
+      if(!parsed.success){
+        res.status(400).json({error:{code:'INVALID_PENDING_CLOSURE'}});return;
+      }
+      res.status(200).json(await main.cancelPendingMedicalRequest(
+        req.params.labId as string,req.params.pendingId as string,
+        res.locals.account.id,parsed.data.reason));
+    });
+
   const clinicalPath='/labs/:labId/orders/:orderId/clinical';
   const clinicalOperator=(req:express.Request,res:express.Response,next:express.NextFunction)=>{
     if(res.locals.account.role!=='operador_laboratorio'){
