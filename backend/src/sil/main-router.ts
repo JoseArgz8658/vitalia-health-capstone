@@ -154,6 +154,9 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     email:z.string().trim().toLowerCase().pipe(z.email().max(254)).optional(),
   });
   const sitePath='/labs/:labId/sites';
+  router.get('/administration-overview',administrator,async(_req,res)=>{
+    res.json(await main.administrationOverview());
+  });
   router.get('/site-territories',administrator,async(_req,res)=>{
     res.json(await getSiteTerritories());
   });
@@ -248,15 +251,16 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
   });
 
   router.post('/labs/:labId/staff',administrator,labPath,async(req,res)=>{
-    const data=z.object({
-      accountId:uuid,
-    }).strict().safeParse(req.body);
+    const data=z.union([
+      z.object({accountId:uuid}).strict(),
+      z.object({email:z.string().trim().toLowerCase().pipe(z.email().max(254))}).strict(),
+    ]).safeParse(req.body);
     if(!data.success){
       res.status(400).json({error:{code:'INVALID_STAFF'}});return;
     }
     res.status(201).json(await main.grantStaff(
-      req.params.labId as string,data.data.accountId,
-      res.locals.account.id));
+      req.params.labId as string,
+      'accountId' in data.data?data.data.accountId:data.data,res.locals.account.id));
   });
 
   router.post('/labs/:labId/staff/membership',administrator,labPath,async(req,res)=>{

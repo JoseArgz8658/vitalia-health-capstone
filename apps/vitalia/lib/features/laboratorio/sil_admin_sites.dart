@@ -341,3 +341,108 @@ class _SilAdminSitesState extends State<SilAdminSites> {
     ),
   );
 }
+
+class SilAdministrationOverview extends StatefulWidget {
+  const SilAdministrationOverview({
+    super.key,
+    required this.api,
+    required this.onExpired,
+  });
+
+  final AuthApi api;
+  final VoidCallback onExpired;
+
+  @override
+  State<SilAdministrationOverview> createState() =>
+      _SilAdministrationOverviewState();
+}
+
+class _SilAdministrationOverviewState extends State<SilAdministrationOverview> {
+  late Future<Map<String, dynamic>> _overview;
+
+  @override
+  void initState() {
+    super.initState();
+    _overview = widget.api.silMainRequest('/administration-overview');
+  }
+
+  void _refresh() => setState(() {
+    _overview = widget.api.silMainRequest('/administration-overview');
+  });
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      SilWorkspaceHeading(
+        section: true,
+        title: 'Monitoreo de laboratorios y sedes',
+        actions: [
+          OutlinedButton.icon(
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Actualizar monitoreo'),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      FutureBuilder<Map<String, dynamic>>(
+        future: _overview,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const LinearProgressIndicator(
+              semanticsLabel: 'Cargando monitoreo',
+            );
+          }
+          if (snapshot.hasError) {
+            final error = snapshot.error;
+            if (error is AuthFailure && error.status == 401) {
+              return TextButton(
+                onPressed: widget.onExpired,
+                child: const Text('Volver a ingresar'),
+              );
+            }
+            return const Text('No se pudo consultar el monitoreo.');
+          }
+          final labs = (snapshot.data?['laboratories'] as List? ?? []).cast<Map>();
+          if (labs.isEmpty) {
+            return const Text('Aún no hay laboratorios registrados.');
+          }
+          return Column(
+            children: [
+              for (final lab in labs)
+                ExpansionTile(
+                  key: ValueKey(lab['id']),
+                  leading: const Icon(Icons.business_outlined),
+                  title: Text(lab['name'] as String),
+                  subtitle: Text(
+                    '${lab['active'] == true ? 'Activo' : 'Inactivo'} · '
+                    '${lab['operators']} operadores activos · '
+                    '${(lab['sites'] as List).length} sedes',
+                  ),
+                  children: [
+                    ListTile(
+                      title: const Text('Órdenes sin sede asociada'),
+                      subtitle: Text(
+                        '${lab['unassignedOrders']} órdenes · '
+                        '${lab['unassignedPublished']} informes publicados',
+                      ),
+                    ),
+                    for (final site in (lab['sites'] as List).cast<Map>())
+                      ListTile(
+                        leading: const Icon(Icons.location_on_outlined),
+                        title: Text('${site['name']} · ${site['active'] == true ? 'Activa' : 'Inactiva'}'),
+                        subtitle: Text(
+                          '${[site['address'], site['commune'], site['region']].whereType<String>().join(', ')}\n'
+                          '${site['orders']} órdenes · ${site['published']} informes publicados',
+                        ),
+                      ),
+                  ],
+                ),
+            ],
+          );
+        },
+      ),
+    ],
+  );
+}

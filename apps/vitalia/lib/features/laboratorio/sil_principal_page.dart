@@ -552,12 +552,22 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   }
 
   Future<void> _grantStaff() async {
-    final lab=_labId,accountId=_requireUuid(_staffAccount.text);
-    if(lab==null||accountId==null)
-      throw const AuthFailure('Selecciona laboratorio y escribe el UUID de la cuenta.');
-    await widget.api.silMainRequest('/labs/$lab/staff',body:{
-      'accountId':accountId,
-    });
+    final lab = _labId;
+    final email = _staffAccount.text.trim().toLowerCase();
+    if (lab == null || !RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      throw const AuthFailure('Selecciona el laboratorio e ingresa un correo válido.');
+    }
+    try {
+      await widget.api.silMainRequest('/labs/$lab/staff', body: {'email': email});
+    } on AuthFailure catch (error) {
+      if (error.status == 404) {
+        throw const AuthFailure('No hay un operador activo con ese correo. Si aún no tiene cuenta, usa Invitar operador.');
+      }
+      if (error.status == 409) {
+        throw const AuthFailure('La cuenta ya está vinculada al laboratorio. Revisa su estado en el directorio.');
+      }
+      rethrow;
+    }
     _staffAccount.clear();
     await _loadStaff();
   }
@@ -1865,7 +1875,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                 ? null
                 : () => _adminEditor(
                     title: 'Vincular operador',
-                    label: 'Identificador de la cuenta operadora',
+                    label: 'Correo del operador',
+                    keyboardType: TextInputType.emailAddress,
                     submitLabel: 'Vincular al laboratorio',
                     controller: _staffAccount,
                     submit: _grantStaff,
@@ -3156,6 +3167,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                           ? 'Cargando personal…'
                           : 'Datos de personal pendientes de consulta.',
                     ),
+                  const SizedBox(height: 20),
+                  SilAdministrationOverview(api: widget.api, onExpired: widget.onExpired),
                   const Divider(height: 28),
                   Align(
                     alignment: AlignmentDirectional.centerStart,

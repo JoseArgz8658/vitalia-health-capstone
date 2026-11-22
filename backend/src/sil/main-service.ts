@@ -217,6 +217,37 @@ export function createSilMainService(db:Pool) {
       });
     },
 
+    async administrationOverview(){
+      const overview=await db.query(
+        `WITH order_counts AS (
+           SELECT lab_id,site_id,count(*)::int AS total,
+             count(*) FILTER (WHERE status='report_published')::int AS published
+           FROM public.vitalia_sil_main_orders GROUP BY lab_id,site_id
+         ), operators AS (
+           SELECT s.lab_id,count(*)::int AS total
+           FROM public.vitalia_sil_main_staff s
+           JOIN public.vitalia_account_roles r ON r.account_id=s.account_id
+             AND r.role_code='operador_laboratorio' AND r.active
+           WHERE s.kind='operator' AND s.active GROUP BY s.lab_id
+         ), sites AS (
+           SELECT s.lab_id,jsonb_agg(jsonb_build_object('id',s.id,'name',s.name,
+             'address',s.address,'commune',s.commune,'region',s.region,'active',s.active,
+             'orders',coalesce(o.total,0),'published',coalesce(o.published,0))
+             ORDER BY s.name,s.id) AS entries
+           FROM public.vitalia_sil_main_sites s
+           LEFT JOIN order_counts o ON o.lab_id=s.lab_id AND o.site_id=s.id
+           GROUP BY s.lab_id
+         )
+         SELECT l.id,l.display_name AS name,l.active,coalesce(p.total,0) AS operators,
+           coalesce(s.entries,'[]'::jsonb) AS sites,coalesce(o.total,0) AS "unassignedOrders",
+           coalesce(o.published,0) AS "unassignedPublished"
+         FROM public.vitalia_sil_main_laboratories l
+         LEFT JOIN sites s ON s.lab_id=l.id LEFT JOIN operators p ON p.lab_id=l.id
+         LEFT JOIN order_counts o ON o.lab_id=l.id AND o.site_id IS NULL
+         ORDER BY l.display_name,l.id`);
+      return {laboratories:overview.rows};
+    },
+
     async listSites(labId:string,actorId:string,role:string){
       return transaction(async tx=>{
         if(role!=='administrador')await operator(labId,actorId,tx);
@@ -396,12 +427,24 @@ export function createSilMainService(db:Pool) {
       });
     },
 
-    async grantStaff(labId:string,accountId:string,adminId:string){
+    async grantStaff(labId:string,identity:string|{email:string},adminId:string){
       return transaction(async tx=>{
         const lab=await tx.query(
           'SELECT 1 FROM public.vitalia_sil_main_laboratories WHERE id=$1 AND active FOR UPDATE',
           [labId]);
         if(!lab.rows.length)throw new SilMainNotFound();
+        let accountId: string;
+        if(typeof identity==='string'){
+          accountId=identity;
+        }else{
+          const account=await tx.query<{id:string}>(
+            `SELECT a.id FROM public.vitalia_accounts a
+             JOIN public.vitalia_account_roles r ON r.account_id=a.id
+             WHERE a.email=$1 AND r.role_code='operador_laboratorio' AND r.active
+             FOR SHARE OF a,r`,[identity.email]);
+          if(!account.rows.length)throw new SilMainNotFound();
+          accountId=account.rows[0].id;
+        }
         const check=await tx.query(
           `SELECT 1 FROM public.vitalia_account_roles
            WHERE account_id=$1 AND role_code='operador_laboratorio' AND active`,

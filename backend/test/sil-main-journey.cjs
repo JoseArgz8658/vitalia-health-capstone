@@ -627,7 +627,7 @@ async function main() {
     const otherLab='/labs/'+await lab('Laboratorio sintético Sur');
     await admin(base+'/staff',201,{accountId:ids.uploader});
     await admin(base+'/staff',201,{accountId:ids.reviewer});
-    await admin(otherLab+'/staff',201,{accountId:ids.reviewer});
+    await admin(otherLab+'/staff',201,{email:credentials.reviewer.email.toUpperCase()});
     await admin(otherLab+'/staff/review-permission',200,{accountId:ids.reviewer,enabled:true});
     const northStaff = await (await call('admin', 'GET', base+'/staff', 200)).json();
     const southStaff = await (await call('admin', 'GET', otherLab+'/staff', 200)).json();
@@ -724,6 +724,13 @@ async function main() {
        WHERE lab_id=$1 AND action='patient_identity_linked' AND details ? 'linkCodeId'`,
       [otherLab.split('/').at(-1)]);
     assert.equal(linkAudit.rows[0].total,1);
+    const overviewPath='/administration-overview';
+    await call('uploader','GET',overviewPath,403);
+    const overview=await (await call('admin','GET',overviewPath,200)).json();
+    assert.deepEqual(overview.laboratories.map(lab=>lab.id).sort(),
+      [base.slice(6),otherLab.slice(6)].sort());
+    await admin(base+'/staff',404,{email:'cuenta-inexistente@example.invalid'});
+    await admin(base+'/staff',409,{email:credentials.uploader.email.toUpperCase()});
     const siteInput={name:'Sede Norte ficticia',address:'Avenida de Ensayo 10',
       commune:'Santiago',region:'Metropolitana de Santiago',email:'sede@example.invalid'};
     const northSites=base+'/sites';
@@ -1258,6 +1265,10 @@ async function main() {
       for(const action of ['site_created','site_updated','site_deactivated'])
         assert.ok(audits.some(event=>event.action===action));
       await admin(northSites+'/state',200,{siteId:northSite.id,active:true});
+      const updatedOverview=await (await call('admin','GET',overviewPath,200)).json();
+      const north=updatedOverview.laboratories.find(lab=>lab.id===base.slice(6));
+      assert.equal(north.sites.find(site=>site.id===second.id).orders,1);
+      assert.ok(north.sites.find(site=>site.id===northSite.id).published>=1);
       console.log('API: sedes segregadas, selección obligatoria y conservación histórica aprobadas.');
       console.log('API: suspensión y reactivación por laboratorio auditadas.');
     }
