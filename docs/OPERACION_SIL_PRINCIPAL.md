@@ -6,7 +6,7 @@ solicitudes, ordenes, revision y publicacion de informes ya autorizados, con dat
 
 ## 1. Condiciones antes de compilar o desplegar
 
-El backend usa la base principal `vitalia`, esquema postanalitico **041** ya
+El backend usa la base principal `vitalia`, esquema postanalitico **042** una vez aplicado mediante el procedimiento controlado (la instalacion 041 existente no se modifica automaticamente)
 integrado mediante el procedimiento controlado. El codigo distingue:
 
 | Elemento | Configuracion esperada |
@@ -24,7 +24,7 @@ contiene estos valores hasta que se vuelva a compilar.
 
 **Importante:** `deploy/configurar.ps1` prepara variables generales pero
 **no** instala ni autoriza el SIL principal. En la base principal, el comando
-`migrate-all` solo verifica el esquema; **no aplica** la migracion 041.
+`migrate-all` solo verifica el esquema; **no aplica** las migraciones 041 ni 042.
 Si el esquema no esta preparado, detener el proceso. El procedimiento de
 migracion controlada exige respaldo, ensayo aislado y aprobacion explicita.
 No modificar una base existente para satisfacer esta guia.
@@ -54,7 +54,7 @@ docker compose exec api node dist/database/migrate-all.js
 ```
 
 En `vitalia` ese comando ejecuta una **consulta de solo lectura**: requiere
-las migraciones SIL hasta la 041 y la tabla de derivaciones pendientes.
+las migraciones SIL hasta la 042 y la tabla de derivaciones pendientes con cierre administrativo.
 No ejecutar el migrador general contra `vitalia_dev` para estas comprobaciones,
 porque ese entorno tiene una politica de migraciones diferente.
 
@@ -135,3 +135,28 @@ Estas verificaciones no sustituyen una auditoria de seguridad, ensayo de
 rendimiento, validacion clinica o pruebas con dispositivos Android reales.
 Tampoco comprueban los permisos efectivos del usuario PostgreSQL desplegado:
 esa auditoria se planifica por separado y en modo solo lectura.
+
+## 7. Cierre controlado de derivaciones pendientes (esquema 042)
+
+La migracion `042_sil_main_pending_closure.sql` habilita que el operador
+cierre una derivacion pendiente cuando esta duplicada, ilegible, retirada o
+no corresponde. El cierre registra un motivo **codificado**, operador y fecha,
+sin guardar datos clinicos de texto libre en el evento de auditoria.
+
+- Solamente el operador asociado al laboratorio puede cerrar una pendiente.
+- Una derivacion completada o cerrada no puede cerrarse nuevamente.
+- Una derivacion cerrada no puede convertirse en orden ni descargarse por la
+  ruta de trabajo pendiente. El PDF se conserva en PostgreSQL para trazabilidad.
+- No existe reapertura automatica. La restriccion de duplicados por hash del
+  documento se mantiene; un cierre no habilita reingresar la misma derivacion.
+- `migrate-all` solo **verifica 042 en lectura**; no aplica cambios a `vitalia`.
+
+**Despliegue:** se requiere respaldar y ensayar el esquema 041 en copia
+aislada, comparar checksums del historial y autorizar de manera especifica
+la migracion controlada 041 → 042. El pull request no modifica por si solo
+el servidor local, Docker ni el volumen principal. No ejecutar
+`migrate-main-sil --apply` sin completar el protocolo existente.
+
+**Pruebas automáticas:** Jest verifica permisos, motivos, atomicidad y
+auditoria; el recorrido CI en Edge/PostgreSQL temporal comprueba cierre,
+ausencia de nuevas ordenes y bloqueo de finalizacion posterior.
