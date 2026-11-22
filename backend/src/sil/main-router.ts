@@ -250,6 +250,11 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
         req.params.labId as string,data.data.invitationId,res.locals.account.id));
     });
 
+  const siteAccessSchema=z.discriminatedUnion('mode',[
+    z.object({mode:z.literal('all'),siteIds:z.array(uuid).length(0)}).strict(),
+    z.object({mode:z.literal('selected'),siteIds:z.array(uuid).min(1).max(100)}).strict(),
+  ]);
+
   router.post('/labs/:labId/operator-invitations',administrator,labPath,
     async(req,res)=>{
       const data=z.object({
@@ -265,11 +270,6 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
           res.locals.account.id,siteAccess)
         :await main.inviteOperator(req.params.labId as string,email,res.locals.account.id));
     });
-
-  const siteAccessSchema=z.discriminatedUnion('mode',[
-    z.object({mode:z.literal('all'),siteIds:z.array(uuid).length(0)}).strict(),
-    z.object({mode:z.literal('selected'),siteIds:z.array(uuid).min(1).max(100)}).strict(),
-  ]);
 
   // La lista de operadores se limita al laboratorio seleccionado y al administrador.
   router.get('/labs/:labId/staff',administrator,labPath,async(req,res)=>{
