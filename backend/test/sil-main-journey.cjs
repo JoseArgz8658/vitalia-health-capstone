@@ -1244,6 +1244,34 @@ async function main() {
       const selected=(await (await call('uploader','POST',base+'/orders',201,
         {json:{...manualOrder,siteId:second.id}})).json()).order;
       assert.equal(selected.siteId,second.id);
+      const assignPath=base+'/staff/sites';
+      await call('uploader','POST',assignPath,403,{json:{
+        accountId:ids.uploader,siteAccess:{mode:'selected',siteIds:[second.id]},
+      }});
+      await admin(assignPath,400,{accountId:ids.uploader,
+        siteAccess:{mode:'selected',siteIds:[]}});
+      await admin(assignPath,409,{accountId:ids.uploader,
+        siteAccess:{mode:'selected',siteIds:[southSite.id]}});
+      const limited=(await (await admin(assignPath,200,{
+        accountId:ids.uploader,siteAccess:{mode:'selected',siteIds:[second.id]},
+      })).json()).membership;
+      assert.deepEqual(limited.siteIds,[second.id]);
+      const assignedStaff=(await (await call('admin','GET',base+'/staff',200)).json()).staff
+        .find(member=>member.accountId===ids.uploader);
+      assert.equal(assignedStaff.siteAccessMode,'selected');
+      assert.deepEqual(assignedStaff.siteIds,[second.id]);
+      const accessible=(await (await call('uploader','GET',base+'/orders?limit=50&offset=0',200)).json()).orders;
+      assert.deepEqual(accessible.map(row=>row.id),[selected.id]);
+      const summary=(await (await call('uploader','GET',base+'/summary',200)).json()).summary;
+      assert.equal(summary.ordersTotal,1);
+      await call('uploader','GET',base+'/orders/'+orderId+'/clinical/audit',404);
+      await call('uploader','GET',base+'/orders/'+selected.id+'/clinical/audit',200);
+      await call('uploader','POST',base+'/orders',409,{json:{
+        ...manualOrder,siteId:northSite.id,
+      }});
+      await admin(assignPath,200,{accountId:ids.uploader,
+        siteAccess:{mode:'all',siteIds:[]}});
+      await call('uploader','GET',base+'/orders/'+orderId+'/clinical/audit',200);
       await admin(northSites+'/state',200,{siteId:northSite.id,active:false});
       await call('uploader','POST',base+'/orders',409,{json:{...manualOrder,siteId:northSite.id}});
       const historicalToken=(await issueSession(db,ids.patient,'paciente',passwordHash)).token;
