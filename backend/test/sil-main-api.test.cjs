@@ -22,6 +22,9 @@ function demo(role='operador_laboratorio',authenticated=true){
     createOrder:jest.fn().mockResolvedValue({order:{id:order}}),
     listPatients:jest.fn().mockResolvedValue({patients:[],hasMore:false}),
     listOrders:jest.fn().mockResolvedValue({orders:[]}),
+    operatorSummary:jest.fn().mockResolvedValue({summary:{
+      ordersTotal:104,registered:20,inReview:14,published:70,pendingRequests:8,
+    }}),
     attachReport:jest.fn().mockResolvedValue({report:{id:report}}),
     publishReport:jest.fn().mockResolvedValue({publication:{orderId:order}}),
     patientProfile:jest.fn().mockResolvedValue({profile:{hasProfile:false}}),
@@ -110,6 +113,60 @@ test('listado de operadores consulta solo el laboratorio y no retorna hashes',as
   expect(sql).toContain("s.kind='operator'");
   expect(sql).not.toContain('password_hash');
   expect(values).toEqual([lab]);
+});
+
+test('resumen del laboratorio solo permite operador autenticado',async()=>{
+  const path='/api/sil/main/labs/'+lab+'/summary';
+  const valid=demo();
+  const result=await request(valid.application).get(path).set(bearer);
+  expect(result.status).toBe(200);
+  expect(result.body).toEqual({summary:{
+    ordersTotal:104,registered:20,inReview:14,published:70,pendingRequests:8,
+  }});
+  expect(valid.service.operatorSummary).toHaveBeenCalledWith(lab,operator);
+  for(const role of ['paciente','administrador','profesional']){
+    const denied=demo(role);
+    expect((await request(denied.application).get(path).set(bearer)).status).toBe(403);
+    expect(denied.service.operatorSummary).not.toHaveBeenCalled();
+  }
+  const anonymous=demo('operador_laboratorio',false);
+  expect((await request(anonymous.application).get(path).set(bearer)).status).toBe(401);
+  expect(anonymous.service.operatorSummary).not.toHaveBeenCalled();
+  expect((await request(valid.application)
+    .get('/api/sil/main/labs/no-uuid/summary').set(bearer)).status).toBe(404);
+  valid.service.operatorSummary.mockRejectedValueOnce(new SilMainAccessDenied());
+  expect((await request(valid.application).get(path).set(bearer)).status).toBe(403);
+});
+
+test('resumen obtiene conteos totales sin pacientes ni documentos y exige membresía',async()=>{
+  const query=jest.fn()
+    .mockResolvedValueOnce({rows:[{allowed:1}]})
+    .mockResolvedValueOnce({rows:[{
+      ordersTotal:'104',registered:'20',inReview:'14',
+      published:'70',pendingRequests:'8',
+    }]});
+  const service=createSilMainService({query});
+  const result=await service.operatorSummary(lab,operator);
+  expect(result).toEqual({summary:{
+    ordersTotal:104,registered:20,inReview:14,published:70,pendingRequests:8,
+  }});
+  expect(query).toHaveBeenCalledTimes(2);
+  const [accessSql,accessParams]=query.mock.calls[0];
+  expect(accessSql).toContain('s.lab_id=$1');
+  expect(accessSql).toContain('s.account_id=$2');
+  expect(accessParams).toEqual([lab,operator,false]);
+  const [sql,params]=query.mock.calls[1];
+  expect(sql).toContain('l.id=$1 AND l.active');
+  expect(sql).toContain('o.lab_id=l.id');
+  expect(sql).toContain("p.status='pending'");
+  expect(sql).not.toMatch(/email|password_hash|pdf_data/);
+  expect(params).toEqual([lab]);
+
+  const deniedQuery=jest.fn().mockResolvedValue({rows:[]});
+  const deniedService=createSilMainService({query:deniedQuery});
+  await expect(deniedService.operatorSummary(lab,operator))
+    .rejects.toBeInstanceOf(SilMainAccessDenied);
+  expect(deniedQuery).toHaveBeenCalledTimes(1);
 });
 
 test('orden principal exige paciente y prestaciones válidas',async()=>{
