@@ -304,22 +304,99 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
   });
 }
 
+// La interfaz administrativa se comprueba con sesión real, no con mocks.
+// Solo se leen los datos sintéticos y las acciones ya autorizadas; no
+// se revocan permisos necesarios para el resto del recorrido.
+async function adminJourney(browser) {
+  const page=await browser.newPage({viewport:{width:1440,height:1050}});
+  try {
+    await signIn(page,'admin','#/laboratorio');
+    await page.getByText('Administración de laboratorios',{exact:true})
+      .waitFor({timeout:15000});
+    const nav=label=>page.getByRole('button',{name:label,exact:true});
+    await nav('Laboratorios').waitFor();
+    await nav('Operadores y permisos').waitFor();
+    await nav('Actividad').waitFor();
+    assert.equal(await nav('Recibir solicitud').count(),0,
+      'Administración no debe presentar acciones clínicas de operador.');
+    assert.equal(await nav('Publicar informe').count(),0,
+      'El administrador no puede publicar informes desde su estación.');
+    await page.getByText('2 laboratorio(s) registrados en esta cuenta.')
+      .waitFor({timeout:10000});
+
+    await nav('Operadores y permisos').click();
+    await page.getByText('Operadores y permisos de revisión',{exact:true})
+      .waitFor({timeout:10000});
+    await page.getByText('uploader@example.invalid',{exact:true}).waitFor();
+    await page.getByText('reviewer@example.invalid',{exact:true}).waitFor();
+    assert.ok(await nav('Retirar permiso de revisión').count()>0,
+      'El permiso concedido debe figurar en la administración.');
+    assert.ok(await nav('Autorizar revisión').count()>0,
+      'El administrador debe poder identificar permisos pendientes.');
+
+    await nav('Actividad').click();
+    await page.getByText('Actividad del laboratorio',{exact:true})
+      .waitFor({timeout:10000});
+    assert.equal(await nav('Descargar PDF').count(),0,
+      'El administrador no debe ver el portal privado del paciente.');
+    if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+      await page.screenshot({
+        path:resolve(process.env.VITALIA_JOURNEY_SCREENSHOTS,
+          'administrador-escritorio.png'),
+      });
+    }
+    console.log('Microsoft Edge: administración, laboratorios, permisos y actividad verificados.');
+  } finally {
+    await page.close();
+  }
+}
+
 async function browserJourney(order, base, sampleOrder, samplePdf) {
   const {chromium}=require(process.env.VITALIA_JOURNEY_PLAYWRIGHT);
   const browser=await chromium.launch({channel:'msedge'});
   try {
+    await adminJourney(browser);
     const publishedId=await operatorJourney(browser,order,base,sampleOrder,samplePdf);
     const page=await browser.newPage({viewport:{width:390,height:844}});
-    await signIn(page,'patient');
-    const downloadButton=page.getByRole('button',{name:'Descargar PDF',exact:true}).first();
-    await downloadButton.waitFor({timeout:20000});
-    const downloaded=page.waitForEvent('download');
-    const response=page.waitForResponse(r=>r.url().endsWith('/patient/reports/'+publishedId+'/file'));
-    await downloadButton.click();
-    assert.equal((await response).status(),200);
-    const file=await downloaded;
-    assert.deepEqual(readFileSync(await file.path()),pdf);
-    console.log('Microsoft Edge: el paciente descargó el informe publicado desde la estación.');
+    try {
+      await signIn(page,'patient');
+      await page.getByRole('button',{name:'Mis informes',exact:true}).waitFor();
+      assert.equal(await page.getByRole('button',
+        {name:'Recibir solicitud',exact:true}).count(),0,
+        'El paciente no debe ver la estación interna del operador.');
+
+      const help=page.getByRole('button',{name:'Ayuda',exact:true});
+      await help.click();
+      await page.getByText('¿Qué informes puedo consultar?',{exact:true})
+        .waitFor({timeout:10000});
+      await page.getByRole('button',{name:'Entendido',exact:true}).click();
+
+      await page.getByRole('button',{name:'Mi cuenta'}).click();
+      await page.getByRole('menuitem',{name:'Mi perfil'}).click();
+      await page.getByText('Cuenta activa · Vitalia Health',{exact:true})
+        .waitFor({timeout:10000});
+      await page.getByText('Correo de acceso',{exact:true}).waitFor();
+      await page.getByRole('button',{name:'Cerrar',exact:true}).click();
+
+      const downloadButton=page.getByRole('button',{name:'Descargar PDF',exact:true}).first();
+      await downloadButton.waitFor({timeout:20000});
+      const downloaded=page.waitForEvent('download');
+      const response=page.waitForResponse(r=>r.url().endsWith(
+        '/patient/reports/'+publishedId+'/file'));
+      await downloadButton.click();
+      assert.equal((await response).status(),200);
+      const file=await downloaded;
+      assert.deepEqual(readFileSync(await file.path()),pdf);
+      if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+        await page.screenshot({
+          path:resolve(process.env.VITALIA_JOURNEY_SCREENSHOTS,
+            'paciente-movil.png'),
+        });
+      }
+      console.log('Microsoft Edge: paciente consultó ayuda, perfil y descargó informe publicado.');
+    } finally {
+      await page.close();
+    }
   } finally {
     await browser.close();
   }
