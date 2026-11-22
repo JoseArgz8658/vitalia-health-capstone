@@ -39,7 +39,7 @@ Widget _navigation(ValueNotifier<int> selected) => MaterialApp(
 void main() {
   testWidgets('en escritorio muestra las secciones sin flechas innecesarias',
       (tester) async {
-    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    await tester.binding.setSurfaceSize(const Size(1920, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final selected = ValueNotifier<int>(0);
     addTearDown(selected.dispose);
@@ -125,7 +125,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('Mostrar más secciones'), findsOneWidget);
 
-    await tester.binding.setSurfaceSize(const Size(1280, 760));
+    await tester.binding.setSurfaceSize(const Size(1920, 760));
     await tester.pumpAndSettle();
     expect(find.byTooltip('Mostrar más secciones'), findsNothing);
     expect(find.byTooltip('Mostrar secciones anteriores'), findsNothing);
