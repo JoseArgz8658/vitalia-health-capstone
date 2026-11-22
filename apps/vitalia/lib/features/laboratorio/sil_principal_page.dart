@@ -1760,6 +1760,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     'operator_review_permission_changed' => 'Permiso de revisión modificado',
     'operator_membership_disabled' => 'Operador suspendido',
     'operator_membership_enabled' => 'Operador reactivado',
+    'operator_sites_changed' => 'Sedes asignadas al operador',
     _ => value,
   };
 
