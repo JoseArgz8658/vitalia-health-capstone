@@ -784,7 +784,7 @@ async function main() {
     assert.deepEqual(staffSouth.map(member=>member.email),
       [credentials.reviewer.email],
       'La administración no debe mezclar cuentas entre laboratorios.');
-    await call('patient','GET',base+'/staff',403);
+    await call('other','GET',base+'/staff',403);
     await call('uploader','GET',base+'/staff',403);
     console.log('API/SQL: administración y permisos aislados por laboratorio verificados.');
     console.log('API y PostgreSQL: recorrido con credenciales y sesiones reales aprobado.');
