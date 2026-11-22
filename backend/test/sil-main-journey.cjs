@@ -1260,6 +1260,8 @@ async function main() {
         .find(member=>member.accountId===ids.uploader);
       assert.equal(assignedStaff.siteAccessMode,'selected');
       assert.deepEqual(assignedStaff.siteIds,[second.id]);
+      const allowedSites=(await (await call('uploader','GET',base+'/sites',200)).json()).sites;
+      assert.deepEqual(allowedSites.map(site=>site.id),[second.id]);
       const accessible=(await (await call('uploader','GET',base+'/orders?limit=50&offset=0',200)).json()).orders;
       assert.deepEqual(accessible.map(row=>row.id),[selected.id]);
       const summary=(await (await call('uploader','GET',base+'/summary',200)).json()).summary;
