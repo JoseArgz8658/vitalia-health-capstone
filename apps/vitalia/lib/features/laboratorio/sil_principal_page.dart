@@ -78,6 +78,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   bool _requestHumanChecked=false;
   String? _uploadOrderId;
   String? _reviewOrderId;
+  Map<String,dynamic>? _reviewSelectedOrder;
+  List<Map<String,dynamic>> _reviewOrders = [];
+  int _reviewOffset = 0;
+  bool _moreReviewOrders = false;
+  static const _reviewPageSize = 20;
   XFile? _pdf;
   List<Map<String,dynamic>> _labs = [];
   List<Map<String,dynamic>> _orders = [];
@@ -234,8 +239,14 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _requestHumanChecked = false;
     }
     if (!_workflowOrders.any((order) =>
-        order['id'] == _reviewOrderId && _isReviewable(order))) {
+        order['id'] == _reviewOrderId && _isReviewable(order)) &&
+        !_reviewOrders.any((order) =>
+            order['id'] == _reviewOrderId && _isReviewable(order)) &&
+        (_reviewSelectedOrder == null ||
+            _reviewSelectedOrder!['id'] != _reviewOrderId ||
+            !_isReviewable(_reviewSelectedOrder!))) {
       _reviewOrderId = null;
+      _reviewSelectedOrder = null;
       _reviewPdfDownloaded = false;
       _reviewConfirmed = false;
     }
@@ -269,6 +280,59 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _moreOrders = data['hasMore'] == true;
       _validateOrderSelections();
     });
+  }
+
+  // La revisión consulta órdenes filtradas directamente al backend.
+  // No depende de las últimas 50 órdenes que muestra el resumen.
+  Future<void> _loadReviewPage({required int offset}) async {
+    final lab = _labId;
+    if (lab == null || !_canReview) {
+      if (mounted) setState(() {
+        _reviewOrders = [];
+        _reviewOffset = 0;
+        _moreReviewOrders = false;
+      });
+      return;
+    }
+    final query = Uri(queryParameters: {
+      'limit': '$_reviewPageSize',
+      'offset': '$offset',
+      'status': 'report_attached',
+    }).query;
+    final data = await widget.api.silMainRequest('/labs/$lab/orders?$query');
+    if (!mounted || _labId != lab || !_canReview) return;
+    final orders = (data['orders'] as List? ?? [])
+        .map((entry) => Map<String,dynamic>.from(entry as Map))
+        .where(_isReviewable).toList();
+    if (orders.isEmpty && offset > 0) {
+      await _loadReviewPage(offset: 0);
+      return;
+    }
+    setState(() {
+      _reviewOrders = orders;
+      _reviewOffset = offset;
+      _moreReviewOrders = data['hasMore'] == true;
+      if (_reviewOrderId != null &&
+          !orders.any((order) => order['id'] == _reviewOrderId) &&
+          _reviewSelectedOrder?['id'] != _reviewOrderId) {
+        _reviewOrderId = null;
+        _reviewPdfDownloaded = false;
+        _reviewConfirmed = false;
+      }
+    });
+  }
+
+  Future<void> _changeReviewPage(int offset) async {
+    if (offset != _reviewOffset) {
+      // Nunca arrastrar una confirmación de revisión entre páginas.
+      setState(() {
+        _reviewOrderId = null;
+        _reviewSelectedOrder = null;
+        _reviewPdfDownloaded = false;
+        _reviewConfirmed = false;
+      });
+    }
+    await _loadReviewPage(offset: offset);
   }
 
   void _showPatientOrders(Map<String,dynamic>? patient) {
@@ -335,6 +399,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _externallyAuthorized = false;
     _confirmedMatch = false;
     _reviewOrderId = null;
+    _reviewSelectedOrder = null;
+    _reviewOrders = [];
+    _reviewOffset = 0;
+    _moreReviewOrders = false;
     _reviewPdfDownloaded = false;
     _reviewConfirmed = false;
   }
