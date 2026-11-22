@@ -2110,6 +2110,34 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ],
   );
 
+  Widget _adminIndicators() => LayoutBuilder(
+    builder: (context, constraints) {
+      final active = _labStaff.where((staff) => staff['active'] == true).length;
+      final reviewers = _labStaff.where((staff) =>
+        staff['active'] == true && staff['canReviewReports'] == true).length;
+      final stats = [
+        ('Laboratorios administrados', '${_labs.length}', Icons.business_outlined),
+        ('Operadores activos', '$active', Icons.people_outline),
+        ('Permisos de revisión', '$reviewers', Icons.verified_user_outlined),
+      ];
+      final cols = constraints.maxWidth >= 900 ? 3 :
+          constraints.maxWidth >= 570 ? 2 : 1;
+      const spacing = 12.0;
+      final cardWidth = (constraints.maxWidth - (cols - 1) * spacing) / cols;
+      return Wrap(spacing: spacing, runSpacing: spacing, children: [
+        for (final item in stats)
+          SizedBox(
+            width: cardWidth,
+            child: SilWorkspaceSummaryStat(
+              label: item.$1,
+              value: item.$2,
+              icon: item.$3,
+            ),
+          ),
+      ]);
+    },
+  );
+
   Widget _adminContent() => switch (_adminSection) {
     _AdminSection.laboratories => SilWorkspaceColumns(
       primary: _adminPanel(showOperators: false),
@@ -2309,7 +2337,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       OperatorHero(
         eyebrow: 'Estación del operador',
         title: 'Panel del laboratorio',
-        subtitle: 'Recibe derivaciones, organiza órdenes y continúa el trabajo postanalítico desde un mismo espacio.',
+        subtitle: 'Prioriza solicitudes, revisiones y órdenes del laboratorio activo.',
+        compact: true,
         actions: [
           FilledButton.icon(
             onPressed: _busy ? null : () => _openSection(_StationSection.requests),
@@ -2337,9 +2366,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       LayoutBuilder(builder: (context, constraints) {
         if (constraints.maxWidth < 1020) {
           return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            _ordersPanel(recent: true),
-            const SizedBox(height: 12),
             queues,
+            const SizedBox(height: 12),
+            _ordersPanel(recent: true),
             const SizedBox(height: 12),
             shortcuts,
             const SizedBox(height: 12),
@@ -2348,9 +2377,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         }
         return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(flex: 7, child: Column(children: [
-            _ordersPanel(recent: true),
-            const SizedBox(height: 12),
             queues,
+            const SizedBox(height: 12),
+            _ordersPanel(recent: true),
           ])),
           const SizedBox(width: 14),
           Expanded(flex: 3, child: Column(children: [
@@ -2433,7 +2462,14 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _StationSection.requests => _operatorSubpage(
         title: 'Recibir solicitud',
         description: 'Carga una derivación PDF, coteja la identidad y confirma su vinculación.',
-        child: _requestIntake(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SilWorkspaceProcessPath(),
+            const SizedBox(height: 14),
+            _requestIntake(),
+          ],
+        ),
       ),
       _StationSection.patients => _operatorSubpage(
         title: 'Pacientes y activación de cuentas',
@@ -2549,6 +2585,15 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         surfaceTintColor: Colors.transparent,
         title: const SilWorkspaceBrand(),
         actions: [
+          if (MediaQuery.sizeOf(context).width >= 700)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(child: SilWorkspaceRoleLabel(
+                label: _admin ? 'Administrador' : 'Operador',
+                icon: _admin ? Icons.admin_panel_settings_outlined :
+                  Icons.medical_services_outlined,
+              )),
+            ),
           IconButton(
             onPressed: widget.onLogout,
             tooltip: 'Cerrar sesión',
@@ -2614,6 +2659,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                               ),
                             ),
                           if (_operator) _station(),
+                          if (_admin && _labId != null) ...[
+                            _adminIndicators(),
+                            const SizedBox(height: 14),
+                          ],
                           if (_admin) _adminContent(),
                           const SizedBox(height: 20),
                           const Text(
