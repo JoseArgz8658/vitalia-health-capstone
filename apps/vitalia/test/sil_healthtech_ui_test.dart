@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vitalia/core/tema_vitalia.dart';
-import 'package:vitalia/features/laboratorio/portal_visual_sil.dart';
-import 'package:vitalia/features/laboratorio/sil_workspace.dart';
+import 'package:vitalia_health/core/tema_vitalia.dart';
+import 'package:vitalia_health/features/laboratorio/portal_visual_sil.dart';
+import 'package:vitalia_health/features/laboratorio/sil_workspace.dart';
 
 void main() {
   testWidgets('guía del proceso se adapta a una pantalla estrecha',
