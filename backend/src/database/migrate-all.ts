@@ -47,7 +47,7 @@ async function main() {
           AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
             WHERE version='042_sil_main_pending_closure')
           AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
-            WHERE version='044_sil_main_operator_invite_revocation')
+            WHERE version='045_sil_main_patient_link_codes')
           AND to_regclass('public.vitalia_sil_main_pending_requests') IS NOT NULL
           AND EXISTS (SELECT 1 FROM information_schema.columns
             WHERE table_schema='public' AND table_name='vitalia_sil_main_pending_requests'
@@ -58,7 +58,7 @@ async function main() {
         throw new Error('Base principal aún no integrada: no se aplicará ninguna migración automática.');
       }
       await client.query('COMMIT');
-      console.info('Vitalia principal: esquema SIL 044 verificado en solo lectura.');
+      console.info('Vitalia principal: esquema SIL 045 verificado en solo lectura.');
       return;
     }
     // La migración automática solo se conserva para vitalia_dev aislada.

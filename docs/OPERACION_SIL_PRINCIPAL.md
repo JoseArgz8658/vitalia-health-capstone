@@ -6,8 +6,7 @@ solicitudes, ordenes, revision y publicacion de informes ya autorizados, con dat
 
 ## 1. Condiciones antes de compilar o desplegar
 
-El backend usa la base principal `vitalia`, esquema postanalitico **044** una vez aplicado mediante el procedimiento controlado (la instalacion 041 existente no se modifica automaticamente)
-integrado mediante el procedimiento controlado. El codigo distingue:
+El backend usa la base principal `vitalia`, esquema postanalitico **045**. La instalación 041 se actualiza mediante el procedimiento controlado. El código distingue:
 
 | Elemento | Configuracion esperada |
 | --- | --- |
@@ -24,7 +23,7 @@ contiene estos valores hasta que se vuelva a compilar.
 
 **Importante:** `deploy/configurar.ps1` prepara variables generales pero
 **no** instala ni autoriza el SIL principal. En la base principal, el comando
-`migrate-all` solo verifica el esquema; **no aplica** las migraciones 041 a 044.
+`migrate-all` solo verifica el esquema; **no aplica** las migraciones 041 a 045.
 Si el esquema no esta preparado, detener el proceso. El procedimiento de
 migracion controlada exige respaldo, ensayo aislado y aprobacion explicita.
 No modificar una base existente para satisfacer esta guia.
@@ -54,7 +53,7 @@ docker compose exec api node dist/database/migrate-all.js
 ```
 
 En `vitalia` ese comando ejecuta una **consulta de solo lectura**: requiere
-las migraciones SIL hasta la 044 y la tabla de derivaciones pendientes con cierre administrativo.
+las migraciones SIL hasta la 045 y la tabla de derivaciones pendientes con cierre administrativo.
 No ejecutar el migrador general contra `vitalia_dev` para estas comprobaciones,
 porque ese entorno tiene una politica de migraciones diferente.
 
@@ -200,3 +199,83 @@ En una invitación pendiente, **Revocar** pide confirmación y registra la acci�
 la auditoría. La migración **044** amplía el catálogo de auditoría. La revocación
 y su evento se guardan en la misma transacción. Si la base está en 041, el
 migrador controlado verifica el historial y aplica 042, 043 y 044 en orden.
+
+
+## 9. Acceso iniciado por el paciente (Camino B)
+
+1. El paciente crea una cuenta e inicia sesión. Una cuenta recién creada no
+   obtiene asociaciones ni informes de laboratorio.
+2. Durante la verificación de identidad en el laboratorio, el paciente abre
+   **Mi cuenta → Vincular mi cuenta** y genera un código. El código dura 15
+   minutos, se muestra al emitirlo y reemplaza al anterior. Cada cuenta puede
+   generar hasta tres códigos por hora.
+3. El operador selecciona su laboratorio y abre **Pacientes → Vincular cuenta
+   paciente**. Coteja la identidad mediante el procedimiento de la institución
+   y registra una referencia sin datos clínicos, junto al código del paciente.
+4. La API comprueba rol y membresía, consume el código una vez y registra la
+   asociación y el evento de auditoría en una transacción. La inspección de
+   identidad sigue siendo responsabilidad del laboratorio.
+
+La migración **045** crea el registro de códigos. Conserva el hash, el
+vencimiento, la cuenta emisora y el laboratorio que canjeó el código. El
+recorrido automático verifica registro, expiración, reuso, separación entre
+laboratorios y límites de emisión con cuentas ficticias.
+
+## 10. Actualizar una instalación Windows a la versión integrada
+
+Tras fusionar y desde un árbol limpio en `develop`, valida la configuración
+y genera el respaldo antes de cambiar servicios.
+
+```powershell
+git pull --ff-only origin develop
+.\deploy\validar-modo-sil.ps1
+.\deploy\backup-main-before-sil.ps1
+```
+
+Conserva la ruta del respaldo y la huella SHA-256 que imprime el script.
+Compila la imagen nueva sin iniciar la API, y ensaya el migrador usando
+el respaldo en el contenedor PostgreSQL aislado.
+
+```powershell
+docker compose build api
+Push-Location backend
+npm ci
+npm run build
+Pop-Location
+.\deploy\rehearse-main-sil-migrations.ps1 -BackupFile $backupFile `
+  -ExpectedSha256 $backupSha256 -UseBackendMigrator
+```
+
+Después de verificar el ensayo y obtener la aprobación local, detén la API y
+el procesador durante el cambio de esquema. Ejecuta el migrador de la
+imagen nueva y comprueba sus códigos de salida antes de seguir.
+
+```powershell
+docker compose stop api worker
+docker compose run --rm --no-deps -T `
+  -e VITALIA_MAIN_SIL_APPLY=CONFIRMED_AFTER_ISOLATED_TEST `
+  -e "VITALIA_MAIN_BACKUP_SHA256=$backupSha256" `
+  --entrypoint node api dist/database/migrate-main-sil.js --apply
+docker compose run --rm --no-deps -T --entrypoint node api dist/database/migrate-all.js
+```
+
+Con el esquema verificado, recompila Flutter y levanta los servicios desde la
+raíz. PostgreSQL mantiene el volumen existente.
+
+```powershell
+.\deploy\crear-web.ps1
+docker compose --profile web up -d api worker web
+Invoke-RestMethod http://127.0.0.1:5173/api/health
+```
+
+## 11. Trazabilidad del alcance postanalítico
+
+| Requisito | Implementación | Evidencia automatizada |
+| --- | --- | --- |
+| Administrar operadores e invitaciones | Directorio, permisos, membresías, estados y revocación por laboratorio | Consultas, separación, paginación y revocación repetida en el recorrido SIL |
+| Consultar auditoría administrativa | Actividad administrativa desde el rol administrador | Eventos y campos permitidos en el recorrido SIL |
+| Recibir y cerrar derivaciones | Estación de recepción, extracción asistida y cierre transaccional 042 | PDF sintético, cierre y rechazo de conversión posterior |
+| Revisar y publicar informes | Revisión por operador autorizado y confirmación de autorización externa | Flujo operador y descarga posterior por el paciente |
+| Activar cuenta por invitación | Camino A con código de invitación y evidencia de identidad | Activación con cuenta ficticia y vinculación al laboratorio |
+| Vincular cuenta iniciada por paciente | Camino B con verificación del operador y código 045 | Registro, expiración, reuso, membresía y límite de emisión |
+| Consultar historial y ayuda | Portal Flutter, informes publicados y comparación descriptiva | Widgets de portal, comparación y descarga en Edge |

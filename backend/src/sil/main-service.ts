@@ -424,6 +424,63 @@ export function createSilMainService(db:Pool) {
       });
     },
 
+    async issuePatientLinkCode(patientId:string){
+      return transaction(async tx=>{
+        await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))',
+          ['sil-patient-link:'+patientId]);
+        const recent=await tx.query<{total:number}>(
+          `SELECT count(*)::int AS total
+           FROM public.vitalia_sil_main_patient_link_codes
+           WHERE patient_id=$1 AND created_at>CURRENT_TIMESTAMP-INTERVAL '1 hour'`,
+          [patientId]);
+        if((recent.rows[0]?.total??0)>=3)throw new SilMainConflict();
+        await tx.query(
+          `UPDATE public.vitalia_sil_main_patient_link_codes
+           SET revoked_at=CURRENT_TIMESTAMP
+           WHERE patient_id=$1 AND consumed_at IS NULL AND revoked_at IS NULL
+             AND expires_at>CURRENT_TIMESTAMP`,[patientId]);
+        const code=randomBytes(32).toString('base64url');
+        const result=await tx.query<{expiresAt:Date}>(
+          `INSERT INTO public.vitalia_sil_main_patient_link_codes
+           (id,patient_id,token_hash,expires_at)
+           VALUES($1,$2,$3,CURRENT_TIMESTAMP+INTERVAL '15 minutes')
+           RETURNING expires_at AS "expiresAt"`,
+          [randomUUID(),patientId,createHash('sha256').update(code).digest('hex')]);
+        return {code,expiresAt:result.rows[0].expiresAt};
+      });
+    },
+
+    async redeemPatientLinkCode(labId:string,operatorId:string,code:string,
+      evidenceReference:string){
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx);
+        const result=await tx.query<{id:string;patientId:string}>(
+          `SELECT c.id,c.patient_id AS "patientId"
+           FROM public.vitalia_sil_main_patient_link_codes c
+           JOIN public.vitalia_account_roles r
+             ON r.account_id=c.patient_id AND r.role_code='paciente' AND r.active
+           WHERE c.token_hash=$1 AND c.consumed_at IS NULL AND c.revoked_at IS NULL
+             AND c.expires_at>CURRENT_TIMESTAMP
+           FOR UPDATE OF c FOR SHARE OF r`,
+          [createHash('sha256').update(code).digest('hex')]);
+        const claim=result.rows[0];
+        if(!claim)throw new SilMainNotFound();
+        const linked=await tx.query(
+          `INSERT INTO public.vitalia_sil_main_patients
+           (lab_id,patient_id,verified_by,identity_evidence_reference)
+           VALUES($1,$2,$3,$4)
+           ON CONFLICT(lab_id,patient_id) DO NOTHING RETURNING patient_id`,
+          [labId,claim.patientId,operatorId,evidenceReference]);
+        if(!linked.rows.length)throw new SilMainConflict();
+        await tx.query(
+          `UPDATE public.vitalia_sil_main_patient_link_codes
+           SET consumed_at=CURRENT_TIMESTAMP,lab_id=$2 WHERE id=$1`,
+          [claim.id,labId]);
+        await audit(tx,labId,operatorId,'patient_identity_linked',null,{linkCodeId:claim.id});
+        return {linked:true};
+      });
+    },
+
     async createOrder(labId:string,patientId:string,examCodes:string[],operatorId:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);

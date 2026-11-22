@@ -297,6 +297,34 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       data.data.email,data.data.identityReference));
   });
 
+  const allowPatientLinkAttempt=createLoginAttemptLimiter();
+  router.post('/patient/link-code',patient,async(req,res)=>{
+    if(!z.object({}).strict().safeParse(req.body).success){
+      res.status(400).json({error:{code:'INVALID_LINK_REQUEST'}});return;
+    }
+    res.status(201).json(await main.issuePatientLinkCode(res.locals.account.id));
+  });
+
+  router.post('/labs/:labId/patient-link-code',staff,labPath,async(req,res)=>{
+    const account=res.locals.account;
+    if(account.role!=='operador_laboratorio'){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    if(!allowPatientLinkAttempt(account.id)){
+      res.status(429).json({error:{code:'RATE_LIMITED'}});return;
+    }
+    const data=z.object({
+      code:z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+      identityReference:z.string().trim().min(6).max(150),
+      identityConfirmed:z.literal(true),
+    }).strict().safeParse(req.body);
+    if(!data.success){
+      res.status(400).json({error:{code:'INVALID_LINK_REQUEST'}});return;
+    }
+    res.json(await main.redeemPatientLinkCode(req.params.labId as string,
+      account.id,data.data.code,data.data.identityReference));
+  });
+
   // Derivaciones pendientes: sin cuenta ni orden hasta que un operador
   // verifique identidad y el paciente active su acceso al laboratorio.
   router.post('/labs/:labId/medical-requests/pending',staff,labPath,

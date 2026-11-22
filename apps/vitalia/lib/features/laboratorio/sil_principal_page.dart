@@ -1882,6 +1882,77 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ],
   );
 
+  Future<void> _redeemPatientLink() async {
+    final lab = _labId;
+    if (lab == null) return;
+    var code = '';
+    var reference = '';
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: const Text('Vincular cuenta paciente'),
+          scrollable: true,
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Verifica la identidad de la persona según el procedimiento '
+                  'de tu laboratorio y pídele el código que generó desde su cuenta.',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  onChanged: (value) => update(() => code = value.trim()),
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: const InputDecoration(labelText: 'Código del paciente'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  onChanged: (value) => update(() => reference = value.trim()),
+                  maxLength: 150,
+                  decoration: const InputDecoration(
+                    labelText: 'Referencia de verificación de identidad',
+                    helperText: 'Usa una referencia sin datos clínicos.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: !RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(code) ||
+                      reference.length < 6
+                  ? null
+                  : () => Navigator.pop(dialogContext, true),
+              child: const Text('Confirmar identidad y vincular'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || accepted != true || _labId != lab) return;
+    await _execute(() async {
+      try {
+        await widget.api.silMainRequest('/labs/$lab/patient-link-code', body: {
+          'code': code, 'identityReference': reference, 'identityConfirmed': true,
+        });
+      } on AuthFailure catch (error) {
+        if (error.status == 404) {
+          throw const AuthFailure('El código venció, se utilizó o no es válido.');
+        }
+        rethrow;
+      }
+      await _loadPatients(offset: 0);
+    });
+  }
+
   Future<void> _checkPatientActivation() async {
     final lab = _labId;
     final email = _invitedPatientEmail.text.trim().toLowerCase();
@@ -3235,10 +3306,21 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           primaryFlex: 7,
           secondaryFlex: 4,
           primary: _patientDirectory(),
-          secondary: SilWorkspaceDisclosure(
-            title: 'Invitar paciente',
-            icon: Icons.person_add_alt_1_outlined,
-            child: _patientLink(),
+          secondary: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _redeemPatientLink,
+                icon: const Icon(Icons.link),
+                label: const Text('Vincular cuenta paciente'),
+              ),
+              const SizedBox(height: 16),
+              SilWorkspaceDisclosure(
+                title: 'Invitar paciente',
+                icon: Icons.person_add_alt_1_outlined,
+                child: _patientLink(),
+              ),
+            ],
           ),
         ),
       ),
