@@ -254,13 +254,22 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
     async(req,res)=>{
       const data=z.object({
         email:z.string().trim().toLowerCase().pipe(z.email().max(254)),
+        siteAccess:siteAccessSchema.optional(),
       }).strict().safeParse(req.body);
       if(!data.success){
         res.status(400).json({error:{code:'INVALID_INVITATION'}});return;
       }
-      res.status(201).json(await main.inviteOperator(
-        req.params.labId as string,data.data.email,res.locals.account.id));
+      const {email,siteAccess}=data.data;
+      res.status(201).json(siteAccess
+        ?await main.inviteOperator(req.params.labId as string,email,
+          res.locals.account.id,siteAccess)
+        :await main.inviteOperator(req.params.labId as string,email,res.locals.account.id));
     });
+
+  const siteAccessSchema=z.discriminatedUnion('mode',[
+    z.object({mode:z.literal('all'),siteIds:z.array(uuid).length(0)}).strict(),
+    z.object({mode:z.literal('selected'),siteIds:z.array(uuid).min(1).max(100)}).strict(),
+  ]);
 
   // La lista de operadores se limita al laboratorio seleccionado y al administrador.
   router.get('/labs/:labId/staff',administrator,labPath,async(req,res)=>{
@@ -269,15 +278,31 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
 
   router.post('/labs/:labId/staff',administrator,labPath,async(req,res)=>{
     const data=z.union([
-      z.object({accountId:uuid}).strict(),
-      z.object({email:z.string().trim().toLowerCase().pipe(z.email().max(254))}).strict(),
+      z.object({accountId:uuid,siteAccess:siteAccessSchema.optional()}).strict(),
+      z.object({email:z.string().trim().toLowerCase().pipe(z.email().max(254)),
+        siteAccess:siteAccessSchema.optional()}).strict(),
     ]).safeParse(req.body);
     if(!data.success){
       res.status(400).json({error:{code:'INVALID_STAFF'}});return;
     }
-    res.status(201).json(await main.grantStaff(
-      req.params.labId as string,
-      'accountId' in data.data?data.data.accountId:data.data,res.locals.account.id));
+    const identity='accountId' in data.data?data.data.accountId:{email:data.data.email};
+    const siteAccess=data.data.siteAccess;
+    res.status(201).json(siteAccess
+      ?await main.grantStaff(req.params.labId as string,identity,
+        res.locals.account.id,siteAccess)
+      :await main.grantStaff(req.params.labId as string,identity,res.locals.account.id));
+  });
+
+  // El mismo operador puede trabajar en una, varias o todas las sedes.
+  router.post('/labs/:labId/staff/sites',administrator,labPath,async(req,res)=>{
+    const parsed=z.object({
+      accountId:uuid,siteAccess:siteAccessSchema,
+    }).strict().safeParse(req.body);
+    if(!parsed.success){
+      res.status(400).json({error:{code:'INVALID_STAFF_SITES'}});return;
+    }
+    res.json(await main.setStaffSites(req.params.labId as string,
+      parsed.data.accountId,res.locals.account.id,parsed.data.siteAccess));
   });
 
   router.post('/labs/:labId/staff/membership',administrator,labPath,async(req,res)=>{
