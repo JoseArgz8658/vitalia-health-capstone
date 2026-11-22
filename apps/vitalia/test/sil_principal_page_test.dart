@@ -11,6 +11,8 @@ class _StationApi extends AuthApi {
   final pendingCompletions=<Map<String,dynamic>>[];
   final pendingClosures=<Map<String,dynamic>>[];
   final requestPaths=<String>[];
+  final patientQueries=<Map<String,String>>[];
+  bool manyPatients=false;
   bool showPending=false;
   bool pendingWithoutDate=false;
   bool expandedSummary=false;
@@ -94,6 +96,27 @@ class _StationApi extends AuthApi {
       return {'pending':[]};
     }
     if(requestPath=='/labs/$allowedLab/patients'){
+      patientQueries.add(requestUri.queryParameters);
+      if(manyPatients){
+        final offset=int.parse(requestUri.queryParameters['offset']??'0');
+        final limit=int.parse(requestUri.queryParameters['limit']??'20');
+        final term=(requestUri.queryParameters['search']??'').toLowerCase();
+        final all=List.generate(125,(index){
+          final number=index+1;
+          return <String,dynamic>{
+            'id':'88888888-8888-4888-8888-' + number.toString().padLeft(12,'0'),
+            'email':'paciente' + number.toString() + '@example.invalid',
+            'givenNames':'Paciente',
+            'familyNames':number.toString(),
+          };
+        });
+        final matches=all.where((patient)=>
+            ((patient['givenNames'] as String)+' '+
+             (patient['familyNames'] as String)+' '+
+             (patient['email'] as String)).toLowerCase().contains(term)).toList();
+        return {'patients':matches.skip(offset).take(limit).toList(),
+          'hasMore':offset+limit<matches.length};
+      }
       return {
         'patients':[
           {
@@ -352,7 +375,7 @@ void main() {
     expect(tester.takeException(),isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
-  testWidgets('órdenes manuales seleccionan paciente activo por nombre, nunca por UUID', (tester) async {
+  testWidgets('órdenes manuales buscan y seleccionan una cuenta sin identificadores técnicos', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1050));
     addTearDown(()=>tester.binding.setSurfaceSize(null));
     final api = _StationApi();
@@ -364,17 +387,88 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton,'Órdenes'));
     await tester.pumpAndSettle();
-    expect(find.text('UUID del paciente vinculado'), findsNothing);
     final expansion = find.text('Crear orden sin derivación PDF');
     await tester.ensureVisible(expansion);
     await tester.tap(expansion);
     await tester.pumpAndSettle();
-    final patientSelection = find.byWidgetPredicate((widget) =>
+
+    expect(find.text('UUID del paciente vinculado'), findsNothing);
+    final oldSelector = find.byWidgetPredicate((widget) =>
         widget is DropdownButtonFormField<String> &&
         widget.decoration.labelText == 'Paciente con cuenta activada');
-    expect(patientSelection, findsOneWidget);
-    expect(find.text('Buscar paciente por nombre o correo'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    expect(oldSelector, findsNothing);
+    final open=find.widgetWithText(OutlinedButton,'Buscar y seleccionar paciente');
+    await tester.ensureVisible(open);
+    await tester.tap(open);
+    await tester.pumpAndSettle();
+    expect(find.text('Seleccionar paciente'), findsOneWidget);
+    expect(api.patientQueries, isEmpty,
+        reason:'Abrir el selector no descarga el directorio completo.');
+
+    final input=find.byWidgetPredicate((widget)=>
+        widget is TextField &&
+        widget.decoration?.labelText == 'Nombre o correo del paciente');
+    await tester.enterText(input,'prueba');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton,'Buscar'));
+    await tester.pumpAndSettle();
+    expect(api.patientQueries.single['limit'],'20');
+    expect(api.patientQueries.single['search'],'prueba');
+    expect(find.text('Ana Prueba'),findsOneWidget);
+    await tester.tap(find.text('Ana Prueba'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cambiar paciente'), findsOneWidget);
+    expect(find.text('Ana Prueba'),findsOneWidget);
+    expect(find.text('prueba@example.invalid'),findsOneWidget);
+    expect(tester.takeException(),isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('selector móvil busca entre 125 pacientes con páginas de veinte', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(()=>tester.binding.setSurfaceSize(null));
+    final api=_StationApi()..manyPatients=true;
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home:SilPrincipalPage(
+      api:api,role:'operador_laboratorio',onExpired:(){},onLogout:(){},
+    )));
+    await tester.pumpAndSettle();
+    final orders=find.text('Órdenes');
+    await tester.ensureVisible(orders.first);
+    await tester.tap(orders.first);
+    await tester.pumpAndSettle();
+    final expansion=find.text('Crear orden sin derivación PDF');
+    await tester.ensureVisible(expansion.first);
+    await tester.tap(expansion.first);
+    await tester.pumpAndSettle();
+    final open=find.widgetWithText(OutlinedButton,'Buscar y seleccionar paciente');
+    await tester.ensureVisible(open);
+    await tester.tap(open);
+    await tester.pumpAndSettle();
+
+    final input=find.byWidgetPredicate((w)=>
+        w is TextField && w.decoration?.labelText=='Nombre o correo del paciente');
+    await tester.enterText(input,'paciente');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton,'Buscar'));
+    await tester.pumpAndSettle();
+    expect(api.patientQueries.last['limit'],'20');
+    expect(api.patientQueries.last['offset'],'0');
+    expect(find.text('Resultados 1–20'),findsOneWidget);
+
+    final next=find.widgetWithText(OutlinedButton,'Siguiente');
+    await tester.ensureVisible(next);
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(api.patientQueries.last['offset'],'20');
+    expect(find.text('Resultados 21–40'),findsOneWidget);
+    final selected=find.text('Paciente 21');
+    await tester.ensureVisible(selected);
+    await tester.tap(selected);
+    await tester.pumpAndSettle();
+    expect(find.text('Paciente 21'),findsOneWidget);
+    expect(find.text('paciente21@example.invalid'),findsOneWidget);
+    expect(find.text('UUID del paciente vinculado'),findsNothing);
+    expect(tester.takeException(),isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('panel usa totales completos sin confundirlos con las últimas órdenes', (tester) async {
