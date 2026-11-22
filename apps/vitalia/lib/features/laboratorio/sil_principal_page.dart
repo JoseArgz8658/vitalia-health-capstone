@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
 import 'sil_workspace.dart';
+import 'sil_patient_search_dialog.dart';
 import 'sil_main_clinical_panel.dart';
 import 'operator_design.dart';
 import 'operator_guided_flow.dart';
@@ -45,8 +46,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   bool _morePatients = false;
   String _activePatientSearch = '';
   final _evidence = TextEditingController();
-  final _orderPatient = TextEditingController();
-  final _orderPatientSearch = TextEditingController();
   Map<String,dynamic>? _manualPatient;
   String? _patientInviteStatus;
   final _requestPatient = TextEditingController();
@@ -139,7 +138,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   @override
   void dispose(){
     for(final ctrl in [
-      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_evidence,_orderPatient,_orderPatientSearch,
+      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_evidence,
       _requestPatient,_requestInviteEmail,_requestIdentityEvidence,
       _requestPrescriber,_requestDate,
       _reportProfessional,_reportReference,_reportDate,
@@ -420,8 +419,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _clinicalOrder = null;
     _ordersPatient = null;
     _orderSearch.clear();
-    _orderPatient.clear();
-    _orderPatientSearch.clear();
     _manualPatient = null;
     _patientInviteStatus = null;
     _activeOrderSearch = '';
@@ -429,7 +426,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _orderOffset = 0;
     _moreOrders = false;
     for (final controller in [
-      _invitedPatientEmail, _evidence, _orderPatient, _requestPatient,
+      _invitedPatientEmail, _evidence, _requestPatient,
       _requestInviteEmail, _requestIdentityEvidence, _requestPrescriber,
       _requestDate, _reportProfessional, _reportReference, _reportDate,
     ]) {
@@ -715,8 +712,24 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     });
   }
 
+  Future<void> _chooseOrderPatient() async {
+    final lab = _labId;
+    if (lab == null || _busy) return;
+    final selected = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => SilPatientSearchDialog(
+        api: widget.api,
+        labId: lab,
+        onExpired: widget.onExpired,
+      ),
+    );
+    if (!mounted || _labId != lab || selected == null ||
+        _requireUuid(selected['id'] as String?) == null) return;
+    setState(() => _manualPatient = selected);
+  }
+
   Future<void> _createOrder() async {
-    final lab=_labId,patientId=_requireUuid(_orderPatient.text);
+    final lab=_labId,patientId=_requireUuid(_manualPatient?['id'] as String?);
     if(lab==null||patientId==null||_codes.isEmpty){
       throw const AuthFailure('Selecciona laboratorio, paciente y al menos un examen.');
     }
@@ -724,7 +737,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       'patientId':patientId,
       'examCodes':_codes.toList(),
     });
-    _orderPatient.clear();
     if (mounted) setState(() => _manualPatient = null);
     await _loadOrders();
   }
@@ -2040,53 +2052,39 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         message: 'Selecciona una cuenta activa del laboratorio y verifica las prestaciones solicitadas. Nunca necesitas copiar un identificador técnico.',
       ),
       const SizedBox(height: 13),
-      _field(_orderPatientSearch, 'Buscar paciente por nombre o correo'),
       OutlinedButton.icon(
-        onPressed: _busy ? null : () => _execute(
-          () => _loadPatients(offset: 0, search: _orderPatientSearch.text.trim()),
-          showNotice: false,
-        ),
-        icon: const Icon(Icons.search_outlined),
-        label: const Text('Buscar paciente'),
+        onPressed: _busy || _labId == null ? null : _chooseOrderPatient,
+        icon: const Icon(Icons.person_search_outlined),
+        label: Text(_manualPatient == null
+            ? 'Buscar y seleccionar paciente'
+            : 'Cambiar paciente'),
       ),
-      const SizedBox(height: 12),
-      DropdownButtonFormField<String>(
-        key: ValueKey((_labId, _manualPatient?['id'], _activePatientSearch)),
-        initialValue: _manualPatient?['id'] as String?,
-        isExpanded: true,
-        decoration: const InputDecoration(
-          labelText: 'Paciente con cuenta activada',
-          border: OutlineInputBorder(),
-        ),
-        items: [
-          if (_manualPatient != null &&
-              !_patients.any((p) => p['id'] == _manualPatient?['id']))
-            DropdownMenuItem<String>(
-              value: _manualPatient!['id'] as String,
-              child: Text(_patientName(_manualPatient!),
-                  overflow: TextOverflow.ellipsis),
+      const SizedBox(height: 11),
+      if (_manualPatient == null)
+        const Text(
+          'Busca por nombre o correo entre todos los pacientes activos del '
+          'laboratorio. La búsqueda muestra hasta 20 resultados por página.',
+        )
+      else
+        Container(
+          decoration: BoxDecoration(
+            color: ColoresVitalia.fondoAzul,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: ListTile(
+            leading: const Icon(Icons.check_circle_outline),
+            title: Text(_patientName(_manualPatient!)),
+            subtitle: _patientName(_manualPatient!) ==
+                    (_manualPatient!['email'] as String?)
+                ? null
+                : Text(_manualPatient!['email'] as String? ?? ''),
+            trailing: IconButton(
+              tooltip: 'Quitar paciente seleccionado',
+              onPressed: _busy ? null : () =>
+                  setState(() => _manualPatient = null),
+              icon: const Icon(Icons.close),
             ),
-          for (final patient in _patients)
-            DropdownMenuItem<String>(
-              value: patient['id'] as String,
-              child: Text(
-                _patientName(patient) + ' · ' + (patient['email'] as String),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-        ],
-        onChanged: _busy ? null : (value) => setState(() {
-          _manualPatient = [
-            ..._patients,
-            if (_manualPatient != null) _manualPatient!,
-          ].where((p) => p['id'] == value).firstOrNull;
-          _orderPatient.text = value ?? '';
-        }),
-      ),
-      if (_patients.isEmpty)
-        const Padding(
-          padding: EdgeInsets.only(top: 9),
-          child: Text('No aparecen pacientes activos en la lista. Puedes buscar por correo o iniciar una invitación desde «Pacientes».'),
+          ),
         ),
       const SizedBox(height: 14),
       const Text('Seleccionar exámenes',
@@ -2108,7 +2106,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       ]),
       const SizedBox(height: 14),
       FilledButton.icon(
-        onPressed: _busy || _orderPatient.text.isEmpty || _codes.isEmpty
+        onPressed: _busy || _manualPatient == null || _codes.isEmpty
             ? null
             : () => _execute(_createOrder),
         icon: const Icon(Icons.add_circle_outline),
@@ -2903,7 +2901,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           offset: orderStatus == null ? _orderOffset : 0,
           status: orderStatus,
         );
-        await _loadPatients(offset: 0, search: _orderPatientSearch.text.trim());
       }, showNotice: false);
     } else if (section == _StationSection.review && _canReview) {
       _execute(() => _loadReviewPage(offset: 0), showNotice: false);
@@ -2951,7 +2948,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                 _requestIdentityChecked = false;
                 _requestHumanChecked = false;
               } else {
-                _orderPatient.text = patient['id'] as String;
                 _manualPatient = patient;
               }
               _openSection(section);
