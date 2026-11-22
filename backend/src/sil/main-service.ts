@@ -403,7 +403,8 @@ export function createSilMainService(db:Pool) {
            'laboratory_created','operator_invited','operator_activated','staff_granted',
            'operator_review_permission_changed','operator_membership_disabled',
            'operator_membership_enabled','operator_invitation_revoked',
-           'site_created','site_updated','site_activated','site_deactivated')
+           'site_created','site_updated','site_activated','site_deactivated',
+           'operator_sites_changed')
          ORDER BY e.created_at DESC,e.id DESC
          LIMIT $2 OFFSET $3`,[labId,limit+1,offset]);
       return {events:found.rows.slice(0,limit),hasMore:found.rows.length>limit};
