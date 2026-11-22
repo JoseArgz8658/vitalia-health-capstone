@@ -1,4 +1,10 @@
-> **Rama de integración de fase 7:** el avance se trasladó a `integracion/fase-7-atencion-examen`. Antes de ejecutar, consulta [el informe del traspaso y la migración 025](docs/fase-7/traspaso-oficial.md). Esta rama está pendiente de validación Windows y acuerdo del equipo; `develop` no se ha fusionado. (José Aránguiz)
+> **SIL principal en `develop` (noviembre de 2026):** la referencia vigente
+> para compilar y actualizar la estación postanalítica es
+> [Operación segura del SIL principal](docs/OPERACION_SIL_PRINCIPAL.md).
+> Esta guía general conserva instrucciones de etapas anteriores (incluida la
+> instalación legado/DEMO); no permite inferir que una base nueva esté migrada
+> a SIL 041 ni reemplaza el preflight antes de construir la web. Las migraciones
+> de la base principal requieren respaldo, ensayo aislado y autorización.
 
 # Vitalia Health: instalación y pruebas en Windows
 
