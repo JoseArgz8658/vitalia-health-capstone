@@ -3,15 +3,15 @@ import 'package:flutter/material.dart';
 /// Sistema visual Vitalia: contraste legible y colores reservados para acciones
 /// y estados. Los tonos suaves favorecen el uso prolongado de la aplicación.
 abstract final class ColoresVitalia {
-  static const azul = Color(0xFF245A74);
-  static const azulActivo = Color(0xFF1B4960);
-  static const azulSuave = Color(0xFFE9F2F6);
-  static const verde = Color(0xFF2C7A7B);
-  static const verdeSuave = Color(0xFFE8F4F1);
-  static const fondoAzul = Color(0xFFF5F7FA);
+  static const azul = Color(0xFF236A86);
+  static const azulActivo = Color(0xFF17354E);
+  static const azulSuave = Color(0xFFEAF3F6);
+  static const verde = Color(0xFF1A776D);
+  static const verdeSuave = Color(0xFFE7F3F2);
+  static const fondoAzul = Color(0xFFF4F7FA);
   static const blanco = Color(0xFFFFFFFF);
-  static const texto = Color(0xFF233746);
-  static const textoSecundario = Color(0xFF617483);
+  static const texto = Color(0xFF17354E);
+  static const textoSecundario = Color(0xFF536B7C);
   static const borde = Color(0xFFDCE4EA);
   static const bordeTenue = Color(0xFFE9EEF2);
   static const advertenciaSuave = Color(0xFFFEF5E8);
@@ -66,7 +66,7 @@ ThemeData temaVitalia() {
       margin: EdgeInsets.zero,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.all(Radius.circular(16)),
+        borderRadius: BorderRadius.all(Radius.circular(14)),
         side: BorderSide(color: ColoresVitalia.borde),
       ),
     ),

@@ -14,6 +14,7 @@ class PortalHeroSil extends StatelessWidget {
     this.action,
     this.compact = false,
     this.showLaboratoryArt = true,
+    this.calm = false,
   });
 
   final String eyebrow;
@@ -23,24 +24,32 @@ class PortalHeroSil extends StatelessWidget {
   final Widget? action;
   final bool compact;
   final bool showLaboratoryArt;
+  /// Portada clara y serena para el espacio personal del paciente.
+  final bool calm;
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(23),
       child: DecoratedBox(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: calm ? ColoresVitalia.borde : Colors.transparent,
+          ),
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF173B53), Color(0xFF286E79), Color(0xFF2F8783)],
+            colors: calm
+                ? const [Color(0xFFF9FCFD), Color(0xFFE7F3F2)]
+                : const [Color(0xFF17354E), Color(0xFF205F77)],
           ),
         ),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final withArt = showLaboratoryArt &&
                 constraints.maxWidth >= 815 &&
-                !compact;
+                !compact &&
+                !calm;
             final intro = Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -50,17 +59,17 @@ class PortalHeroSil extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(9),
                       decoration: BoxDecoration(
-                        color: const Color(0x2DFFFFFF),
+                        color: calm ? ColoresVitalia.verdeSuave : const Color(0x2DFFFFFF),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(icon, color: Colors.white, size: 21),
+                      child: Icon(icon, color: calm ? ColoresVitalia.azul : Colors.white, size: 21),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
                         eyebrow.toUpperCase(),
-                        style: const TextStyle(
-                          color: Color(0xFFD1F0EF),
+                        style: TextStyle(
+                          color: calm ? ColoresVitalia.verde : const Color(0xFFD1F0EF),
                           fontWeight: FontWeight.w800,
                           letterSpacing: 1.35,
                           fontSize: 10,
@@ -69,21 +78,22 @@ class PortalHeroSil extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 19),
+                SizedBox(height: calm ? 12 : 19),
                 Text(
                   title,
                   style: TextStyle(
                     fontSize: compact ? 26 : 33,
                     height: 1.16,
                     fontWeight: FontWeight.w800,
-                    color: Colors.white,
+                    color: calm ? ColoresVitalia.texto : Colors.white,
                   ),
                 ),
                 const SizedBox(height: 11),
                 Text(
                   subtitle,
-                  style: const TextStyle(
-                    color: Color(0xFFE2F1F2),
+                  style: TextStyle(
+                    color: calm ? ColoresVitalia.textoSecundario :
+                      const Color(0xFFE2F1F2),
                     fontSize: 14,
                     height: 1.6,
                   ),
@@ -132,8 +142,8 @@ class PortalHeroSil extends StatelessWidget {
                 ),
                 Padding(
                   padding: EdgeInsets.symmetric(
-                    horizontal: compact ? 19 : 30,
-                    vertical: compact ? 25 : 33,
+                    horizontal: compact ? 19 : 27,
+                    vertical: calm ? (compact ? 19 : 23) : (compact ? 25 : 33),
                   ),
                   child: withArt
                       ? Row(
