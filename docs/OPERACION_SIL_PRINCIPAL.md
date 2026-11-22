@@ -6,7 +6,7 @@ solicitudes, ordenes, revision y publicacion de informes ya autorizados, con dat
 
 ## 1. Condiciones antes de compilar o desplegar
 
-El backend usa la base principal `vitalia`, esquema postanalitico **046**. La instalación 041 se actualiza mediante el procedimiento controlado. El código distingue:
+El backend usa la base principal `vitalia`, esquema postanalitico **047**. La instalación 041 se actualiza mediante el procedimiento controlado. El código distingue:
 
 | Elemento | Configuracion esperada |
 | --- | --- |
@@ -23,7 +23,7 @@ contiene estos valores hasta que se vuelva a compilar.
 
 **Importante:** `deploy/configurar.ps1` prepara variables generales pero
 **no** instala ni autoriza el SIL principal. En la base principal, el comando
-`migrate-all` solo verifica el esquema; **no aplica** las migraciones 041 a 046.
+`migrate-all` solo verifica el esquema; **no aplica** las migraciones 041 a 047.
 Si el esquema no esta preparado, detener el proceso. El procedimiento de
 migracion controlada exige respaldo, ensayo aislado y aprobacion explicita.
 No modificar una base existente para satisfacer esta guia.
@@ -53,7 +53,7 @@ docker compose exec api node dist/database/migrate-all.js
 ```
 
 En `vitalia` ese comando ejecuta una **consulta de solo lectura**: requiere
-las migraciones SIL hasta la 046 y la tabla de derivaciones pendientes con cierre administrativo.
+las migraciones SIL hasta la 047 y la tabla de derivaciones pendientes con cierre administrativo.
 No ejecutar el migrador general contra `vitalia_dev` para estas comprobaciones,
 porque ese entorno tiene una politica de migraciones diferente.
 
@@ -325,3 +325,39 @@ elegir la región. Si se modifica la región o la comuna, se solicita de nuevo
 la calle y el número. La API verifica el par región-comuna. La dirección
 manual debe cotejarse con la ubicación real de la sede. Las sedes antiguas
 con un territorio libre se pueden consultar y deben corregirse al editarlas.
+
+
+## Asignación de operadores a sedes (047)
+
+**Propósito.** El administrador registra un operador con **Agregar operador**, selecciona
+el laboratorio y distingue entre un correo de operador nuevo (invitación de un solo uso)
+o una cuenta de operador ya activa (vinculación directa). Antes de confirmar, elige
+**Todas las sedes** o **Solo sedes seleccionadas**. Un operador puede tener una o varias
+sedes del mismo laboratorio; ninguna sede de otro laboratorio puede asignarse.
+
+- La invitación guarda el alcance escogido hasta su canje. Durante la activación se
+  comprueba nuevamente que las sedes asignadas siguen activas.
+- El directorio administrativo muestra el alcance de cada operador y permite
+  modificarlo con **Asignar sedes**. La modificación se audita.
+- Los operadores anteriores conservan acceso a todas las sedes dentro de los
+  laboratorios donde ya tenían membresía, incluso si se crean nuevas sedes.
+- **Solo sedes seleccionadas** limita la creación y visualización de órdenes,
+  derivaciones pendientes, descarga de PDFs, revisión y publicación, y conteos
+  del panel operativo. Las órdenes históricas sin sede no son accesibles a
+  operadores restringidos. El administrador conserva el monitoreo general.
+- Los pacientes asociados siguen formando parte del directorio compartido del
+  laboratorio para permitir recibir nuevos requerimientos; esta función no
+  restringe por sí sola el directorio de pacientes por sede.
+- Una sede desactivada permanece en el historial, pero no se puede asignar en
+  nuevas operaciones ni al modificar una asignación.
+
+**Seguridad y despliegue:** la migración aditiva
+`047_sil_main_staff_sites.sql` agrega el modo de acceso, las relaciones
+operador-sede y la configuración de invitación. No elimina cuentas ni órdenes.
+El backend requiere el esquema 047; `migrate-all` continúa validando solamente
+en lectura. Para pasar de 046 a 047 se exige respaldo del entorno principal,
+ensayo en PostgreSQL temporal, comprobación de checksum y autorización expresa
+antes de ejecutar `migrate-main-sil --apply`.
+
+Esta función no necesita Google Maps ni ninguna clave externa. La verificación
+opcional de direcciones continúa separada de los permisos por sede.

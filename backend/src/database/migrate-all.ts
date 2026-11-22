@@ -54,8 +54,11 @@ async function main() {
             WHERE version='044_sil_main_operator_invite_revocation')
           AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
             WHERE version='046_sil_main_laboratory_sites')
+          AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
+            WHERE version='047_sil_main_staff_sites')
           AND to_regclass('public.vitalia_sil_main_patient_link_codes') IS NOT NULL
           AND to_regclass('public.vitalia_sil_main_sites') IS NOT NULL
+          AND to_regclass('public.vitalia_sil_main_staff_sites') IS NOT NULL
           AND to_regclass('public.vitalia_sil_main_pending_requests') IS NOT NULL
           AND EXISTS (SELECT 1 FROM information_schema.columns
             WHERE table_schema='public' AND table_name='vitalia_sil_main_pending_requests'
@@ -66,7 +69,7 @@ async function main() {
         throw new Error('Base principal aún no integrada: no se aplicará ninguna migración automática.');
       }
       await client.query('COMMIT');
-      console.info('Vitalia principal: esquema SIL 046 verificado en solo lectura.');
+      console.info('Vitalia principal: esquema SIL 047 verificado en solo lectura.');
       return;
     }
     // La migración automática solo se conserva para vitalia_dev aislada.
