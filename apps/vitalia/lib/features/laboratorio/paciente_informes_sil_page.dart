@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -43,16 +45,23 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
   String? _chatBusyReport;
   String? _chatError;
   late Future<Map<String, dynamic>> _profileRequest;
-  final _reportsAnchor = GlobalKey();
-  final _pageScroll = ScrollController();
   bool _reportsTabSelected = false;
+  int? _reportTotal;
+  String? _laboratoryFilter;
+  List<Map<String, dynamic>>? _historyPage;
+  int _historyOffset = 0;
+  int _historyTotal = 0;
+  int _historyGeneration = 0;
+  bool _historyLoading = false;
+  String? _historyError;
+  Timer? _historyDebounce;
   bool _issuingLinkCode = false;
 
   @override
   void dispose() {
+    _historyDebounce?.cancel();
     _question.dispose();
     _filter.dispose();
-    _pageScroll.dispose();
     super.dispose();
   }
 
@@ -78,6 +87,10 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       final ids = reports.map((report) => report['id']).toSet();
       setState(() {
         _reports = reports;
+        _reportTotal = data['total'] as int? ?? reports.length;
+        if (!reports.any((report) => report['issuingLaboratory'] == _laboratoryFilter)) {
+          _laboratoryFilter = null;
+        }
         _conversations.removeWhere((id, _) => !ids.contains(id));
         if (!ids.contains(_expandedReportId)) _expandedReportId = null;
         if (!ids.contains(_activeChatReport)) {
@@ -608,11 +621,67 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     );
   }
 
+  void _changeHistoryFilter() {
+    if (!_mainSil) {
+      setState(() {});
+      return;
+    }
+    _historyDebounce?.cancel();
+    _historyGeneration++;
+    setState(() {
+      _historyLoading = true;
+      _historyError = null;
+    });
+    _historyDebounce = Timer(
+      const Duration(milliseconds: 300),
+      () => _loadHistory(0),
+    );
+  }
+
+  Future<void> _loadHistory(int offset) async {
+    _historyDebounce?.cancel();
+    final generation = ++_historyGeneration;
+    final search = _filter.text.trim();
+    final params = Uri(queryParameters: {
+      'offset': '$offset',
+      if (search.isNotEmpty) 'search': search,
+      if (_laboratoryFilter != null) 'laboratory': _laboratoryFilter!,
+    }).query;
+    setState(() {
+      _historyLoading = true;
+      _historyError = null;
+    });
+    try {
+      final data = await widget.api.silMainRequest('/patient/reports?$params');
+      if (!mounted || generation != _historyGeneration) return;
+      setState(() {
+        _historyPage = (data['reports'] as List).cast<Map<String, dynamic>>();
+        _historyOffset = offset;
+        _historyTotal = data['total'] as int;
+      });
+    } on AuthFailure catch (error) {
+      if (!mounted || generation != _historyGeneration) return;
+      if (error.status == 401) {
+        widget.onExpired();
+      } else {
+        setState(() => _historyError = error.message);
+      }
+    } finally {
+      if (mounted && generation == _historyGeneration) {
+        setState(() => _historyLoading = false);
+      }
+    }
+  }
+
   void _openOverview([String? reportId]) {
     Navigator.of(context).push<void>(MaterialPageRoute(
       builder: (_) => ResumenInformesSilPage(
         api: widget.api,
-        reports: List.of(_reports),
+        reports: <String, Map<String, dynamic>>{
+          for (final report in _reports) report['id'] as String: report,
+          for (final report in _historyPage ?? const <Map<String, dynamic>>[])
+            report['id'] as String: report,
+        }.values.toList(),
         onExpired: widget.onExpired,
         initialReportId: reportId,
       ),
@@ -627,6 +696,9 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     final chatOpen = _activeChatReport == id;
     final details = [
       if (exams.length > 1) exams.join(' · '),
+      if (report['siteName'] != null)
+        [report['siteName'], report['siteCommune'], report['siteAddress']]
+            .whereType<String>().join(' · '),
       if (report['prescriberName'] != null)
         'Solicitó: ${report['prescriberName']}',
       if (report['requestDate'] != null)
@@ -768,6 +840,64 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     );
   }
 
+  Future<void> _openLaboratoryContact() async {
+    if (!_mainSil) {
+      await PortalAyudaSil.contacto(context, _reports);
+      return;
+    }
+    final directory = widget.api.silMainRequest('/patient/sites');
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Contacto del laboratorio'),
+        scrollable: true,
+        content: SizedBox(
+          width: 480,
+          child: FutureBuilder<Map<String, dynamic>>(
+            future: directory,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const LinearProgressIndicator(semanticsLabel: 'Cargando sedes');
+              }
+              if (snapshot.hasError) {
+                return const Text('No pudimos consultar las sedes. Intenta nuevamente.');
+              }
+              final sites = (snapshot.data?['sites'] as List? ?? []).cast<Map>();
+              if (sites.isEmpty) {
+                return const Text(
+                  'Tus laboratorios aún no publican un directorio de sedes en Vitalia. '
+                  'Consulta el contacto que aparece en el PDF original.',
+                );
+              }
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final site in sites)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('${site['laboratoryName']} · ${site['name']}'),
+                      subtitle: SelectableText([
+                        '${site['address']}, ${site['commune']}',
+                        if (site['phone'] case final String phone) phone,
+                        if (site['email'] case final String email) email,
+                      ].join('\n')),
+                    ),
+                ],
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _portalTools() => SilWorkspaceSurface(
     padding: const EdgeInsets.all(22),
     child: Column(
@@ -798,7 +928,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         Align(
           alignment: AlignmentDirectional.centerStart,
           child: TextButton.icon(
-            onPressed: () => PortalAyudaSil.contacto(context, _reports),
+            onPressed: _openLaboratoryContact,
             icon: const Icon(Icons.support_agent_outlined),
             label: const Text('Contacto del laboratorio'),
           ),
@@ -816,10 +946,11 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     children: [
       const SilWorkspaceHeading(section: true, title: 'Informes publicados'),
       const SizedBox(height: 10),
-      if (_reports.isNotEmpty) ...[
+      if ((_reportTotal ?? _reports.length) > 0) ...[
         TextField(
           controller: _filter,
-          onChanged: (_) => setState(() {}),
+          onChanged: (_) => _changeHistoryFilter(),
+          maxLength: 150,
           decoration: InputDecoration(
             labelText: 'Buscar por orden, examen o laboratorio',
             prefixIcon: const Icon(Icons.search),
@@ -827,24 +958,42 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 ? null
                 : IconButton(
                     tooltip: 'Limpiar búsqueda',
-                    onPressed: () => setState(_filter.clear),
+                    onPressed: () {
+                      _filter.clear();
+                      _changeHistoryFilter();
+                    },
                     icon: const Icon(Icons.close),
                   ),
           ),
         ),
         const SizedBox(height: 10),
-        if (query.isNotEmpty) ...[
+        if (_reports.map((report) => report['issuingLaboratory']).whereType<String>().toSet().length > 1)
+          DropdownButtonFormField<String>(
+            initialValue: _laboratoryFilter ?? '',
+            isExpanded: true,
+            decoration: const InputDecoration(labelText: 'Laboratorio'),
+            items: [
+              const DropdownMenuItem(value: '', child: Text('Todos los laboratorios')),
+              for (final lab in _reports.map((report) => report['issuingLaboratory']).whereType<String>().toSet())
+                DropdownMenuItem(value: lab, child: Text(lab)),
+            ],
+            onChanged: (value) {
+              _laboratoryFilter = value == '' ? null : value;
+              _changeHistoryFilter();
+            },
+          ),
+        if (query.isNotEmpty && !_historyLoading && _historyError == null) ...[
           Semantics(
             liveRegion: true,
             child: Text(
-              'Coincidencias · ${visibleReports.length}',
+              'Coincidencias · ${_mainSil ? _historyTotal : visibleReports.length}',
               style: theme.textTheme.labelLarge,
             ),
           ),
           const SizedBox(height: 8),
         ],
       ],
-      if (_loading)
+      if (_loading || _historyLoading)
         const LinearProgressIndicator(semanticsLabel: 'Cargando informes'),
       if (_error != null) ...[
         Semantics(
@@ -856,16 +1005,18 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         ),
         const SizedBox(height: 12),
       ],
-      if (!_loading && visibleReports.isEmpty && _error == null)
+      if (_historyError case final String error)
+        Text(error, style: TextStyle(color: theme.colorScheme.error)),
+      if (!_loading && !_historyLoading && visibleReports.isEmpty && _error == null && _historyError == null)
         SilWorkspaceSurface(
           padding: const EdgeInsets.all(16),
           child: Text(
-            query.isEmpty
+            query.isEmpty && _laboratoryFilter == null
                 ? 'Aún no tienes informes publicados. Aparecerán aquí cuando el laboratorio los publique.'
                 : 'No encontramos informes que coincidan con tu búsqueda.',
           ),
         ),
-      if (visibleReports.isNotEmpty)
+      if (visibleReports.isNotEmpty && !_historyLoading && _historyError == null)
         SilWorkspaceSurface(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -876,6 +1027,25 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               ],
             ],
           ),
+        ),
+      if (_mainSil && (_historyOffset > 0 ||
+          (_historyPage == null ? (_reportTotal ?? 0) : _historyTotal) >
+              _historyOffset + 50))
+        Wrap(
+          spacing: 12,
+          children: [
+            OutlinedButton(
+              onPressed: _historyLoading || _historyOffset == 0
+                  ? null : () => _loadHistory(_historyOffset - 50),
+              child: const Text('Anteriores'),
+            ),
+            OutlinedButton(
+              onPressed: _historyLoading || (_historyPage == null
+                      ? (_reportTotal ?? 0) : _historyTotal) <= _historyOffset + 50
+                  ? null : () => _loadHistory(_historyOffset + 50),
+              child: const Text('Siguientes'),
+            ),
+          ],
         ),
     ],
   );
@@ -1006,20 +1176,22 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       final firstName = rawName.isEmpty
           ? ''
           : rawName.split(RegExp(r'\s+')).first;
-      final latest = _reports
-          .map((report) => DateTime.tryParse('${report['publishedAt'] ?? ''}'))
-          .whereType<DateTime>()
-          .fold<DateTime?>(
-            null,
-            (last, date) => last == null || date.isAfter(last) ? date : last,
-          );
+      final latest = _reports.firstOrNull;
+      final publishedAt = latest?['publishedAt'];
+      final exams = latest == null ? const <String>[] : _examNames(latest);
       return SilWorkspaceBanner(
         title: firstName.isEmpty
             ? 'Hola, bienvenido a Vitalia'
             : 'Hola, $firstName',
-        detail: latest == null
-            ? 'Aquí podrás consultar tus informes cuando estén disponibles.'
-            : 'Última publicación · ${_date(latest.toIso8601String())}',
+        detail: _loading && _reportTotal == null
+            ? 'Cargando tus informes…'
+            : _error != null && _reportTotal == null
+            ? 'Usa Actualizar informes para volver a intentar.'
+            : latest == null
+            ? 'Aún no tienes informes publicados.'
+            : '${_reportTotal ?? _reports.length} informes disponibles · '
+                'Último informe: ${exams.isEmpty ? latest['orderNumber'] : exams.join(', ')}'
+                '${publishedAt == null ? '' : ' · ${_date(publishedAt)}'}',
         action: OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
             backgroundColor: const Color(0xFFBEEFE3),
@@ -1034,27 +1206,9 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     },
   );
 
-  void _scrollToTop() {
-    if (mounted) setState(() => _reportsTabSelected = false);
-    if (_pageScroll.hasClients) {
-      _pageScroll.animateTo(0,
-        duration: const Duration(milliseconds: 330),
-        curve: Curves.easeOutCubic);
-    }
-  }
+  void _scrollToTop() => setState(() => _reportsTabSelected = false);
 
-  void _scrollToReports() {
-    if (mounted) setState(() => _reportsTabSelected = true);
-    final destination = _reportsAnchor.currentContext;
-    if (destination != null) {
-      Scrollable.ensureVisible(
-        destination,
-        duration: const Duration(milliseconds: 360),
-        curve: Curves.easeOutCubic,
-        alignment: 0.07,
-      );
-    }
-  }
+  void _scrollToReports() => setState(() => _reportsTabSelected = true);
 
   @override
   Widget build(BuildContext context) {
@@ -1062,15 +1216,16 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     final width = MediaQuery.sizeOf(context).width;
     final narrow = width < 600;
     final query = _filter.text.trim().toLowerCase();
-    final visibleReports = _reports
+    final visibleReports = _mainSil && _historyPage != null ? _historyPage! : _reports
         .where((report) =>
-            query.isEmpty ||
+            (_laboratoryFilter == null || report['issuingLaboratory'] == _laboratoryFilter) &&
+            (query.isEmpty ||
             [
               report['orderNumber'],
               report['fileName'],
               report['issuingLaboratory'],
               ..._examNames(report),
-            ].join(' ').toLowerCase().contains(query))
+            ].join(' ').toLowerCase().contains(query)))
         .toList();
 
     const navigationLabel = 'Navegación del paciente';
@@ -1105,7 +1260,12 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         actions: [
           IconButton(
             tooltip: 'Actualizar informes',
-            onPressed: _loading ? null : _refresh,
+            onPressed: _loading || _historyLoading ? null : () async {
+              await _refresh();
+              if (mounted && _mainSil && _reportsTabSelected && _historyPage != null) {
+                await _loadHistory(0);
+              }
+            },
             icon: const Icon(Icons.refresh_outlined),
           ),
           _accountMenu(),
@@ -1124,7 +1284,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               SilWorkspaceTopNavigation(label: navigationLabel, tabs: tabs),
             Expanded(
               child: SingleChildScrollView(
-                controller: _pageScroll,
+                key: ValueKey(_reportsTabSelected),
           padding: EdgeInsets.symmetric(
             horizontal: narrow ? 14 : 25,
             vertical: narrow ? 22 : 36,
@@ -1135,17 +1295,22 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _patientGreeting(),
-                  const SizedBox(height: 26),
-                  SilWorkspaceColumns(
-                    primaryFlex: 8,
-                    secondaryFlex: 4,
-                    primary: KeyedSubtree(
-                      key: _reportsAnchor,
-                      child: _reportList(theme, query, visibleReports),
-                    ),
-                    secondary: _portalTools(),
-                  ),
+                  if (_reportsTabSelected) ...[
+                    _reportList(theme, query, visibleReports),
+                    if (_reports.length >= 2)
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: OutlinedButton.icon(
+                          onPressed: _openOverview,
+                          icon: const Icon(Icons.compare_arrows),
+                          label: const Text('Comparar informes'),
+                        ),
+                      ),
+                  ] else ...[
+                    _patientGreeting(),
+                    const SizedBox(height: 24),
+                    _portalTools(),
+                  ],
                   const SizedBox(height: 14),
                   Wrap(
                     alignment: WrapAlignment.center,

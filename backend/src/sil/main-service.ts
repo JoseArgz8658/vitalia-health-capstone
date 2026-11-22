@@ -28,6 +28,9 @@ function checkMedicalRequest(input:MedicalRequestInput,bytes:Buffer){
      date.getTime()>Date.now())throw new SilMainConflict();
 }
 
+type SiteFields={name:string;address:string;commune:string;region?:string;phone?:string;email?:string};
+const siteFields='id,name,address,commune,region,phone,email,active,created_at AS "createdAt",updated_at AS "updatedAt"';
+
 type Queryable=Pick<Pool,'query'>;
 
 export function createSilMainService(db:Pool) {
@@ -44,7 +47,8 @@ export function createSilMainService(db:Pool) {
       'patient_invited'|'patient_activated'|
       'pending_request_saved'|'pending_request_downloaded'|'pending_request_completed'|
       'pending_request_cancelled'|'operator_membership_disabled'|
-      'operator_membership_enabled'|'operator_invitation_revoked',
+      'operator_membership_enabled'|'operator_invitation_revoked'|
+      'site_created'|'site_updated'|'site_activated'|'site_deactivated',
     orderId:string|null=null,details:Record<string,unknown>={}) {
     await tx.query(
       `INSERT INTO public.vitalia_sil_main_audit
@@ -82,7 +86,16 @@ export function createSilMainService(db:Pool) {
 
   let readingPdf=false;
 
-  async function insertOrder(tx:PoolClient,labId:string,patientId:string,examCodes:string[],operatorId:string){
+  async function chooseSite(tx:PoolClient,labId:string,siteId?:string){
+    const sites=await tx.query<{id:string}>(
+      `SELECT id FROM public.vitalia_sil_main_sites
+       WHERE lab_id=$1 AND active AND ($2::uuid IS NULL OR id=$2)
+       ORDER BY id LIMIT 2 FOR SHARE`,[labId,siteId??null]);
+    if(sites.rows.length>1 || (siteId && !sites.rows.length))throw new SilMainConflict();
+    return sites.rows[0]?.id??null;
+  }
+
+  async function insertOrder(tx:PoolClient,labId:string,patientId:string,examCodes:string[],operatorId:string,siteId?:string){
     const patient=await tx.query(
       `SELECT 1 FROM public.vitalia_sil_main_patients
        WHERE lab_id=$1 AND patient_id=$2 AND active FOR SHARE`,[labId,patientId]);
@@ -92,19 +105,20 @@ export function createSilMainService(db:Pool) {
        WHERE active AND code=ANY($1::text[])`,[examCodes]);
     if(codes.rows.length!==examCodes.length || new Set(examCodes).size!==examCodes.length)
       throw new SilMainConflict();
+    const site=await chooseSite(tx,labId,siteId);
     const id=randomUUID();
     const inserted=await tx.query(
       `INSERT INTO public.vitalia_sil_main_orders
-       (id,lab_id,patient_id,created_by) VALUES($1,$2,$3,$4)
+       (id,lab_id,patient_id,created_by,site_id) VALUES($1,$2,$3,$4,$5)
        RETURNING id,order_number AS "orderNumber",status`,
-      [id,labId,patientId,operatorId]);
+      [id,labId,patientId,operatorId,site]);
     for(const code of examCodes){
       await tx.query(
         `INSERT INTO public.vitalia_sil_main_order_exams(order_id,exam_code)
          VALUES($1,$2)`,[id,code]);
     }
-    await audit(tx,labId,operatorId,'order_created',id,{exams:examCodes.length});
-    return {order:{...inserted.rows[0],id,labId,patientId,examCodes}};
+    await audit(tx,labId,operatorId,'order_created',id,{exams:examCodes.length,siteId:site});
+    return {order:{...inserted.rows[0],id,labId,patientId,examCodes,siteId:site}};
   }
 
   async function insertMedicalRequest(tx:PoolClient,labId:string,orderId:string,patientId:string,
@@ -203,6 +217,66 @@ export function createSilMainService(db:Pool) {
       });
     },
 
+    async listSites(labId:string,actorId:string,role:string){
+      return transaction(async tx=>{
+        if(role!=='administrador')await operator(labId,actorId,tx);
+        const found=await tx.query(
+          `SELECT ${siteFields} FROM public.vitalia_sil_main_sites
+           WHERE lab_id=$1 AND ($2::boolean OR active) ORDER BY lower(name),id`,
+          [labId,role==='administrador']);
+        return {sites:found.rows};
+      });
+    },
+
+    async saveSite(labId:string,adminId:string,input:SiteFields,siteId?:string){
+      return transaction(async tx=>{
+        const lab=await tx.query(
+          'SELECT 1 FROM public.vitalia_sil_main_laboratories WHERE id=$1 AND active FOR UPDATE',[labId]);
+        if(!lab.rows.length)throw new SilMainNotFound();
+        const id=siteId??randomUUID();
+        const duplicate=await tx.query(
+          `SELECT 1 FROM public.vitalia_sil_main_sites
+           WHERE lab_id=$1 AND lower(btrim(name))=lower($2) AND id<>$3`,[labId,input.name,id]);
+        if(duplicate.rows.length)throw new SilMainConflict();
+        const args=[id,labId,input.name,input.address,input.commune,input.region??null,input.phone??null,input.email??null];
+        const saved=siteId?await tx.query(
+          `UPDATE public.vitalia_sil_main_sites SET name=$3,address=$4,commune=$5,
+             region=$6,phone=$7,email=$8,updated_at=CURRENT_TIMESTAMP
+           WHERE id=$1 AND lab_id=$2 RETURNING ${siteFields}`,args)
+          :await tx.query(
+          `INSERT INTO public.vitalia_sil_main_sites(id,lab_id,name,address,commune,region,phone,email)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING ${siteFields}`,args);
+        if(!saved.rows.length)throw new SilMainNotFound();
+        await audit(tx,labId,adminId,siteId?'site_updated':'site_created',null,{siteId:id});
+        return {site:saved.rows[0]};
+      });
+    },
+
+    async setSiteActive(labId:string,adminId:string,siteId:string,active:boolean){
+      return transaction(async tx=>{
+        const lab=await tx.query(
+          'SELECT 1 FROM public.vitalia_sil_main_laboratories WHERE id=$1 AND active FOR UPDATE',[labId]);
+        if(!lab.rows.length)throw new SilMainNotFound();
+        const updated=await tx.query(
+          `UPDATE public.vitalia_sil_main_sites SET active=$3,updated_at=CURRENT_TIMESTAMP
+           WHERE id=$1 AND lab_id=$2 AND active<>$3 RETURNING ${siteFields}`,[siteId,labId,active]);
+        if(!updated.rows.length)throw new SilMainNotFound();
+        await audit(tx,labId,adminId,active?'site_activated':'site_deactivated',null,{siteId});
+        return {site:updated.rows[0]};
+      });
+    },
+
+    async patientSites(patientId:string){
+      const found=await db.query(
+        `SELECT s.id,s.name,s.address,s.commune,s.region,s.phone,s.email,
+                l.display_name AS "laboratoryName"
+         FROM public.vitalia_sil_main_sites s
+         JOIN public.vitalia_sil_main_laboratories l ON l.id=s.lab_id AND l.active
+         JOIN public.vitalia_sil_main_patients p ON p.lab_id=s.lab_id AND p.active
+         WHERE p.patient_id=$1 AND s.active ORDER BY l.display_name,s.name,s.id`,[patientId]);
+      return {sites:found.rows};
+    },
+
     async listOperatorInvitations(labId:string,limit:number,offset:number){
       const found=await db.query(
         `SELECT id,email,created_at AS "createdAt",expires_at AS "expiresAt",
@@ -225,7 +299,8 @@ export function createSilMainService(db:Pool) {
          WHERE e.lab_id=$1 AND e.action IN (
            'laboratory_created','operator_invited','operator_activated','staff_granted',
            'operator_review_permission_changed','operator_membership_disabled',
-           'operator_membership_enabled','operator_invitation_revoked')
+           'operator_membership_enabled','operator_invitation_revoked',
+           'site_created','site_updated','site_activated','site_deactivated')
          ORDER BY e.created_at DESC,e.id DESC
          LIMIT $2 OFFSET $3`,[labId,limit+1,offset]);
       return {events:found.rows.slice(0,limit),hasMore:found.rows.length>limit};
@@ -481,10 +556,10 @@ export function createSilMainService(db:Pool) {
       });
     },
 
-    async createOrder(labId:string,patientId:string,examCodes:string[],operatorId:string){
+    async createOrder(labId:string,patientId:string,examCodes:string[],operatorId:string,siteId?:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
-        return insertOrder(tx,labId,patientId,examCodes,operatorId);
+        return insertOrder(tx,labId,patientId,examCodes,operatorId,siteId);
       });
     },
 
@@ -560,10 +635,12 @@ export function createSilMainService(db:Pool) {
       const results=await db.query(
         `SELECT o.id,o.order_number AS "orderNumber",o.status,
            o.patient_id AS "patientId",o.created_at AS "createdAt",
+           o.site_id AS "siteId",s.name AS "siteName",
            ARRAY(SELECT e.exam_code FROM public.vitalia_sil_main_order_exams e
              WHERE e.order_id=o.id ORDER BY e.exam_code) AS "examCodes"
          FROM public.vitalia_sil_main_orders o
          JOIN public.vitalia_sil_main_laboratories l ON l.id=o.lab_id AND l.active
+         LEFT JOIN public.vitalia_sil_main_sites s ON s.lab_id=o.lab_id AND s.id=o.site_id
          JOIN public.vitalia_accounts a ON a.id=o.patient_id
          WHERE o.lab_id=$1
            AND ($4::text IS NULL OR o.order_number::text=$5 OR strpos(lower(a.email),lower($4))>0)
@@ -761,7 +838,7 @@ export function createSilMainService(db:Pool) {
     // La derivación se conserva antes de que el paciente active la cuenta.
     // Los datos del PDF son sugerencias, nunca validación de identidad.
     async savePendingMedicalRequest(labId:string,operatorId:string,
-      fileName:string,bytes:Buffer,patientEmail:string|null){
+      fileName:string,bytes:Buffer,patientEmail:string|null,siteId?:string){
       await operator(labId,operatorId);
       identifyDocument(bytes,'application/pdf',fileName);
       if(bytes.length<8||bytes.length>2*1024*1024||readingPdf)
@@ -785,21 +862,22 @@ export function createSilMainService(db:Pool) {
       const email=patientEmail??suggestedEmail;
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
+        const site=await chooseSite(tx,labId,siteId);
         const id=randomUUID();
         const saved=await tx.query<{createdAt:Date}>(
           `INSERT INTO public.vitalia_sil_main_pending_requests
            (id,lab_id,uploaded_by,patient_email,file_name,pdf_data,
-            pdf_sha256,extraction_status,suggestions_json)
-           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)
+            pdf_sha256,extraction_status,suggestions_json,site_id)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)
            ON CONFLICT(lab_id,pdf_sha256) DO NOTHING
            RETURNING created_at AS "createdAt"`,
           [id,labId,operatorId,email,fileName,bytes,
            createHash('sha256').update(bytes).digest('hex'),
-           extractionStatus,JSON.stringify(suggestions)]);
+           extractionStatus,JSON.stringify(suggestions),site]);
         if(!saved.rows.length)throw new SilMainConflict();
         await audit(tx,labId,operatorId,'pending_request_saved',null,{pendingId:id});
         return {pending:{
-          id,fileName,patientEmail:email,extractionStatus,status:'pending',
+          id,fileName,patientEmail:email,extractionStatus,siteId:site,status:'pending',
           suggestions,createdAt:saved.rows[0].createdAt,
         }};
       });
@@ -813,7 +891,7 @@ export function createSilMainService(db:Pool) {
                 patient_email AS "patientEmail",
                 extraction_status AS "extractionStatus",
                 suggestions_json AS suggestions,
-                created_at AS "createdAt",status
+                created_at AS "createdAt",status,site_id AS "siteId"
          FROM public.vitalia_sil_main_pending_requests
          WHERE lab_id=$1 AND status='pending'
          ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`,
@@ -842,12 +920,12 @@ export function createSilMainService(db:Pool) {
     // Orden, PDF y cierre del pendiente se confirman en una sola transacción.
     async completePendingMedicalRequest(labId:string,pendingId:string,
       operatorId:string,patientId:string,patientEmail:string,
-      examCodes:string[],input:Omit<MedicalRequestInput,'fileName'>){
+      examCodes:string[],input:Omit<MedicalRequestInput,'fileName'>,siteId?:string){
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
-        const response=await tx.query<{fileName:string;bytes:Buffer;sha256:string;patientEmail:string|null}>(
+        const response=await tx.query<{fileName:string;bytes:Buffer;sha256:string;patientEmail:string|null;siteId:string|null}>(
           `SELECT file_name AS "fileName",pdf_data AS bytes,pdf_sha256 AS sha256,
-                  patient_email AS "patientEmail"
+                  patient_email AS "patientEmail",site_id AS "siteId"
            FROM public.vitalia_sil_main_pending_requests
            WHERE id=$1 AND lab_id=$2 AND status='pending'
            FOR UPDATE`,[pendingId,labId]);
@@ -869,7 +947,7 @@ export function createSilMainService(db:Pool) {
            WHERE a.id=$1 AND p.lab_id=$2 AND a.email=$3
            FOR SHARE OF a,ar,p`,[patientId,labId,patientEmail]);
         if(!verified.rows.length)throw new SilMainNotFound();
-        const {order}=await insertOrder(tx,labId,patientId,examCodes,operatorId);
+        const {order}=await insertOrder(tx,labId,patientId,examCodes,operatorId,siteId??pending.siteId??undefined);
         const {request}=await insertMedicalRequest(
           tx,labId,order.id,patientId,operatorId,
           {...input,fileName:pending.fileName},pending.bytes);
@@ -913,11 +991,11 @@ export function createSilMainService(db:Pool) {
     },
 
     async createOrderFromMedicalRequest(labId:string,patientId:string,examCodes:string[],
-      operatorId:string,input:MedicalRequestInput,bytes:Buffer){
+      operatorId:string,input:MedicalRequestInput,bytes:Buffer,siteId?:string){
       checkMedicalRequest(input,bytes);
       return transaction(async tx=>{
         await operator(labId,operatorId,tx);
-        const {order}=await insertOrder(tx,labId,patientId,examCodes,operatorId);
+        const {order}=await insertOrder(tx,labId,patientId,examCodes,operatorId,siteId);
         const {request}=await insertMedicalRequest(tx,labId,order.id,patientId,operatorId,input,bytes);
         return {order,request};
       });
@@ -1076,7 +1154,12 @@ export function createSilMainService(db:Pool) {
       return {profile:profile.rows[0]};
     },
 
-    async patientReports(patientId:string){
+    async patientReports(patientId:string,options:{
+      search?:string;laboratory?:string;offset?:number
+    }={}){
+      const search=options.search??null;
+      const folio=search?.match(/^(?:VH-)?0*(\d+)$/i)?.[1]??null;
+      const offset=options.offset??0;
       const found=await db.query(
         `SELECT r.id,r.file_name AS "fileName",
            r.issuing_laboratory AS "issuingLaboratory",
@@ -1086,17 +1169,29 @@ export function createSilMainService(db:Pool) {
            ARRAY(SELECT c.name FROM public.vitalia_sil_main_order_exams e
              JOIN public.vitalia_sil_exam_catalog c ON c.code=e.exam_code
              WHERE e.order_id=o.id ORDER BY c.name) AS "examNames",
-           r.pdf_sha256 AS sha256
+           r.pdf_sha256 AS sha256,
+           s.name AS "siteName",s.commune AS "siteCommune",s.address AS "siteAddress",
+           count(*) OVER()::int AS total
          FROM public.vitalia_sil_main_reports r
          JOIN public.vitalia_sil_main_orders o
            ON o.id=r.order_id AND o.lab_id=r.lab_id AND o.patient_id=r.patient_id
          JOIN public.vitalia_sil_main_patients p
            ON p.lab_id=r.lab_id AND p.patient_id=r.patient_id AND p.active
          JOIN public.vitalia_sil_main_laboratories l ON l.id=r.lab_id AND l.active
+         LEFT JOIN public.vitalia_sil_main_sites s ON s.lab_id=o.lab_id AND s.id=o.site_id
          WHERE r.patient_id=$1 AND r.published_at IS NOT NULL
            AND o.status='report_published'
-         ORDER BY r.published_at DESC,r.id LIMIT 50`,[patientId]);
-      return {reports:found.rows};
+           AND ($2::text IS NULL OR o.order_number::text=$3
+             OR strpos(lower(r.issuing_laboratory),lower($2))>0
+             OR strpos(lower(r.file_name),lower($2))>0
+             OR EXISTS (
+               SELECT 1 FROM public.vitalia_sil_main_order_exams e
+               JOIN public.vitalia_sil_exam_catalog c ON c.code=e.exam_code
+               WHERE e.order_id=o.id AND strpos(lower(c.name),lower($2))>0))
+           AND ($4::text IS NULL OR r.issuing_laboratory=$4)
+         ORDER BY r.published_at DESC,r.id LIMIT 50 OFFSET $5`,
+        [patientId,search,folio,options.laboratory??null,offset]);
+      return {total:found.rows[0]?.total??0,reports:found.rows.map(({total,...report})=>report)};
     },
 
     async downloadPatientReport(patientId:string,reportId:string){

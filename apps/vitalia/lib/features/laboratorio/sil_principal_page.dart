@@ -5,6 +5,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
 import 'sil_workspace.dart';
+import 'sil_admin_sites.dart';
 import 'sil_patient_search_dialog.dart';
 import 'sil_main_clinical_panel.dart';
 import 'operator_design.dart';
@@ -31,7 +32,7 @@ class SilPrincipalPage extends StatefulWidget {
 }
 
 enum _StationSection { dashboard, orders, requests, patients, clinical, review }
-enum _AdminSection { laboratories, operators, activity }
+enum _AdminSection { laboratories, sites, operators, activity }
 
 class _SilPrincipalPageState extends State<SilPrincipalPage> {
   final _name = TextEditingController();
@@ -728,16 +729,59 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     setState(() => _manualPatient = selected);
   }
 
+  Future<({bool proceed, String? siteId})> _chooseOrderSite(
+    String lab, {String? preferredSite}
+  ) async {
+    final response = await widget.api.silMainRequest('/labs/$lab/sites');
+    if (!mounted || _labId != lab) return (proceed: false, siteId: null);
+    final sites = (response['sites'] as List? ?? []).cast<Map>();
+    if (sites.isEmpty) {
+      return (proceed: true, siteId: null);
+    }
+    if (sites.length == 1) {
+      return (proceed: true, siteId: sites.single['id'] as String);
+    }
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (dialog) => SimpleDialog(
+        title: const Text('Selecciona la sede'),
+        children: [
+          for (final site in sites)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialog, site['id']),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                selected: site['id'] == preferredSite,
+                title: Text(site['name'] as String),
+                subtitle: Text(site['commune'] as String),
+              ),
+            ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialog),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
+    return (proceed: selected != null && mounted && _labId == lab, siteId: selected);
+  }
+
   Future<void> _createOrder() async {
     final lab=_labId,patientId=_requireUuid((_manualPatient?['id'] as String?) ?? '');
     if(lab==null||patientId==null||_codes.isEmpty){
       throw const AuthFailure('Selecciona laboratorio, paciente y al menos un examen.');
     }
+    final site = await _chooseOrderSite(lab);
+    if (!site.proceed) return;
     await widget.api.silMainRequest('/labs/$lab/orders',body:{
       'patientId':patientId,
       'examCodes':_codes.toList(),
+      if (site.siteId != null) 'siteId': site.siteId,
     });
-    if (mounted) setState(() => _manualPatient = null);
+    if (mounted) setState(() {
+      _manualPatient = null;
+      _notice = 'Orden registrada correctamente.';
+    });
     await _loadOrders();
   }
 
@@ -822,8 +866,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if(_pendingRequestId!=null){
       throw const AuthFailure('Esta derivación ya está guardada como pendiente.');
     }
+    final site = await _chooseOrderSite(lab);
+    if (!site.proceed) return;
     final response=await widget.api.silMainSavePendingRequest(
       labId:lab,fileName:file.name,bytes:await file.readAsBytes(),
+      siteId: site.siteId,
       patientEmail:_requestInviteEmail.text.trim().isEmpty
         ?null:_requestInviteEmail.text.trim());
     if(!mounted||lab!=_labId)return;
@@ -971,10 +1018,14 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       throw const AuthFailure('Selecciona una cuenta activada, las prestaciones '
         'y confirma que cotejaste la identidad y el PDF original.');
     }
+    final pending = _pendingRequests.where((row) => row['id'] == id).firstOrNull;
+    final site = await _chooseOrderSite(lab, preferredSite: pending?['siteId'] as String?);
+    if (!site.proceed) return;
     final completion=await widget.api.silMainRequest(
       '/labs/$lab/medical-requests/pending/$id/complete',body:{
         'patientId':patientId,'patientEmail':email,
         'examCodes':_requestExams.toList(),
+        if (site.siteId != null) 'siteId': site.siteId,
         'prescriberName':_requestPrescriber.text.trim(),
         'requestDate':_requestDate.text.trim(),
         'patientIdentityConfirmed':true,'humanReviewConfirmed':true,
@@ -1014,8 +1065,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         !_requestIdentityChecked || !_requestHumanChecked) {
       throw const AuthFailure('Completa la orden o el paciente y las prestaciones. Confirma la identidad y la revisión del PDF.');
     }
+    final site = orderId == null
+        ? await _chooseOrderSite(lab)
+        : (proceed: true, siteId: null as String?);
+    if (!site.proceed) return;
     final attached=await widget.api.silMainAttachMedicalRequest(
-      labId: lab, orderId: orderId, patientId: patientId, examCodes: _requestExams.toList(),
+      labId: lab, orderId: orderId, patientId: patientId, siteId: site.siteId, examCodes: _requestExams.toList(),
       fileName: file.name, bytes: await file.readAsBytes(),
       prescriberName: _requestPrescriber.text,
       requestDate: _requestDate.text.trim(),
@@ -1323,6 +1378,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                       Text((order['examCodes'] as List? ?? []).join(' · '),
                         style:const TextStyle(
                           fontSize:12,color:ColoresVitalia.textoSecundario)),
+                      if (order['siteName'] case final String name)
+                        Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
                       if (_operator)
                         Wrap(spacing: 8, children: [
                           TextButton(
@@ -1638,6 +1695,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     'operator_invited' => 'Operador invitado',
     'operator_activated' => 'Operador activado',
     'operator_invitation_revoked' => 'Invitación de operador revocada',
+    'site_created' => 'Sede creada',
+    'site_updated' => 'Sede actualizada',
+    'site_activated' => 'Sede activada',
+    'site_deactivated' => 'Sede desactivada',
     'staff_granted' => 'Operador vinculado',
     'operator_review_permission_changed' => 'Permiso de revisión modificado',
     'operator_membership_disabled' => 'Operador suspendido',
@@ -2045,7 +2106,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
 
   Widget _newOrder() => _section(
     'Crear orden sin derivación PDF',
-    'Usa esta opción solo cuando corresponda al procedimiento del laboratorio. Si recibiste una solicitud médica, comienza en «Recibir solicitud».',
+    'Usa esta opción solo cuando corresponda al procedimiento del laboratorio. Si recibiste una solicitud médica, comienza en «Recibir solicitud». Si el laboratorio aún no tiene sedes activas, la orden puede quedar sin sede.',
     Icons.note_add_outlined, [
       const OperatorNextStep(
         title: 'Antes de registrar la orden',
@@ -2108,7 +2169,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       FilledButton.icon(
         onPressed: _busy || _manualPatient == null || _codes.isEmpty
             ? null
-            : () => _execute(_createOrder),
+            : () => _execute(_createOrder, showNotice: false),
         icon: const Icon(Icons.add_circle_outline),
         label: const Text('Registrar orden'),
       ),
@@ -2251,7 +2312,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     children: [
       _section(
         'Documento de origen',
-        '',
+        'Al registrar, selecciona la sede si hay varias activas. Si aún no hay sedes configuradas, el registro puede quedar sin sede.',
         Icons.description_outlined,
         [
           if (_medicalRequestFile != null)
@@ -2339,7 +2400,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                   FilledButton.icon(
                     onPressed: _busy
                         ? null
-                        : () => _execute(_savePendingRequest),
+                        : () => _execute(_savePendingRequest, showNotice: false),
                     icon: const Icon(Icons.save_outlined),
                     label: const Text('Guardar derivación pendiente'),
                   ),
@@ -3005,6 +3066,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           () => _adminSection = _AdminSection.laboratories),
       ),
       SilWorkspaceTab(
+        label: 'Sedes', icon: Icons.location_on_outlined,
+        selected: _adminSection == _AdminSection.sites,
+        onPressed: _busy ? null : () => setState(() => _adminSection = _AdminSection.sites),
+      ),
+      SilWorkspaceTab(
         label: 'Operadores y permisos', icon: Icons.admin_panel_settings_outlined,
         selected: _adminSection == _AdminSection.operators,
         onPressed: _busy ? null : () => setState(
@@ -3020,6 +3086,16 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
 
   Widget _adminContent() => switch (_adminSection) {
     _AdminSection.laboratories => _laboratoryDirectory(),
+    _AdminSection.sites => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SilWorkspaceHeading(title: 'Sedes', actions: [_labSelector()]),
+        if (_labId case final String labId) ...[
+          const SizedBox(height: 16),
+          SilAdminSites(key: ValueKey(labId), api: widget.api, labId: labId, onExpired: widget.onExpired),
+        ],
+      ],
+    ),
     _AdminSection.operators =>
       _labId == null
           ? const SilWorkspaceHeading(

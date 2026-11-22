@@ -140,6 +140,7 @@ class _StationApi extends AuthApi {
       reviewActions.add(body);
       return {'membership':{'canReviewReports':body['enabled']}};
     }
+    if (requestPath.endsWith('/sites')) return {'sites': []};
     return switch (requestPath) {
       '/labs' => {
         'laboratories': [

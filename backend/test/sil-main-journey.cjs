@@ -110,6 +110,16 @@ async function signIn(page, account, route='') {
   // En escritorio el control de accesibilidad está fuera del área visible.
   await page.locator('flt-semantics-placeholder').evaluate(button=>button.click(),
     undefined,{timeout:30000});
+  if(route==='' || route==='#/laboratorio' || route==='#/administracion'){
+    const oldLink=page.getByRole('button',{name:'Cambiar a modo profesional',exact:true});
+    assert.equal(await oldLink.count(),0);
+    if(route===''){
+      await page.getByRole('button',{name:'Acceso del personal de laboratorio',exact:true}).waitFor();
+    }
+    if(route==='#/laboratorio'){
+      await page.getByRole('button',{name:'Acceso de administración',exact:true}).waitFor();
+    }
+  }
   const email=page.getByRole('textbox').first();
   const box=await email.boundingBox({timeout:10000});
   assert.ok(box,'Campo de correo visible');
@@ -356,6 +366,19 @@ async function adminJourney(browser, base) {
         process.env.VITALIA_JOURNEY_SCREENSHOTS, 'administrador-laboratorios.png')});
     }
 
+    const siteDirectory=page.waitForResponse(response=>
+      new URL(response.url()).pathname==='/api/sil/main'+base+'/sites' &&
+      response.request().method()==='GET');
+    await nav('Sedes').click();
+    assert.equal((await siteDirectory).status(),200);
+    await nav('Nueva sede').waitFor();
+    await nav('Nueva sede').click();
+    await nav('Guardar sede').waitFor();
+    await nav('Cancelar').click();
+    if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+      await page.screenshot({path:resolve(
+        process.env.VITALIA_JOURNEY_SCREENSHOTS,'administrador-sedes.png')});
+    }
     await nav('Operadores y permisos').click();
     // Flutter Canvas muestra los textos en pantalla, pero no todos son
     // localizadores HTML. Comprobar controles accesibles y la respuesta real.
@@ -475,6 +498,9 @@ async function browserJourney(order, base, sampleOrder, samplePdf) {
       await closeProfile.waitFor({timeout:10000});
       await closeProfile.click();
 
+      assert.equal(await page.getByText('Informes publicados',{exact:true}).count(),0);
+      await patientNav.getByRole('button',{name:'Mis informes',exact:true}).click();
+      await page.getByText('Informes publicados',{exact:true}).waitFor();
       const downloadButton=page.getByRole('button',{name:'Descargar PDF',exact:true}).first();
       assert.equal(await downloadButton.count(),0);
       await page.getByRole('button',{name:'Más opciones',exact:true}).first().click();
@@ -698,6 +724,28 @@ async function main() {
        WHERE lab_id=$1 AND action='patient_identity_linked' AND details ? 'linkCodeId'`,
       [otherLab.split('/').at(-1)]);
     assert.equal(linkAudit.rows[0].total,1);
+    const siteInput={name:'Sede Norte ficticia',address:'Avenida de Ensayo 10',
+      commune:'Comuna de prueba',region:'Región ficticia',email:'sede@example.invalid'};
+    const northSites=base+'/sites';
+    const southSites=otherLab+'/sites';
+    await call('uploader','POST',northSites,403,{json:siteInput});
+    await call('patient','GET',northSites,403);
+    await call('uploader','GET',southSites,403);
+    const northSite=(await (await admin(northSites,201,siteInput)).json()).site;
+    const southSite=(await (await admin(southSites,201,{...siteInput,name:'Sede Sur ficticia'})).json()).site;
+    await admin(northSites,409,{...siteInput,name:siteInput.name.toUpperCase()});
+    await admin(southSites,404,{...siteInput,siteId:northSite.id});
+    const editedSite=(await (await admin(northSites,200,{
+      ...siteInput,siteId:northSite.id,address:'Avenida de Ensayo 20',
+    })).json()).site;
+    assert.equal(editedSite.address,'Avenida de Ensayo 20');
+    const visibleSites=(await (await call('patient','GET','/patient/sites',200)).json()).sites;
+    assert.deepEqual(visibleSites.map(site=>site.id),[northSite.id]);
+    assert.equal(visibleSites[0].email,'sede@example.invalid');
+    assert.ok(!Object.hasOwn(visibleSites[0],'active'));
+    await call('uploader','POST',base+'/orders',409,{json:{
+      patientId:ids.patient,examCodes:['glicemia'],siteId:southSite.id,
+    }});
     const requestPdf=syntheticPdf([
       'Referencia: SOL-1002','Profesional solicitante: Persona Ficticia',
       'Fecha de solicitud: 2024-01-01','Glicemia',
@@ -730,8 +778,9 @@ async function main() {
     const created=await call('uploader','POST',intake,201,confirmation);
     const registered=await created.json();
     const orderId=registered.order.id;
+    assert.equal(registered.order.siteId,northSite.id);
     const adminOrders = await (await call('admin', 'GET', base+'/orders', 200)).json();
-    assert.ok(adminOrders.orders.some(order => order.id === orderId));
+    assert.equal(adminOrders.orders.find(order=>order.id===orderId)?.siteName,northSite.name);
     await call('admin', 'GET', base+'/orders?patientId='+ids.patient, 403);
     await call('admin', 'GET', base+'/orders/'+orderId+'/medical-request/file', 403);
     assert.match(registered.request.documentReference,
@@ -891,6 +940,7 @@ async function main() {
     await call('uploader','POST',otherLab+'/medical-requests/pending',403,pendingUpload);
     const savedPending=await (await call('uploader','POST',pendingPath,201,pendingUpload)).json();
     const pendingId=savedPending.pending.id;
+    assert.equal(savedPending.pending.siteId,northSite.id);
     assert.equal(savedPending.pending.status,'pending');
     assert.equal(savedPending.pending.patientEmail,pendingEmail);
     assert.ok(Object.hasOwn(savedPending.pending.suggestions,'suggestedPatient'));
@@ -1175,6 +1225,36 @@ async function main() {
       assert.deepEqual(history.map(x=>x.action),
         ['operator_membership_disabled','operator_membership_enabled']);
       assert.ok(history.every(x=>x.details.accountId===ids.uploader));
+      const second=(await (await admin(northSites,201,{
+        ...siteInput,name:'Segunda sede ficticia',
+      })).json()).site;
+      const manualOrder={patientId:ids.patient,examCodes:['glicemia']};
+      await call('uploader','POST',base+'/orders',409,{json:manualOrder});
+      const selected=(await (await call('uploader','POST',base+'/orders',201,
+        {json:{...manualOrder,siteId:second.id}})).json()).order;
+      assert.equal(selected.siteId,second.id);
+      await admin(northSites+'/state',200,{siteId:northSite.id,active:false});
+      await call('uploader','POST',base+'/orders',409,{json:{...manualOrder,siteId:northSite.id}});
+      const historicalToken=(await issueSession(db,ids.patient,'paciente',passwordHash)).token;
+      const ownSites={token:historicalToken};
+      const historical=(await (await api('GET','/api/sil/main/patient/reports',200,ownSites)).json())
+        .reports.find(report=>report.id===reportId);
+      const matchingReports=(await (await api('GET',
+        '/api/sil/main/patient/reports?offset=0&search='+historical.orderNumber,
+        200,ownSites)).json()).reports;
+      assert.deepEqual(matchingReports.map(report=>report.id),[reportId]);
+      const nonMatching=(await (await api('GET',
+        '/api/sil/main/patient/reports?offset=50',200,ownSites)).json()).reports;
+      assert.deepEqual(nonMatching,[]);
+      assert.equal(historical.siteName,northSite.name);
+      assert.equal(historical.siteAddress,'Avenida de Ensayo 20');
+      const patientSites=(await (await api('GET','/api/sil/main/patient/sites',200,ownSites)).json()).sites;
+      assert.deepEqual(patientSites.map(site=>site.id),[second.id]);
+      const audits=(await (await call('admin','GET',base+'/administrative-audit?limit=50',200)).json()).events;
+      for(const action of ['site_created','site_updated','site_deactivated'])
+        assert.ok(audits.some(event=>event.action===action));
+      await admin(northSites+'/state',200,{siteId:northSite.id,active:true});
+      console.log('API: sedes segregadas, selección obligatoria y conservación histórica aprobadas.');
       console.log('API: suspensión y reactivación por laboratorio auditadas.');
     }
   } finally {

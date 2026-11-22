@@ -239,6 +239,8 @@ void main() {
     expect(find.text('Nombre'), findsOneWidget);
     expect(find.text('Paciente De prueba'), findsWidgets);
     await _tap(tester, 'Cerrar');
+    expect(find.text('Informes publicados'), findsNothing);
+    await _tap(tester, 'Mis informes');
     expect(find.textContaining('Dra. Elisa Muñoz'), findsNothing);
     expect(find.text('Descargar PDF'), findsNothing);
     await _tap(tester, 'Más opciones');
@@ -298,8 +300,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Hola, Paciente'), findsOneWidget);
     expect(find.text('Ir a mis informes'), findsNothing);
-    expect(find.text('Informes publicados'), findsOneWidget);
-    expect(find.textContaining('Última publicación ·'), findsOneWidget);
+    expect(find.text('Informes publicados'), findsNothing);
+    expect(find.textContaining('Último informe:'), findsOneWidget);
     expect(find.text('Historial y orientación'), findsOneWidget);
     expect(find.text('Sobre Vitalia'), findsOneWidget);
     expect(find.text('Privacidad y uso responsable'), findsOneWidget);
@@ -322,6 +324,9 @@ void main() {
     expect(find.text('Configurar recuperación'), findsOneWidget);
     await tester.tapAt(const Offset(600, 450));
     await tester.pumpAndSettle();
+    await _tap(tester, 'Mis informes');
+    expect(find.text('Hola, Paciente'), findsNothing);
+    expect(find.text('Informes publicados'), findsOneWidget);
     expect(find.text('Ver resultados'), findsOneWidget);
     expect(find.text('Ir a mis informes'), findsNothing);
     expect(tester.takeException(), isNull);
@@ -344,7 +349,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Comparar informes'), findsOneWidget);
     expect(find.text('Cómo leer mis resultados'), findsNothing);
-    expect(find.text('08/11/2026'), findsWidgets);
+    expect(find.textContaining('Último informe:'), findsOneWidget);
     await tester.ensureVisible(find.text('Comparar informes'));
     await tester.tap(find.text('Comparar informes'));
     await tester.pumpAndSettle();

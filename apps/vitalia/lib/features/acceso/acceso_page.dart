@@ -276,6 +276,13 @@ class _AccesoPageState extends State<AccesoPage> {
                                     ),
                                   ),
                                 ),
+                              if (widget.laboratoryMode && _silMainMode)
+                                TextButton.icon(
+                                  onPressed: _busy ? null : () => Navigator.of(context)
+                                      .pushNamed('/administracion'),
+                                  icon: const Icon(Icons.admin_panel_settings_outlined),
+                                  label: const Text('Acceso de administración'),
+                                ),
                               if (_patientMode) ...[
                                 const SizedBox(height: 8),
                                 Wrap(
@@ -317,7 +324,7 @@ class _AccesoPageState extends State<AccesoPage> {
                               ],
                               if (!widget.adminMode && !widget.laboratoryMode)
                                 const Divider(height: 18),
-                              if (!silPatientDemo &&
+                              if (!silPatientDemo && !_silMainMode &&
                                   !widget.adminMode &&
                                   !widget.laboratoryMode)
                                 TextButton.icon(

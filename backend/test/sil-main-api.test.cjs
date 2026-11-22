@@ -266,7 +266,19 @@ test('consulta de informes principales está filtrada por paciente y laboratorio
   expect(sql).toMatch(/l\.active/);
   expect(sql).toMatch(/r\.patient_id=\$1/);
   expect(sql).toMatch(/report_published/);
-  expect(values).toEqual([patient]);
+  expect(values).toEqual([patient,null,null,null,0]);
+});
+
+test('la búsqueda de informes pagina dentro de la sesión paciente',async()=>{
+  const path='/api/sil/main/patient/reports';
+  const {application,service}=demo('paciente');
+  await request(application).get(path+'?offset=50&search=VH-000005')
+    .set(bearer).expect(200);
+  expect(service.patientReports).toHaveBeenCalledWith(operator,
+    {offset:50,search:'VH-000005'});
+  await request(application).get(path+'?patientId='+patient).set(bearer).expect(400);
+  await request(demo('administrador').application).get(path+'?offset=50')
+    .set(bearer).expect(403);
 });
 
 test('el directorio solo admite operadores y valida los parámetros de búsqueda',async()=>{
