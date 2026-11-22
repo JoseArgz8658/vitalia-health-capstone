@@ -240,6 +240,166 @@ class SilWorkspaceTab {
   final VoidCallback? onPressed;
 }
 
+/// Mantiene las secciones de trabajo a la vista en el escritorio.
+class SilWorkspaceSidebar extends StatelessWidget {
+  const SilWorkspaceSidebar(
+      {super.key, required this.label, required this.tabs});
+
+  final String label;
+  final List<SilWorkspaceTab> tabs;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        label: label,
+        child: SizedBox(
+          width: 244,
+          child: ColoredBox(
+            color: const Color(0xFF102C3F),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+              children: [
+                for (final tab in tabs)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Semantics(
+                      selected: tab.selected,
+                      child: TextButton(
+                        onPressed: tab.onPressed,
+                        style: TextButton.styleFrom(
+                          alignment: AlignmentDirectional.centerStart,
+                          foregroundColor: tab.selected
+                              ? const Color(0xFF102C3F)
+                              : const Color(0xFFE2EEF3),
+                          disabledForegroundColor: const Color(0xFFB0C5D1),
+                          backgroundColor: tab.selected
+                              ? const Color(0xFFBEEFE3)
+                              : Colors.transparent,
+                          minimumSize: const Size.fromHeight(52),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(tab.icon, size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(child: Text(tab.label)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+}
+
+class SilWorkspaceBottomNavigation extends StatelessWidget {
+  const SilWorkspaceBottomNavigation({
+    super.key,
+    required this.label,
+    required this.tabs,
+  });
+
+  final String label;
+  final List<SilWorkspaceTab> tabs;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      border: Border(top: BorderSide(color: ColoresVitalia.borde)),
+    ),
+    child: SafeArea(
+      top: false,
+      child: Semantics(
+        label: label,
+        child: Padding(
+          padding: const EdgeInsets.all(6),
+          child: Row(
+            children: [
+              for (final tab in tabs)
+                Expanded(
+                  child: Semantics(
+                    selected: tab.selected,
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size.fromHeight(56),
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                        foregroundColor: tab.selected
+                            ? ColoresVitalia.azulActivo
+                            : ColoresVitalia.textoSecundario,
+                        backgroundColor: tab.selected
+                            ? ColoresVitalia.azulSuave : Colors.transparent,
+                      ),
+                      onPressed: tab.onPressed,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(tab.icon, size: 20),
+                          const SizedBox(height: 3),
+                          Text(tab.label, textAlign: TextAlign.center),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class SilWorkspaceBanner extends StatelessWidget {
+  const SilWorkspaceBanner({
+    super.key,
+    required this.title,
+    required this.detail,
+    required this.action,
+  });
+
+  final String title;
+  final String detail;
+  final Widget action;
+
+  @override
+  Widget build(BuildContext context) => DecoratedBox(
+        decoration: const BoxDecoration(
+          color: Color(0xFF12384B),
+          borderRadius: BorderRadius.all(Radius.circular(20)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Semantics(
+                header: true,
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(detail,
+                  style:
+                      const TextStyle(color: Color(0xFFD9E9EF), height: 1.45)),
+              const SizedBox(height: 20),
+              action,
+            ],
+          ),
+        ),
+      );
+}
+
 /// Navegación superior compartida por las estaciones SIL.
 ///
 /// En pantallas estrechas muestra controles de desplazamiento y mantiene

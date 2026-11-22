@@ -1747,7 +1747,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       ? _requestOrderId != null
       : _requestPatient.text.isNotEmpty;
 
-  Widget _requestGuide() {
+  Widget _requestGuide({required bool expanded}) {
     final documentReady = _hasRequestDocument;
     final patientReady = _hasRequestPatient;
     final reviewed =
@@ -1762,22 +1762,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         ? 2
         : 3;
     const stages = [
-      'Recibir solicitud',
+      'Documento de origen',
       'Identificar paciente',
       'Revisar exámenes',
       'Crear orden',
     ];
-    return Wrap(
-      spacing: 14,
-      runSpacing: 4,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        SilWorkspaceStatus(
-          label: 'Paso ${current + 1} de ${stages.length}',
-          positive: true,
-        ),
-        Semantics(liveRegion: true, child: Text(stages[current])),
-        TextButton(
+    final guide = TextButton(
           onPressed: () => showDialog<void>(
             context: context,
             builder: (dialogContext) => AlertDialog(
@@ -1793,16 +1783,97 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             ),
           ),
           child: const Text('Ver guía'),
-        ),
-      ],
+        );
+
+    if (!expanded) {
+      return Wrap(
+        spacing: 12,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SilWorkspaceStatus(
+            label: 'Paso ${current + 1} de ${stages.length}',
+            positive: true,
+          ),
+          Semantics(liveRegion: true, child: Text(stages[current])),
+          guide,
+        ],
+      );
+    }
+    return SilWorkspaceSurface(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              'Paso ${current + 1} de ${stages.length}',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+          const SizedBox(height: 14),
+          for (final (index, stage) in stages.indexed)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              decoration: BoxDecoration(
+                color: index == current
+                    ? const Color(0xFFBEEFE3)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  if (index < current)
+                    const Icon(Icons.check_circle_outline, size: 19)
+                  else
+                    SizedBox(
+                      width: 19,
+                      child: Text('${index + 1}', textAlign: TextAlign.center),
+                    ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      stage,
+                      style: TextStyle(
+                        fontWeight: index == current ? FontWeight.w800 : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          guide,
+        ],
+      ),
     );
   }
 
-  Widget _requestIntake() => Column(
+  Widget _requestIntake() => LayoutBuilder(
+    builder: (context, constraints) {
+      final wide = constraints.maxWidth >= 740;
+      final progress = _requestGuide(expanded: wide);
+      final form = _requestForm();
+      if (wide) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: 240, child: progress),
+            const SizedBox(width: 24),
+            Expanded(child: form),
+          ],
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [progress, const SizedBox(height: 14), form],
+      );
+    },
+  );
+
+  Widget _requestForm() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      _requestGuide(),
-      const SizedBox(height: 14),
       _section(
         'Documento de origen',
         '',
@@ -2525,7 +2596,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ],
   );
 
-  Widget _navigation() {
+  List<SilWorkspaceTab> _operatorTabs() {
     final pending = _summaryCount(
       'inReview',_orders.where(_isReviewable).length);
     final destinations = [
@@ -2537,22 +2608,17 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       if (_canReview)
         (_StationSection.review, Icons.fact_check_outlined, 'Revisión interna ($pending)'),
     ];
-    return SilWorkspaceTopNavigation(
-      label: 'Navegación del operador',
-      tabs: [
+    return [
         for (final (section, icon, label) in destinations)
           SilWorkspaceTab(
             label: label, icon: icon,
             selected: _activeSection == section,
             onPressed: _busy ? null : () => _openSection(section),
           ),
-      ],
-    );
+    ];
   }
 
-  Widget _adminNavigation() => SilWorkspaceTopNavigation(
-    label: 'Navegación de administración',
-    tabs: [
+  List<SilWorkspaceTab> _adminTabs() => [
       SilWorkspaceTab(
         label: 'Laboratorios', icon: Icons.business_outlined,
         selected: _adminSection == _AdminSection.laboratories,
@@ -2571,8 +2637,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         onPressed: _busy ? null : () => setState(
           () => _adminSection = _AdminSection.activity),
       ),
-    ],
-  );
+  ];
 
   Widget _adminContent() => switch (_adminSection) {
     _AdminSection.laboratories => _laboratoryDirectory(),
@@ -2679,106 +2744,115 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SilWorkspaceHeading(
-          title: 'Panel del laboratorio',
-          actions: [
-            _labSelector(),
-            IconButton.outlined(
-              onPressed: _busy
-                  ? null
-                  : () => _execute(_loadLabs, showNotice: false),
-              tooltip: 'Actualizar estación',
-              icon: const Icon(Icons.refresh),
-            ),
-            FilledButton.icon(
-              onPressed: _busy
-                  ? null
-                  : () => _openSection(_StationSection.requests),
-              icon: const Icon(Icons.note_add_outlined),
-              label: const Text('Recibir solicitud de exámenes'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        SilWorkspaceColumns(
-          primaryFlex: 5,
-          secondaryFlex: 7,
-          primary: SilWorkspaceSurface(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 15, 16, 12),
-                  child: SilWorkspaceHeading(
-                    section: true,
-                    title: 'Tareas del laboratorio',
-                    description: isTotal
-                        ? 'Totales actuales del laboratorio seleccionado.'
-                        : 'Cifras parciales de los registros recientes cargados.',
-                  ),
-                ),
-                for (final task in tasks) ...[
-                  const Divider(height: 1),
-                  ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                    leading: Icon(task.$1, color: ColoresVitalia.azul),
-                    title: Text(
-                      task.$2,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SilWorkspaceStatus(
-                          label: '${task.$3}',
-                          positive: task.$3 > 0,
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.chevron_right),
-                      ],
-                    ),
-                    onTap: _busy
-                        ? null
-                        : () => _openSection(
-                            task.$4,
-                            orderStatus: task.$4 == _StationSection.orders
-                                ? 'registered'
-                                : null,
-                          ),
-                  ),
-                ],
-                const Divider(height: 1),
-                ColoredBox(
-                  color: ColoresVitalia.fondoAzul,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Wrap(
-                      spacing: 24,
-                      runSpacing: 8,
-                      children: [
-                        for (final total in totals)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '${total.$2}',
-                                style: Theme.of(context).textTheme.titleLarge,
-                              ),
-                              Text(
-                                total.$1,
-                                style: Theme.of(context).textTheme.labelMedium,
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+        Align(
+          alignment: AlignmentDirectional.centerEnd,
+          child: Wrap(
+            spacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _labSelector(),
+              IconButton.outlined(
+                onPressed: _busy
+                    ? null
+                    : () => _execute(_loadLabs, showNotice: false),
+                tooltip: 'Actualizar estación',
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
           ),
-          secondary: _ordersPanel(recent: true),
+        ),
+        const SizedBox(height: 20),
+        SilWorkspaceBanner(
+          title: 'Panel del laboratorio',
+          detail: 'Carga la solicitud médica para iniciar el registro de una orden.',
+          action: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFBEEFE3),
+              foregroundColor: const Color(0xFF102C3F),
+            ),
+            onPressed: _busy ? null : () => _openSection(_StationSection.requests),
+            icon: const Icon(Icons.note_add_outlined),
+            label: const Text('Recibir solicitud de exámenes'),
+          ),
+        ),
+        const SizedBox(height: 28),
+        SilWorkspaceHeading(
+          section: true,
+          title: 'Tareas del laboratorio',
+          description: isTotal
+              ? 'Totales actuales del laboratorio seleccionado.'
+              : 'Cifras parciales de los registros recientes cargados.',
+        ),
+        const SizedBox(height: 14),
+        LayoutBuilder(builder: (context, constraints) {
+          const gap = 16.0;
+          final tileWidth = constraints.maxWidth >= tasks.length * 218
+              ? (constraints.maxWidth - gap * (tasks.length - 1)) / tasks.length
+              : constraints.maxWidth;
+          return Wrap(
+            spacing: gap,
+            runSpacing: gap,
+            children: [
+              for (final (icon, title, count, section) in tasks)
+                SizedBox(
+                  width: tileWidth,
+                  child: SilWorkspaceSurface(
+                    child: InkWell(
+                      onTap: _busy
+                          ? null
+                          : () => _openSection(
+                              section,
+                              orderStatus: section == _StationSection.orders
+                                  ? 'registered' : null,
+                            ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Icon(
+                                  icon,
+                                  color: section == _StationSection.review && count > 0
+                                      ? const Color(0xFF824C00)
+                                      : ColoresVitalia.azul,
+                                ),
+                                const Icon(Icons.arrow_forward, size: 18),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              '$count',
+                              style: Theme.of(context).textTheme.headlineMedium,
+                            ),
+                            Text(
+                              title,
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          );
+        }),
+        const SizedBox(height: 24),
+        _ordersPanel(recent: true),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 24,
+          runSpacing: 10,
+          children: [
+            for (final (title, count) in totals)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [Text(title), const SizedBox(width: 8), Text('$count')],
+              ),
+          ],
         ),
       ],
     );
@@ -2972,12 +3046,13 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            if (_operator) _navigation(),
-            if (_admin) _adminNavigation(),
-            Expanded(
-              child: LayoutBuilder(builder: (context, constraints) {
+        child: LayoutBuilder(builder: (context, viewport) {
+          final sideNavigation = viewport.maxWidth >= 1100;
+          final tabs = _admin ? _adminTabs() : _operatorTabs();
+          final label = _admin
+              ? 'Navegación de administración'
+              : 'Navegación del operador';
+          final content = LayoutBuilder(builder: (context, constraints) {
                 return SingleChildScrollView(
                   key: ValueKey((_activeSection, _adminSection)),
                   padding: EdgeInsets.symmetric(
@@ -3002,15 +3077,19 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                             semanticsLabel: 'Cargando operación',
                           ),
                           if (_error != null || _notice != null)
-                            Semantics(
-                              liveRegion: true,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                child: Text(
-                                  _error ?? _notice!,
-                                  style: TextStyle(color: _error != null
-                                      ? Theme.of(context).colorScheme.error
-                                      : ColoresVitalia.verde),
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 20),
+                              child: Semantics(
+                                liveRegion: true,
+                                child: OperatorNextStep(
+                                  icon: _error != null
+                                      ? Icons.error_outline : Icons.check_circle_outline,
+                                  title: _error != null ? 'Revisa la operación' : 'Operación completada',
+                                  message: _error ?? _notice!,
+                                  accent: _error != null
+                                      ? ColoresVitalia.error : ColoresVitalia.verde,
+                                  background: _error != null
+                                      ? ColoresVitalia.errorSuave : ColoresVitalia.verdeSuave,
                                 ),
                               ),
                             ),
@@ -3029,10 +3108,23 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                     ),
                   ),
                 );
-              }),
-            ),
-          ],
-        ),
+          });
+          if (sideNavigation) {
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SilWorkspaceSidebar(label: label, tabs: tabs),
+                Expanded(child: content),
+              ],
+            );
+          }
+          return Column(
+            children: [
+              SilWorkspaceTopNavigation(label: label, tabs: tabs),
+              Expanded(child: content),
+            ],
+          );
+        }),
       ),
     );
   }

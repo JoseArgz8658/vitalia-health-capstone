@@ -194,9 +194,8 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
     const receive=button('Recibir solicitud');
     await receive.waitFor();
     const desktop=await receive.boundingBox();
-    // El menú principal está bajo el AppBar y ya no ocupa una columna lateral.
-    assert.ok(desktop && desktop.y < 155 && desktop.width > 0,
-      'Navegación superior visible en escritorio');
+    assert.ok(desktop && desktop.x < 100 && desktop.y < 340 && desktop.width > 0,
+      'Navegación lateral visible en escritorio');
     if(captures)await page.screenshot({path:resolve(captures,'operador-escritorio.png')});
 
     // Una sesión sirve para ambos tamaños y mantiene disponible el cupo

@@ -945,13 +945,23 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             null,
             (last, date) => last == null || date.isAfter(last) ? date : last,
           );
-      return SilWorkspaceHeading(
+      return SilWorkspaceBanner(
         title: firstName.isEmpty
             ? 'Hola, bienvenido a Vitalia'
             : 'Hola, $firstName',
-        description: latest == null
-            ? null
+        detail: latest == null
+            ? 'Aquí podrás consultar tus informes cuando estén disponibles.'
             : 'Última publicación · ${_date(latest.toIso8601String())}',
+        action: OutlinedButton.icon(
+          style: OutlinedButton.styleFrom(
+            backgroundColor: const Color(0xFFBEEFE3),
+            foregroundColor: const Color(0xFF102C3F),
+            side: BorderSide.none,
+          ),
+          onPressed: _scrollToReports,
+          icon: const Icon(Icons.description_outlined),
+          label: const Text('Consultar mis informes'),
+        ),
       );
     },
   );
@@ -995,7 +1005,29 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
             ].join(' ').toLowerCase().contains(query))
         .toList();
 
+    const navigationLabel = 'Navegación del paciente';
+    final tabs = <SilWorkspaceTab>[
+                SilWorkspaceTab(
+                  label: 'Inicio', icon: Icons.home_outlined,
+                  selected: !_reportsTabSelected,
+                  onPressed: _scrollToTop,
+                ),
+                SilWorkspaceTab(
+                  label: 'Mis informes', icon: Icons.description_outlined,
+                  selected: _reportsTabSelected,
+                  onPressed: _scrollToReports,
+                ),
+                SilWorkspaceTab(
+                  label: 'Ayuda', icon: Icons.help_outline,
+                  selected: false,
+                  onPressed: () => PortalAyudaSil.preguntasFrecuentes(context),
+                ),
+              ];
+
     return Scaffold(
+      bottomNavigationBar: narrow
+          ? SilWorkspaceBottomNavigation(label: navigationLabel, tabs: tabs)
+          : null,
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
@@ -1020,26 +1052,8 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       body: SafeArea(
         child: Column(
           children: [
-            SilWorkspaceTopNavigation(
-              label: 'Navegación del paciente',
-              tabs: [
-                SilWorkspaceTab(
-                  label: 'Inicio', icon: Icons.home_outlined,
-                  selected: !_reportsTabSelected,
-                  onPressed: _scrollToTop,
-                ),
-                SilWorkspaceTab(
-                  label: 'Mis informes', icon: Icons.description_outlined,
-                  selected: _reportsTabSelected,
-                  onPressed: _scrollToReports,
-                ),
-                SilWorkspaceTab(
-                  label: 'Ayuda', icon: Icons.help_outline,
-                  selected: false,
-                  onPressed: () => PortalAyudaSil.preguntasFrecuentes(context),
-                ),
-              ],
-            ),
+            if (!narrow)
+              SilWorkspaceTopNavigation(label: navigationLabel, tabs: tabs),
             Expanded(
               child: SingleChildScrollView(
                 controller: _pageScroll,
