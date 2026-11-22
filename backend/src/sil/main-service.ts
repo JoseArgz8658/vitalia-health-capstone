@@ -42,7 +42,8 @@ export function createSilMainService(db:Pool) {
       'report_attached'|'report_review_accessed'|'report_published'|'report_downloaded'|
       'sample_received'|'results_recorded'|'results_approved'|'results_returned'|
       'patient_invited'|'patient_activated'|
-      'pending_request_saved'|'pending_request_downloaded'|'pending_request_completed',
+      'pending_request_saved'|'pending_request_downloaded'|'pending_request_completed'|
+      'pending_request_cancelled',
     orderId:string|null=null,details:Record<string,unknown>={}) {
     await tx.query(
       `INSERT INTO public.vitalia_sil_main_audit
@@ -739,6 +740,33 @@ export function createSilMainService(db:Pool) {
         await audit(tx,labId,operatorId,'pending_request_completed',order.id,
           {pendingId,requestId:request.id});
         return {order,request,pending:{id:pendingId,status:'completed'}};
+      });
+    },
+
+    // Solo un operador activo del laboratorio puede cerrar una derivación
+    // pendiente. Se conserva el PDF para auditoría, sin generar una orden.
+    // El bloqueo de fila serializa la decisión con cualquier finalización.
+    async cancelPendingMedicalRequest(labId:string,pendingId:string,
+      operatorId:string,reason:
+        'unreadable_document'|'duplicate_request'|'incorrect_information'|
+        'patient_mismatch'|'request_withdrawn'|'other'){
+      return transaction(async tx=>{
+        await operator(labId,operatorId,tx);
+        const current=await tx.query<{status:string}>(
+          `SELECT status FROM public.vitalia_sil_main_pending_requests
+           WHERE id=$1 AND lab_id=$2 FOR UPDATE`,[pendingId,labId]);
+        if(!current.rows.length)throw new SilMainNotFound();
+        if(current.rows[0].status!=='pending')throw new SilMainConflict();
+        const closed=await tx.query(
+          `UPDATE public.vitalia_sil_main_pending_requests
+           SET status='cancelled',closed_by=$3,closed_at=CURRENT_TIMESTAMP,
+               closure_reason=$4
+           WHERE id=$1 AND lab_id=$2 AND status='pending'
+           RETURNING id`,[pendingId,labId,operatorId,reason]);
+        if(closed.rowCount!==1)throw new SilMainConflict();
+        await audit(tx,labId,operatorId,'pending_request_cancelled',null,
+          {pendingId,reason});
+        return {pending:{id:pendingId,status:'cancelled',reason}};
       });
     },
 
