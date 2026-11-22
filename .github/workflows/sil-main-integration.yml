@@ -64,6 +64,11 @@ jobs:
           flutter test
           --dart-define=VITALIA_SIL_MAIN_MODE=true
           test/activar_paciente_retorno_login_test.dart
+      - name: Probar Camino B móvil en modo SIL principal
+        run: >-
+          flutter test
+          --dart-define=VITALIA_SIL_MAIN_MODE=true
+          test/camino_b_paciente_sil_main_test.dart
       - run: >-
           flutter build web --no-web-resources-cdn
           --dart-define=VITALIA_SIL_MAIN_MODE=true
