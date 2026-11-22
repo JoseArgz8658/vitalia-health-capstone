@@ -568,6 +568,18 @@ async function main() {
     await admin(base+'/staff',201,{accountId:ids.reviewer});
     await admin(otherLab+'/staff',201,{accountId:ids.reviewer});
     await admin(otherLab+'/staff/review-permission',200,{accountId:ids.reviewer,enabled:true});
+    const northStaff = await (await call('admin', 'GET', base+'/staff', 200)).json();
+    const southStaff = await (await call('admin', 'GET', otherLab+'/staff', 200)).json();
+    assert.deepEqual(northStaff.staff.map(({email}) => email).sort(),
+      [credentials.reviewer.email, credentials.uploader.email].sort());
+    assert.deepEqual(southStaff.staff.map(({email}) => email), [credentials.reviewer.email]);
+    assert.equal(northStaff.staff.find(({accountId}) => accountId === ids.reviewer)
+      .canReviewReports, false, 'El permiso concedido en Sur no se aplica en Norte.');
+    assert.equal(southStaff.staff[0].canReviewReports, true);
+    await call('uploader', 'GET', base+'/staff', 403);
+    await call('patient', 'GET', base+'/staff', 403);
+    await call('admin', 'GET', base+'/orders', 403);
+    console.log('API: personal y permisos administrativos aislados por laboratorio.');
     await call('uploader','POST',base+'/patients',201,{json:{
       patientId:ids.patient,identityEvidenceReference:'verificacion-ficticia',identityVerified:true,
     }});

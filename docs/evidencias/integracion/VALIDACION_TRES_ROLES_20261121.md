@@ -4,8 +4,8 @@
 **Fecha de ejecución:** 21 de noviembre de 2026 (Chile; GitHub Actions registra fechas UTC).  
 **Versión base:** `develop` en `3e9e6c8e93c0ad7b885866f082568a6e0251d7a2`, con los PR #32 a #36 consolidados.  
 **Intervención:** [PR #37](https://github.com/JoseArgz8658/vitalia-health-capstone/pull/37).  
-**Ejecución automatizada:** [GitHub Actions — run 44977312298](https://github.com/JoseArgz8658/vitalia-health-capstone/actions/runs/44977312298).  
-**Compilación Android:** [GitHub Actions — run 44977312356](https://github.com/JoseArgz8658/vitalia-health-capstone/actions/runs/44977312356).
+**Primera ejecución aprobada de los tres roles:** [Integración SIL](https://github.com/JoseArgz8658/vitalia-health-capstone/actions/runs/44977686145) y [compilación Android](https://github.com/JoseArgz8658/vitalia-health-capstone/actions/runs/44977686149), con la rama en `b102babbd413c4b283e129bae89f0a1f19f4f8e8`.  
+**Validaciones de la revisión vigente:** [checks del PR #37](https://github.com/JoseArgz8658/vitalia-health-capstone/pull/37/checks).
 
 ## Entorno y alcance
 
@@ -21,6 +21,7 @@ No se usa el PostgreSQL del equipo, el servidor local, Docker Desktop del equipo
 | VR-ADM-02 | Administrador | Consulta de personal del laboratorio seleccionado | `GET /labs/:id/staff` responde 200 y muestra dos operadores sin credenciales |
 | VR-ADM-03 | Administrador | Revocar y restituir permiso de revisión | Operaciones 200, mismo operador, permiso final restituido; sin cambiar la base de ensayo fuera del recorrido |
 | VR-ADM-04 | Administrador | Actividad administrativa y aislamiento clínico | Muestra recuento administrativo de personal y permisos, sin solicitar órdenes clínicas ni habilitar descarga de PDF |
+| VR-ADM-05 | Administrador | Cambio de laboratorio en Flutter y consulta de personal por API | La interfaz descarta el personal anterior. API entrega únicamente las membresías de cada laboratorio y comprueba que el permiso de revisión se otorgue por laboratorio |
 | VR-OPE-01 | Operador | Barra superior y recepción en escritorio y móvil | Navegación accesible, recepción disponible, lectura PDF bloqueada sin archivo |
 | VR-OPE-02 | Operador | Órdenes, PDF de resultados, cotejo humano y auditoría | Consulta y creación/registro funcionales, con respuesta HTTP y datos sintéticos |
 | VR-OPE-03 | Operador | Adjuntar, descargar, revisar y publicar informe | PDF original revisado, confirmaciones exigidas y publicación con HTTP 201 |
@@ -43,7 +44,8 @@ La suite también reveló que el ensayo consumía los intentos de autenticación
 - Regresión de permisos y carga de administrador: `apps/vitalia/test/sil_principal_page_test.dart`.
 - Configuración de CI: `.github/workflows/sil-main-integration.yml`.
 - Capturas de Edge en artefacto GitHub Actions `vitalia-sil-edge`, generado por la ejecución cuando el recorrido llega a las pantallas.
-- Las URL de GitHub Actions enlazadas arriba son la fuente primaria del **resultado final**, que debe consultarse antes de afirmar que todos los escenarios aprobaron.
+- La primera ejecución aprobada registró 973 pruebas Jest en 72 suites, 206 pruebas Flutter aprobadas y 2 omitidas, más las 2 regresiones específicas de activación aprobadas.
+- Las [capturas de Edge](https://github.com/JoseArgz8658/vitalia-health-capstone/actions/runs/44977686145/artifacts/14736810331) y la [APK de pruebas](https://github.com/JoseArgz8658/vitalia-health-capstone/actions/runs/44977686149/artifacts/14735604249) corresponden a esa ejecución y están sujetas a la retención de GitHub Actions.
 
 ## Límites y validaciones posteriores
 

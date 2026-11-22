@@ -380,14 +380,33 @@ void main() {
         'enabled':true,
       }
     ]);
-    expect(api.requestPaths,contains('/labs/${_StationApi.allowedLab}/staff'));
-    expect(api.requestPaths.where((path)=>path.endsWith('/orders')),isEmpty,
-      reason:'El administrador no debe consultar endpoints clínicos del operador.');
     await tester.tap(find.widgetWithText(TextButton,'Actividad'));
     await tester.pumpAndSettle();
     expect(find.text('Estado administrativo'),findsOneWidget);
     expect(find.textContaining('no constituye un historial de'),findsOneWidget);
     expect(find.text('Gestión de órdenes'),findsNothing);
+    expect(find.text('1 operadores asociados'), findsOneWidget);
+
+    final laboratory = _field('Laboratorio');
+    await tester.ensureVisible(laboratory);
+    await tester.tap(laboratory);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Laboratorio Sur').last);
+    await tester.pumpAndSettle();
+    expect(find.text('0 operadores asociados'), findsOneWidget);
+    expect(find.text('1 operadores asociados'), findsNothing);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Operadores y permisos'));
+    await tester.pumpAndSettle();
+    expect(find.text('operador@laboratorio.invalid'), findsNothing);
+    expect(find.textContaining('Todavía no hay operadores vinculados'),
+      findsOneWidget);
+    expect(api.requestPaths, containsAllInOrder([
+      '/labs/${_StationApi.allowedLab}/staff',
+      '/labs/${_StationApi.restrictedLab}/staff',
+    ]));
+    expect(api.requestPaths.where((path) => path.endsWith('/orders')), isEmpty,
+      reason: 'El administrador no debe consultar órdenes clínicas en ningún laboratorio.');
     expect(tester.takeException(),isNull);
   });
 
