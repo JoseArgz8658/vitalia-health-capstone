@@ -23,6 +23,7 @@ class SilPatientSearchDialog extends StatefulWidget {
 class _SilPatientSearchDialogState extends State<SilPatientSearchDialog> {
   static const _pageSize = 20;
   final _search = TextEditingController();
+  final _resultsScroll = ScrollController();
   List<Map<String, dynamic>> _patients = [];
   String? _error;
   bool _loading = false;
@@ -35,6 +36,7 @@ class _SilPatientSearchDialogState extends State<SilPatientSearchDialog> {
   void dispose() {
     _requestVersion++;
     _search.dispose();
+    _resultsScroll.dispose();
     super.dispose();
   }
 
@@ -84,6 +86,11 @@ class _SilPatientSearchDialogState extends State<SilPatientSearchDialog> {
         _offset = offset;
         _hasMore = result['hasMore'] == true;
         _searched = true;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _resultsScroll.hasClients) {
+          _resultsScroll.jumpTo(0);
+        }
       });
     } on AuthFailure catch (error) {
       if (!mounted || version != _requestVersion) return;
@@ -176,7 +183,9 @@ class _SilPatientSearchDialogState extends State<SilPatientSearchDialog> {
                               ),
                             )
                           : Scrollbar(
+                              controller: _resultsScroll,
                               child: ListView.separated(
+                                controller: _resultsScroll,
                                 key: const ValueKey('sil-patient-search-results'),
                                 itemCount: _patients.length,
                                 separatorBuilder: (context, index) => const Divider(height: 1),
@@ -201,25 +210,34 @@ class _SilPatientSearchDialogState extends State<SilPatientSearchDialog> {
             ),
             if (_searched && (_offset > 0 || _hasMore)) ...[
               const SizedBox(height: 8),
-              Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Expanded(
+                  Align(
+                    alignment: Alignment.centerLeft,
                     child: Text(
-                      'Resultados ' + (_offset + 1).toString()
-                          + '–' + (_offset + _patients.length).toString(),
+                      'Resultados ' + (_offset + 1).toString() +
+                          '–' + (_offset + _patients.length).toString(),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
-                  OutlinedButton(
-                    onPressed: _loading || _offset == 0
-                        ? null : () => _loadPage(_offset - _pageSize),
-                    child: const Text('Anterior'),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton(
-                    onPressed: _loading || !_hasMore || _offset >= 10000
-                        ? null : () => _loadPage(_offset + _pageSize),
-                    child: const Text('Siguiente'),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.end,
+                    children: [
+                      OutlinedButton(
+                        onPressed: _loading || _offset == 0
+                            ? null : () => _loadPage(_offset - _pageSize),
+                        child: const Text('Anterior'),
+                      ),
+                      OutlinedButton(
+                        onPressed: _loading || !_hasMore || _offset >= 10000
+                            ? null : () => _loadPage(_offset + _pageSize),
+                        child: const Text('Siguiente'),
+                      ),
+                    ],
                   ),
                 ],
               ),
