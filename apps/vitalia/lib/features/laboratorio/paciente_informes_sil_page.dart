@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -46,10 +48,18 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
   bool _reportsTabSelected = false;
   int? _reportTotal;
   String? _laboratoryFilter;
+  List<Map<String, dynamic>>? _historyPage;
+  int _historyOffset = 0;
+  int _historyTotal = 0;
+  int _historyGeneration = 0;
+  bool _historyLoading = false;
+  String? _historyError;
+  Timer? _historyDebounce;
   bool _issuingLinkCode = false;
 
   @override
   void dispose() {
+    _historyDebounce?.cancel();
     _question.dispose();
     _filter.dispose();
     super.dispose();
@@ -611,11 +621,67 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     );
   }
 
+  void _changeHistoryFilter() {
+    if (!_mainSil) {
+      setState(() {});
+      return;
+    }
+    _historyDebounce?.cancel();
+    _historyGeneration++;
+    setState(() {
+      _historyLoading = true;
+      _historyError = null;
+    });
+    _historyDebounce = Timer(
+      const Duration(milliseconds: 300),
+      () => _loadHistory(0),
+    );
+  }
+
+  Future<void> _loadHistory(int offset) async {
+    _historyDebounce?.cancel();
+    final generation = ++_historyGeneration;
+    final search = _filter.text.trim();
+    final params = Uri(queryParameters: {
+      'offset': '$offset',
+      if (search.isNotEmpty) 'search': search,
+      if (_laboratoryFilter != null) 'laboratory': _laboratoryFilter!,
+    }).query;
+    setState(() {
+      _historyLoading = true;
+      _historyError = null;
+    });
+    try {
+      final data = await widget.api.silMainRequest('/patient/reports?$params');
+      if (!mounted || generation != _historyGeneration) return;
+      setState(() {
+        _historyPage = (data['reports'] as List).cast<Map<String, dynamic>>();
+        _historyOffset = offset;
+        _historyTotal = data['total'] as int;
+      });
+    } on AuthFailure catch (error) {
+      if (!mounted || generation != _historyGeneration) return;
+      if (error.status == 401) {
+        widget.onExpired();
+      } else {
+        setState(() => _historyError = error.message);
+      }
+    } finally {
+      if (mounted && generation == _historyGeneration) {
+        setState(() => _historyLoading = false);
+      }
+    }
+  }
+
   void _openOverview([String? reportId]) {
     Navigator.of(context).push<void>(MaterialPageRoute(
       builder: (_) => ResumenInformesSilPage(
         api: widget.api,
-        reports: List.of(_reports),
+        reports: <String, Map<String, dynamic>>{
+          for (final report in _reports) report['id'] as String: report,
+          for (final report in _historyPage ?? const <Map<String, dynamic>>[])
+            report['id'] as String: report,
+        }.values.toList(),
         onExpired: widget.onExpired,
         initialReportId: reportId,
       ),
@@ -880,10 +946,11 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     children: [
       const SilWorkspaceHeading(section: true, title: 'Informes publicados'),
       const SizedBox(height: 10),
-      if (_reports.isNotEmpty) ...[
+      if ((_reportTotal ?? _reports.length) > 0) ...[
         TextField(
           controller: _filter,
-          onChanged: (_) => setState(() {}),
+          onChanged: (_) => _changeHistoryFilter(),
+          maxLength: 150,
           decoration: InputDecoration(
             labelText: 'Buscar por orden, examen o laboratorio',
             prefixIcon: const Icon(Icons.search),
@@ -891,7 +958,10 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 ? null
                 : IconButton(
                     tooltip: 'Limpiar búsqueda',
-                    onPressed: () => setState(_filter.clear),
+                    onPressed: () {
+                      _filter.clear();
+                      _changeHistoryFilter();
+                    },
                     icon: const Icon(Icons.close),
                   ),
           ),
@@ -907,20 +977,23 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               for (final lab in _reports.map((report) => report['issuingLaboratory']).whereType<String>().toSet())
                 DropdownMenuItem(value: lab, child: Text(lab)),
             ],
-            onChanged: (value) => setState(() => _laboratoryFilter = value == '' ? null : value),
+            onChanged: (value) {
+              _laboratoryFilter = value == '' ? null : value;
+              _changeHistoryFilter();
+            },
           ),
-        if (query.isNotEmpty) ...[
+        if (query.isNotEmpty && !_historyLoading && _historyError == null) ...[
           Semantics(
             liveRegion: true,
             child: Text(
-              'Coincidencias · ${visibleReports.length}',
+              'Coincidencias · ${_mainSil ? _historyTotal : visibleReports.length}',
               style: theme.textTheme.labelLarge,
             ),
           ),
           const SizedBox(height: 8),
         ],
       ],
-      if (_loading)
+      if (_loading || _historyLoading)
         const LinearProgressIndicator(semanticsLabel: 'Cargando informes'),
       if (_error != null) ...[
         Semantics(
@@ -932,7 +1005,9 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         ),
         const SizedBox(height: 12),
       ],
-      if (!_loading && visibleReports.isEmpty && _error == null)
+      if (_historyError case final String error)
+        Text(error, style: TextStyle(color: theme.colorScheme.error)),
+      if (!_loading && !_historyLoading && visibleReports.isEmpty && _error == null && _historyError == null)
         SilWorkspaceSurface(
           padding: const EdgeInsets.all(16),
           child: Text(
@@ -941,7 +1016,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 : 'No encontramos informes que coincidan con tu búsqueda.',
           ),
         ),
-      if (visibleReports.isNotEmpty)
+      if (visibleReports.isNotEmpty && !_historyLoading && _historyError == null)
         SilWorkspaceSurface(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -952,6 +1027,25 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               ],
             ],
           ),
+        ),
+      if (_mainSil && (_historyOffset > 0 ||
+          (_historyPage == null ? (_reportTotal ?? 0) : _historyTotal) >
+              _historyOffset + 50))
+        Wrap(
+          spacing: 12,
+          children: [
+            OutlinedButton(
+              onPressed: _historyLoading || _historyOffset == 0
+                  ? null : () => _loadHistory(_historyOffset - 50),
+              child: const Text('Anteriores'),
+            ),
+            OutlinedButton(
+              onPressed: _historyLoading || (_historyPage == null
+                      ? (_reportTotal ?? 0) : _historyTotal) <= _historyOffset + 50
+                  ? null : () => _loadHistory(_historyOffset + 50),
+              child: const Text('Siguientes'),
+            ),
+          ],
         ),
     ],
   );
@@ -1122,7 +1216,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     final width = MediaQuery.sizeOf(context).width;
     final narrow = width < 600;
     final query = _filter.text.trim().toLowerCase();
-    final visibleReports = _reports
+    final visibleReports = _mainSil && _historyPage != null ? _historyPage! : _reports
         .where((report) =>
             (_laboratoryFilter == null || report['issuingLaboratory'] == _laboratoryFilter) &&
             (query.isEmpty ||
@@ -1166,7 +1260,12 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         actions: [
           IconButton(
             tooltip: 'Actualizar informes',
-            onPressed: _loading ? null : _refresh,
+            onPressed: _loading || _historyLoading ? null : () async {
+              await _refresh();
+              if (mounted && _mainSil && _reportsTabSelected && _historyPage != null) {
+                await _loadHistory(0);
+              }
+            },
             icon: const Icon(Icons.refresh_outlined),
           ),
           _accountMenu(),

@@ -151,15 +151,17 @@ class AuthApi {
     final isPending=candidate?.path.endsWith('/medical-requests/pending') ?? false;
     final isAdminHistory=candidate?.path.endsWith('/operator-invitations') == true ||
         candidate?.path.endsWith('/administrative-audit') == true;
+    final isPatientReports = candidate?.path == '/patient/reports';
     final allowedQuery = {
       'limit', 'offset',
-      if (isPatients || isOrders) 'search',
+      if (isPatients || isOrders || isPatientReports) 'search',
+      if (isPatientReports) 'laboratory',
       if (isOrders) ...{'status', 'patientId'},
     };
     if(candidate==null||candidate.hasScheme||candidate.hasAuthority||
        candidate.hasFragment||
        (!allowed.hasMatch(candidate.path)&&!pendingPath.hasMatch(candidate.path))||
-       (queries.isNotEmpty&&(body!=null||(!isOrders&&!isPatients&&!isPending&&!isAdminHistory)))||
+       (queries.isNotEmpty&&(body!=null||(!isOrders&&!isPatients&&!isPending&&!isAdminHistory&&!isPatientReports)))||
        queries.keys.any((key)=>!allowedQuery.contains(key))||
        queries.values.any((values)=>values.length!=1)){
       throw const AuthFailure('Ruta del SIL principal inválida.');

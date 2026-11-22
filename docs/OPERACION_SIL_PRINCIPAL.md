@@ -311,3 +311,9 @@ referencias opcionales con una clave compuesta por laboratorio y sede. Usa
 el apartado de actualización de Windows y Docker para ensayar el salto
 045 → 046 con el respaldo disponible. El verificador de arranque de la API
 permanece en solo lectura y las sedes se crean desde administración.
+
+
+En el portal, **Inicio** reúne saludo, cantidad total de informes, última
+publicación, comparación y contacto. **Mis informes** permite buscar en los
+documentos publicados del paciente por examen, folio o laboratorio, con
+páginas de hasta 50. Los datos de sede de un informe se ven en **Más opciones**.

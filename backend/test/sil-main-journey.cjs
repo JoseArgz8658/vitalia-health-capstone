@@ -366,6 +366,19 @@ async function adminJourney(browser, base) {
         process.env.VITALIA_JOURNEY_SCREENSHOTS, 'administrador-laboratorios.png')});
     }
 
+    const siteDirectory=page.waitForResponse(response=>
+      new URL(response.url()).pathname==='/api/sil/main'+base+'/sites' &&
+      response.request().method()==='GET');
+    await nav('Sedes').click();
+    assert.equal((await siteDirectory).status(),200);
+    await nav('Nueva sede').waitFor();
+    await nav('Nueva sede').click();
+    await nav('Guardar sede').waitFor();
+    await nav('Cancelar').click();
+    if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+      await page.screenshot({path:resolve(
+        process.env.VITALIA_JOURNEY_SCREENSHOTS,'administrador-sedes.png')});
+    }
     await nav('Operadores y permisos').click();
     // Flutter Canvas muestra los textos en pantalla, pero no todos son
     // localizadores HTML. Comprobar controles accesibles y la respuesta real.
@@ -1222,11 +1235,20 @@ async function main() {
       assert.equal(selected.siteId,second.id);
       await admin(northSites+'/state',200,{siteId:northSite.id,active:false});
       await call('uploader','POST',base+'/orders',409,{json:{...manualOrder,siteId:northSite.id}});
-      const historical=(await (await call('patient','GET','/patient/reports',200)).json())
+      const historicalToken=(await issueSession(db,ids.patient,'paciente',passwordHash)).token;
+      const ownSites={token:historicalToken};
+      const historical=(await (await api('GET','/api/sil/main/patient/reports',200,ownSites)).json())
         .reports.find(report=>report.id===reportId);
+      const matchingReports=(await (await api('GET',
+        '/api/sil/main/patient/reports?offset=0&search='+historical.orderNumber,
+        200,ownSites)).json()).reports;
+      assert.deepEqual(matchingReports.map(report=>report.id),[reportId]);
+      const nonMatching=(await (await api('GET',
+        '/api/sil/main/patient/reports?offset=50',200,ownSites)).json()).reports;
+      assert.deepEqual(nonMatching,[]);
       assert.equal(historical.siteName,northSite.name);
       assert.equal(historical.siteAddress,'Avenida de Ensayo 20');
-      const patientSites=(await (await call('patient','GET','/patient/sites',200)).json()).sites;
+      const patientSites=(await (await api('GET','/api/sil/main/patient/sites',200,ownSites)).json()).sites;
       assert.deepEqual(patientSites.map(site=>site.id),[second.id]);
       const audits=(await (await call('admin','GET',base+'/administrative-audit?limit=50',200)).json()).events;
       for(const action of ['site_created','site_updated','site_deactivated'])

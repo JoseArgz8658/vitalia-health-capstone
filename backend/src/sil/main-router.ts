@@ -699,8 +699,17 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
   router.get('/patient/profile',patient,async(_req,res)=>{
     res.json(await main.patientProfile(res.locals.account.id));
   });
-  router.get('/patient/reports',patient,async(_req,res)=>{
-    res.json(await main.patientReports(res.locals.account.id));
+  router.get('/patient/reports',patient,async(req,res)=>{
+    if(Object.keys(req.query).length===0){
+      res.json(await main.patientReports(res.locals.account.id));return;
+    }
+    const options=z.object({
+      search:z.string().trim().min(1).max(150).optional(),
+      laboratory:z.string().trim().min(1).max(150).optional(),
+      offset:z.coerce.number().int().min(0).max(100000).optional(),
+    }).strict().safeParse(req.query);
+    if(!options.success){res.status(400).json({error:{code:'INVALID_PAGE'}});return;}
+    res.json(await main.patientReports(res.locals.account.id,options.data));
   });
   router.get('/patient/reports/:id/file',patient,async(req,res)=>{
     if(!uuid.safeParse(req.params.id).success){

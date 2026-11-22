@@ -2106,7 +2106,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
 
   Widget _newOrder() => _section(
     'Crear orden sin derivación PDF',
-    'Usa esta opción solo cuando corresponda al procedimiento del laboratorio. Si recibiste una solicitud médica, comienza en «Recibir solicitud».',
+    'Usa esta opción solo cuando corresponda al procedimiento del laboratorio. Si recibiste una solicitud médica, comienza en «Recibir solicitud». Si el laboratorio aún no tiene sedes activas, la orden puede quedar sin sede.',
     Icons.note_add_outlined, [
       const OperatorNextStep(
         title: 'Antes de registrar la orden',

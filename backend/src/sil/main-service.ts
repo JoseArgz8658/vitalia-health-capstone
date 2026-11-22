@@ -1154,7 +1154,12 @@ export function createSilMainService(db:Pool) {
       return {profile:profile.rows[0]};
     },
 
-    async patientReports(patientId:string){
+    async patientReports(patientId:string,options:{
+      search?:string;laboratory?:string;offset?:number
+    }={}){
+      const search=options.search??null;
+      const folio=search?.match(/^(?:VH-)?0*(\d+)$/i)?.[1]??null;
+      const offset=options.offset??0;
       const found=await db.query(
         `SELECT r.id,r.file_name AS "fileName",
            r.issuing_laboratory AS "issuingLaboratory",
@@ -1176,7 +1181,16 @@ export function createSilMainService(db:Pool) {
          LEFT JOIN public.vitalia_sil_main_sites s ON s.lab_id=o.lab_id AND s.id=o.site_id
          WHERE r.patient_id=$1 AND r.published_at IS NOT NULL
            AND o.status='report_published'
-         ORDER BY r.published_at DESC,r.id LIMIT 50`,[patientId]);
+           AND ($2::text IS NULL OR o.order_number::text=$3
+             OR strpos(lower(r.issuing_laboratory),lower($2))>0
+             OR strpos(lower(r.file_name),lower($2))>0
+             OR EXISTS (
+               SELECT 1 FROM public.vitalia_sil_main_order_exams e
+               JOIN public.vitalia_sil_exam_catalog c ON c.code=e.exam_code
+               WHERE e.order_id=o.id AND strpos(lower(c.name),lower($2))>0))
+           AND ($4::text IS NULL OR r.issuing_laboratory=$4)
+         ORDER BY r.published_at DESC,r.id LIMIT 50 OFFSET $5`,
+        [patientId,search,folio,options.laboratory??null,offset]);
       return {total:found.rows[0]?.total??0,reports:found.rows.map(({total,...report})=>report)};
     },
 
