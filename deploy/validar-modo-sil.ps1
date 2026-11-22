@@ -1,9 +1,15 @@
 [CmdletBinding()]
 param(
-  [string]$ArchivoEntorno = (Join-Path (Split-Path $PSScriptRoot -Parent) '.env')
+  [string]$ArchivoEntorno
 )
 
 $ErrorActionPreference = 'Stop'
+# PowerShell no siempre resuelve $PSScriptRoot al evaluar un valor predeterminado
+# en param() (por ejemplo, -File desde Windows PowerShell 5.1).
+# Calcularlo dentro del cuerpo, donde la carpeta del script ya está definida.
+if ([string]::IsNullOrWhiteSpace($ArchivoEntorno)) {
+  $ArchivoEntorno = Join-Path (Split-Path $PSScriptRoot -Parent) '.env'
+}
 if (-not (Test-Path -LiteralPath $ArchivoEntorno -PathType Leaf)) {
   throw 'No existe .env en la raiz del proyecto. No se compilara la web SIL.'
 }

@@ -22,6 +22,28 @@ function Assert-Env([string]$Name, [string]$Content, [bool]$ShouldPass) {
   }
 }
 
+# Regresión: invocación sin -ArchivoEntorno desde -File de PowerShell.
+# Usa directorio temporal y un .env sintético, sin leer secretos reales.
+$temporaryRoot = Join-Path ([IO.Path]::GetTempPath()) ('vitalia-sil-default-' + [guid]::NewGuid().ToString('N'))
+$temporaryDeploy = Join-Path $temporaryRoot 'deploy'
+try {
+  [void](New-Item -ItemType Directory -Path $temporaryDeploy -Force)
+  $temporaryScript = Join-Path $temporaryDeploy 'validar-modo-sil.ps1'
+  Copy-Item -LiteralPath $validator -Destination $temporaryScript
+  [IO.File]::WriteAllText((Join-Path $temporaryRoot '.env'),
+    "PGDATABASE=vitalia`nVITALIA_SIL_MAIN_MODE=YES`n",
+    (New-Object System.Text.UTF8Encoding($false)))
+  $engine = (Get-Process -Id $PID).Path
+  $message = & $engine -NoProfile -File $temporaryScript 2>&1
+  if ($LASTEXITCODE -ne 0 -or
+      (($message | Out-String) -notmatch 'Preflight de configuracion SIL aprobado')) {
+    throw 'Invocacion sin argumentos del preflight debe usar el .env adyacente a deploy.'
+  }
+  $completed++
+} finally {
+  Remove-Item -LiteralPath $temporaryRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 $base = "PGDATABASE='vitalia'`n"
 Assert-Env 'configuracion correcta sin comillas' ($base + "VITALIA_SIL_MAIN_MODE=YES`n") $true
 Assert-Env 'configuracion correcta entre comillas' ($base + "VITALIA_SIL_MAIN_MODE='YES'`n") $true
