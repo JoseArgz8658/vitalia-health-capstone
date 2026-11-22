@@ -412,12 +412,16 @@ async function browserJourney(order, base, sampleOrder, samplePdf) {
     const page=await browser.newPage({viewport:{width:390,height:844}});
     try {
       await signIn(page,'patient');
-      await page.getByRole('button',{name:'Mis informes',exact:true}).waitFor();
+      // Hay otro acceso "Mis informes" en el contenido. Restringir al
+      // menú superior accesible, no seleccionar por coincidencia global.
+      const patientNav=page.getByLabel('Navegación del paciente');
+      await patientNav.getByRole('button',
+        {name:'Mis informes',exact:true}).waitFor();
       assert.equal(await page.getByRole('button',
         {name:'Recibir solicitud',exact:true}).count(),0,
         'El paciente no debe ver la estación interna del operador.');
 
-      const help=page.getByRole('button',{name:'Ayuda',exact:true});
+      const help=patientNav.getByRole('button',{name:'Ayuda',exact:true});
       // En 390 px la última pestaña puede estar fuera de la barra; usar
       // los botones visibles en vez de depender del scroll automático DOM.
       for(let attempt=0;attempt<4;attempt++){
