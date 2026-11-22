@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -121,11 +120,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ('perfil_hepatico','Perfil hepático'),
   ];
 
-  bool get _mobileDevice => switch (defaultTargetPlatform) {
-    TargetPlatform.android || TargetPlatform.iOS => true,
-    _ => false,
-  };
-
   bool get _admin => widget.role=='administrador';
   bool get _operator => widget.role=='operador_laboratorio';
   bool get _canReview => _operator && _labs.any(
@@ -137,7 +131,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   @override
   void initState(){
     super.initState();
-    if (_mobileDevice) return;
     WidgetsBinding.instance.addPostFrameCallback((_){
       if(mounted)_execute(_loadLabs,showNotice:false);
     });
@@ -2996,32 +2989,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_mobileDevice) {
-      return Scaffold(
-        appBar: AppBar(title: const SilWorkspaceBrand()),
-        body: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SilWorkspaceHeading(
-                    title: 'Abre Vitalia en un computador',
-                    description: 'La estación del laboratorio está disponible en escritorio.',
-                  ),
-                  const SizedBox(height: 24),
-                  OutlinedButton(
-                    onPressed: widget.onLogout,
-                    child: const Text('Cerrar sesión'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
     return Scaffold(
       backgroundColor: ColoresVitalia.fondoAzul,
       appBar: AppBar(
