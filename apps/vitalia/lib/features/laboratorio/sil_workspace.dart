@@ -290,3 +290,150 @@ class _SilWorkspaceTopNavigationState
     ),
   );
 }
+
+ 
+/// Indica el contexto de acceso sin exponer identificadores internos.
+class SilWorkspaceRoleLabel extends StatelessWidget {
+  const SilWorkspaceRoleLabel({
+    super.key,
+    required this.label,
+    required this.icon,
+  });
+
+  final String label;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Rol actual: $label',
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+      decoration: BoxDecoration(
+        color: ColoresVitalia.azulSuave,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: ColoresVitalia.borde),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 17, color: ColoresVitalia.azulActivo),
+        const SizedBox(width: 7),
+        Text(label, style: const TextStyle(
+          color: ColoresVitalia.azulActivo,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        )),
+      ]),
+    ),
+  );
+}
+
+/// Métrica contextual, sin acción implícita ni datos de ejemplo.
+class SilWorkspaceSummaryStat extends StatelessWidget {
+  const SilWorkspaceSummaryStat({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    decoration: BoxDecoration(
+      color: ColoresVitalia.blanco,
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: ColoresVitalia.borde),
+    ),
+    child: Row(children: [
+      Container(
+        padding: const EdgeInsets.all(9),
+        decoration: BoxDecoration(
+          color: ColoresVitalia.verdeSuave,
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Icon(icon, color: ColoresVitalia.verde, size: 21),
+      ),
+      const SizedBox(width: 12),
+      Expanded(child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(value, style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            fontWeight: FontWeight.w800,
+            color: ColoresVitalia.azulActivo,
+          )),
+          Text(label, style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: ColoresVitalia.textoSecundario,
+          )),
+        ],
+      )),
+    ]),
+  );
+}
+
+/// Explica las etapas del SIL, sin presentar un progreso ficticio.
+class SilWorkspaceProcessPath extends StatelessWidget {
+  const SilWorkspaceProcessPath({super.key});
+
+  static const _steps = [
+    'Recepción',
+    'Verificación',
+    'Orden',
+    'Revisión',
+    'Publicación',
+  ];
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Etapas del proceso', style:
+            Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            )),
+          const SizedBox(height: 5),
+          const Text(
+            'Guía del recorrido postanalítico. No representa el estado de una orden.',
+            style: TextStyle(
+              fontSize: 12,
+              color: ColoresVitalia.textoSecundario,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (var i = 0; i < _steps.length; i++)
+              Semantics(
+                label: 'Etapa ${i + 1} de ${_steps.length}: ${_steps[i]}',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 11, vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: ColoresVitalia.fondoAzul,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: ColoresVitalia.borde),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('${i + 1}', style: const TextStyle(
+                      color: ColoresVitalia.azulActivo,
+                      fontWeight: FontWeight.w800,
+                    )),
+                    const SizedBox(width: 8),
+                    Text(_steps[i], style: const TextStyle(
+                      color: ColoresVitalia.texto,
+                      fontWeight: FontWeight.w600,
+                    )),
+                  ]),
+                ),
+              ),
+          ]),
+        ],
+      ),
+    ),
+  );
+}
