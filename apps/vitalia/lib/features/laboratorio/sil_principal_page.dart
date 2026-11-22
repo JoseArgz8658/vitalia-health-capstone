@@ -78,6 +78,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   bool _requestHumanChecked=false;
   String? _uploadOrderId;
   String? _reviewOrderId;
+  Map<String,dynamic>? _reviewSelectedOrder;
+  List<Map<String,dynamic>> _reviewOrders = [];
+  int _reviewOffset = 0;
+  bool _moreReviewOrders = false;
+  static const _reviewPageSize = 20;
   XFile? _pdf;
   List<Map<String,dynamic>> _labs = [];
   List<Map<String,dynamic>> _orders = [];
@@ -234,8 +239,14 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _requestHumanChecked = false;
     }
     if (!_workflowOrders.any((order) =>
-        order['id'] == _reviewOrderId && _isReviewable(order))) {
+        order['id'] == _reviewOrderId && _isReviewable(order)) &&
+        !_reviewOrders.any((order) =>
+            order['id'] == _reviewOrderId && _isReviewable(order)) &&
+        (_reviewSelectedOrder == null ||
+            _reviewSelectedOrder!['id'] != _reviewOrderId ||
+            !_isReviewable(_reviewSelectedOrder!))) {
       _reviewOrderId = null;
+      _reviewSelectedOrder = null;
       _reviewPdfDownloaded = false;
       _reviewConfirmed = false;
     }
@@ -269,6 +280,59 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _moreOrders = data['hasMore'] == true;
       _validateOrderSelections();
     });
+  }
+
+  // La revisión consulta órdenes filtradas directamente al backend.
+  // No depende de las últimas 50 órdenes que muestra el resumen.
+  Future<void> _loadReviewPage({required int offset}) async {
+    final lab = _labId;
+    if (lab == null || !_canReview) {
+      if (mounted) setState(() {
+        _reviewOrders = [];
+        _reviewOffset = 0;
+        _moreReviewOrders = false;
+      });
+      return;
+    }
+    final query = Uri(queryParameters: {
+      'limit': '$_reviewPageSize',
+      'offset': '$offset',
+      'status': 'report_attached',
+    }).query;
+    final data = await widget.api.silMainRequest('/labs/$lab/orders?$query');
+    if (!mounted || _labId != lab || !_canReview) return;
+    final orders = (data['orders'] as List? ?? [])
+        .map((entry) => Map<String,dynamic>.from(entry as Map))
+        .where(_isReviewable).toList();
+    if (orders.isEmpty && offset > 0) {
+      await _loadReviewPage(offset: 0);
+      return;
+    }
+    setState(() {
+      _reviewOrders = orders;
+      _reviewOffset = offset;
+      _moreReviewOrders = data['hasMore'] == true;
+      if (_reviewOrderId != null &&
+          !orders.any((order) => order['id'] == _reviewOrderId) &&
+          _reviewSelectedOrder?['id'] != _reviewOrderId) {
+        _reviewOrderId = null;
+        _reviewPdfDownloaded = false;
+        _reviewConfirmed = false;
+      }
+    });
+  }
+
+  Future<void> _changeReviewPage(int offset) async {
+    if (offset != _reviewOffset) {
+      // Nunca arrastrar una confirmación de revisión entre páginas.
+      setState(() {
+        _reviewOrderId = null;
+        _reviewSelectedOrder = null;
+        _reviewPdfDownloaded = false;
+        _reviewConfirmed = false;
+      });
+    }
+    await _loadReviewPage(offset: offset);
   }
 
   void _showPatientOrders(Map<String,dynamic>? patient) {
@@ -335,6 +399,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _externallyAuthorized = false;
     _confirmedMatch = false;
     _reviewOrderId = null;
+    _reviewSelectedOrder = null;
+    _reviewOrders = [];
+    _reviewOffset = 0;
+    _moreReviewOrders = false;
     _reviewPdfDownloaded = false;
     _reviewConfirmed = false;
   }
@@ -847,10 +915,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     );
     if(mounted)setState((){
       _reviewOrderId=null;
+      _reviewSelectedOrder=null;
       _reviewConfirmed=false;
       _reviewPdfDownloaded=false;
     });
     await _loadOrders();
+    await _loadReviewPage(offset: _reviewOffset);
   }
 
   Widget _section(String title,String detail,IconData icon,List<Widget> children){
@@ -1046,12 +1116,17 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                           ),
                           if (_canReview && _isReviewable(order))
                             TextButton(
-                              onPressed: _busy ? null : () => setState(() {
-                                _reviewOrderId = order['id'] as String;
-                                _reviewPdfDownloaded = false;
-                                _reviewConfirmed = false;
-                                _activeSection = _StationSection.review;
-                              }),
+                              onPressed: _busy ? null : () {
+                                setState(() {
+                                  _reviewOrderId = order['id'] as String;
+                                  _reviewSelectedOrder = order;
+                                  _reviewPdfDownloaded = false;
+                                  _reviewConfirmed = false;
+                                  _activeSection = _StationSection.review;
+                                });
+                                _execute(() => _loadReviewPage(offset: 0),
+                                    showNotice: false);
+                              },
                               child: const Text('Revisar informe'),
                             ),
                         ]),
@@ -1718,60 +1793,120 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         _action('Adjuntar para revisión',Icons.upload_file,_attachReport),
       ]);
 
-  Widget _reviewPanel(){
+  Widget _reviewPanel() {
+    // Un acceso directo desde una orden reciente conserva esa selección,
+    // incluso cuando la orden no esté en la página actual de la bandeja.
+    final choices = <String,Map<String,dynamic>>{
+      for (final order in _reviewOrders)
+        order['id'] as String: order,
+      if (_reviewSelectedOrder != null &&
+          _reviewSelectedOrder!['id'] is String &&
+          _isReviewable(_reviewSelectedOrder!))
+        _reviewSelectedOrder!['id'] as String: _reviewSelectedOrder!,
+    }.values.toList();
     return _section('Validación y publicación',
       'Revisa el PDF y confirma su autorización externa antes de publicarlo.',
-      Icons.fact_check_outlined,[
+      Icons.fact_check_outlined, [
+      const Text(
+        'Esta bandeja consulta las órdenes pendientes por páginas '
+        'de 20; no se limita a las órdenes recientes del resumen.',
+        style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario),
+      ),
+      const SizedBox(height: 10),
       Semantics(
-        identifier:'sil-review-order',
-        child:DropdownButtonFormField<String>(
-          value:_reviewOrderId,
-          isExpanded:true,
-          decoration:const InputDecoration(
-            border:OutlineInputBorder(),labelText:'Informe pendiente de revisión',
+        identifier: 'sil-review-order',
+        child: DropdownButtonFormField<String>(
+          key: ValueKey((_labId, _reviewOffset, _reviewOrderId, 'review-queue')),
+          value: _reviewOrderId,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            labelText: 'Informe pendiente de revisión',
           ),
-          items:[
-            for(final order in _workflowOrders.where(_isReviewable))
+          items: [
+            for (final order in choices)
               DropdownMenuItem<String>(
-                value:order['id'] as String,
-                child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
+                value: order['id'] as String,
+                child: Text(_orderLabel(order), overflow: TextOverflow.ellipsis),
               ),
           ],
-          onChanged:_busy?null:(v)=>setState((){
-            _reviewOrderId=v;
-            _reviewPdfDownloaded=false;
-            _reviewConfirmed=false;
+          onChanged: _busy ? null : (v) => setState(() {
+            _reviewOrderId = v;
+            _reviewSelectedOrder = v == null ? null
+              : choices.where((order) => order['id'] == v).firstOrNull;
+            _reviewPdfDownloaded = false;
+            _reviewConfirmed = false;
           }),
         ),
       ),
-      const SizedBox(height:10),
-      OutlinedButton.icon(
-        onPressed:_busy||_reviewOrderId==null
-            ?null
-            :()=>_execute(_downloadReportForReview,showNotice:false),
-        icon:const Icon(Icons.picture_as_pdf_outlined),
-        label:const Text('Descargar PDF para revisión'),
+      const SizedBox(height: 10),
+      if (choices.isEmpty && !_busy)
+        const Padding(
+          padding: EdgeInsets.only(bottom: 10),
+          child: Text('No hay informes pendientes en esta página. '
+            'Actualiza la bandeja o consulta otra página.'),
+        ),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          OutlinedButton(
+            onPressed: _busy || _reviewOffset == 0 ? null
+              : () => _execute(
+                () => _changeReviewPage(_reviewOffset - _reviewPageSize),
+                showNotice: false,
+              ),
+            child: const Text('Revisiones anteriores'),
+          ),
+          Text('Página ${_reviewOffset ~/ _reviewPageSize + 1}'),
+          OutlinedButton(
+            onPressed: _busy || !_moreReviewOrders || _reviewOffset >= 10000
+              ? null : () => _execute(
+                () => _changeReviewPage(_reviewOffset + _reviewPageSize),
+                showNotice: false,
+              ),
+            child: const Text('Revisiones siguientes'),
+          ),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _execute(
+              () => _loadReviewPage(offset: _reviewOffset),
+              showNotice: false,
+            ),
+            icon: const Icon(Icons.refresh_outlined),
+            label: const Text('Actualizar revisiones'),
+          ),
+        ],
       ),
-      const SizedBox(height:8),
+      const SizedBox(height: 10),
+      OutlinedButton.icon(
+        onPressed: _busy || _reviewOrderId == null
+            ? null
+            : () => _execute(_downloadReportForReview, showNotice: false),
+        icon: const Icon(Icons.picture_as_pdf_outlined),
+        label: const Text('Descargar PDF para revisión'),
+      ),
+      const SizedBox(height: 8),
       const Text(
         'Antes de publicar, revisa el PDF original y su autorización '
         'en el procedimiento clínico de tu laboratorio. '
         'Esta pantalla no sustituye ese procedimiento.',
-        style:TextStyle(fontSize:12,color:ColoresVitalia.textoSecundario),
+        style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario),
       ),
       CheckboxListTile(
-        contentPadding:EdgeInsets.zero,
-        controlAffinity:ListTileControlAffinity.leading,
-        title:const Text('Confirmo que revisé el PDF y su autorización externa'),
-        value:_reviewConfirmed,
-        onChanged:_busy||!_reviewPdfDownloaded
-            ?null
-            :(v)=>setState(()=>_reviewConfirmed=v??false),
+        contentPadding: EdgeInsets.zero,
+        controlAffinity: ListTileControlAffinity.leading,
+        title: const Text('Confirmo que revisé el PDF y su autorización externa'),
+        value: _reviewConfirmed,
+        onChanged: _busy || !_reviewPdfDownloaded
+            ? null
+            : (v) => setState(() => _reviewConfirmed = v ?? false),
       ),
       FilledButton.icon(
-        onPressed:_busy||!_reviewConfirmed?null:()=>_execute(_publishReport),
-        icon:const Icon(Icons.verified_outlined),
-        label:const Text('Publicar informe'),
+        onPressed: _busy || !_reviewConfirmed
+            ? null : () => _execute(_publishReport),
+        icon: const Icon(Icons.verified_outlined),
+        label: const Text('Publicar informe'),
       ),
     ]);
   }
@@ -1804,6 +1939,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         await _loadOrderPage(offset: _orderOffset);
         await _loadPatients(offset: 0, search: _orderPatientSearch.text.trim());
       }, showNotice: false);
+    } else if (section == _StationSection.review && _canReview) {
+      _execute(() => _loadReviewPage(offset: 0), showNotice: false);
     }
   }
 
