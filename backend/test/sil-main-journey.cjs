@@ -404,7 +404,7 @@ async function adminJourney(browser, base) {
           'administrador-operadores.png'),
       });
       await page.setViewportSize({width:390,height:844});
-      await nav('Invitar operador').waitFor();
+      await nav('Agregar operador').waitFor();
       await page.screenshot({path:resolve(
         process.env.VITALIA_JOURNEY_SCREENSHOTS, 'administrador-movil.png')});
       await page.setViewportSize({width:1440,height:1050});
