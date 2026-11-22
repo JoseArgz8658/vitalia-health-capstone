@@ -155,19 +155,7 @@ class _AccesoPageState extends State<AccesoPage> {
                                 style:
                                     Theme.of(context).textTheme.headlineMedium,
                               ),
-                              const SizedBox(height: 8),
-                              const Text(
-                                'Tus exámenes, en un solo lugar',
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                silPatientDemo && _patientMode
-                                    ? 'Accede a los informes que el laboratorio publicó para ti.'
-                                    : 'Inicia sesión para consultar tus documentos y su revisión profesional.',
-                                textAlign: TextAlign.center,
-                              ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 12),
                               Text(
                                 widget.laboratoryMode
                                     ? 'Acceso del laboratorio'
@@ -179,25 +167,18 @@ class _AccesoPageState extends State<AccesoPage> {
                                 textAlign: TextAlign.center,
                                 style: Theme.of(context).textTheme.titleLarge,
                               ),
-                              if (!silPatientDemo &&
-                                  !widget.adminMode &&
-                                  !widget.laboratoryMode)
-                                TextButton.icon(
-                                  onPressed: _busy
-                                      ? null
-                                      : () => setState(() {
-                                            _professionalMode =
-                                                !_professionalMode;
-                                            _clave.clear();
-                                            _error = null;
-                                          }),
-                                  icon: const Icon(Icons.swap_horiz),
-                                  label: Text(
-                                    _professionalMode
-                                        ? 'Cambiar a modo paciente'
-                                        : 'Cambiar a modo profesional',
-                                  ),
-                                ),
+                              const SizedBox(height: 6),
+                              Text(
+                                widget.laboratoryMode
+                                    ? 'Ingresa con tu cuenta de operador.'
+                                    : widget.adminMode
+                                        ? 'Ingresa con tu cuenta de administrador.'
+                                        : _professionalMode
+                                            ? 'Ingresa con tu cuenta profesional.'
+                                            : 'Consulta los informes publicados para ti.',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                               const SizedBox(height: 24),
                               if (widget.notice != null) Text(widget.notice!),
                               TextFormField(
@@ -334,6 +315,27 @@ class _AccesoPageState extends State<AccesoPage> {
                                         'Activar acceso con invitación'),
                                   ),
                               ],
+                              if (!widget.adminMode && !widget.laboratoryMode)
+                                const Divider(height: 18),
+                              if (!silPatientDemo &&
+                                  !widget.adminMode &&
+                                  !widget.laboratoryMode)
+                                TextButton.icon(
+                                  onPressed: _busy
+                                      ? null
+                                      : () => setState(() {
+                                            _professionalMode =
+                                                !_professionalMode;
+                                            _clave.clear();
+                                            _error = null;
+                                          }),
+                                  icon: const Icon(Icons.swap_horiz),
+                                  label: Text(
+                                    _professionalMode
+                                        ? 'Cambiar a modo paciente'
+                                        : 'Cambiar a modo profesional',
+                                  ),
+                                ),
                               if (!widget.adminMode && !widget.laboratoryMode)
                                 TextButton.icon(
                                   onPressed: _busy

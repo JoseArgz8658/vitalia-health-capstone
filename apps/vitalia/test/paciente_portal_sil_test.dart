@@ -239,7 +239,13 @@ void main() {
     expect(find.text('Nombre'), findsOneWidget);
     expect(find.text('Paciente De prueba'), findsWidgets);
     await _tap(tester, 'Cerrar');
+    expect(find.textContaining('Dra. Elisa Muñoz'), findsNothing);
+    expect(find.text('Descargar PDF'), findsNothing);
+    await _tap(tester, 'Más opciones');
     expect(find.textContaining('Dra. Elisa Muñoz'), findsOneWidget);
+    expect(find.text('Descargar PDF'), findsOneWidget);
+    await _tap(tester, 'Ocultar opciones');
+    expect(find.text('Descargar PDF'), findsNothing);
     final search = find.widgetWithText(
         TextField, 'Buscar por orden, examen o laboratorio');
     await _type(tester, search, 'inexistente');
@@ -253,6 +259,7 @@ void main() {
     expect(find.text('«Control de seguimiento.»'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
+    await _tap(tester, 'Más opciones');
     await _tap(tester, 'Preguntar sobre el informe');
     await _tap(tester, 'Lectura fácil');
     await _tap(tester, 'Rango de referencia');

@@ -694,7 +694,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       XTypeGroup(label:'Documento PDF',extensions:['pdf'],mimeTypes:['application/pdf']),
     ]);
     if(selection==null||!mounted)return;
-    setState(()=>_pdf=selection);
+    setState(() {
+      _pdf = selection;
+      _externallyAuthorized = false;
+      _confirmedMatch = false;
+    });
   }
 
   Future<void> _pickMedicalRequest() async {
@@ -1738,59 +1742,89 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ],
   );
 
+  bool get _hasRequestDocument =>
+      _medicalRequestFile != null || _pendingRequestId != null;
+
+  bool get _hasRequestPatient => _attachToExistingOrder
+      ? _requestOrderId != null
+      : _requestPatient.text.isNotEmpty;
+
   Widget _requestGuide() {
-    final documentReady = _medicalRequestFile != null || _pendingRequestId != null;
-    final patientReady = _attachToExistingOrder
-        ? _requestOrderId != null
-        : _requestPatient.text.isNotEmpty;
-    final reviewed = _requestIdentityChecked && _requestHumanChecked &&
+    final documentReady = _hasRequestDocument;
+    final patientReady = _hasRequestPatient;
+    final reviewed =
+        _requestIdentityChecked &&
+        _requestHumanChecked &&
         (_attachToExistingOrder || _requestExams.isNotEmpty);
-    final current = !documentReady ? 0 : !patientReady ? 1 : !reviewed ? 2 : 3;
+    final current = !documentReady
+        ? 0
+        : !patientReady
+        ? 1
+        : !reviewed
+        ? 2
+        : 3;
     final message = !documentReady
         ? 'Selecciona un PDF o retoma una derivación guardada.'
         : !_attachToExistingOrder && _pendingRequestId == null
-        ? 'Archivo seleccionado. Guárdalo como derivación pendiente: así no se perderá mientras identificas al paciente o esperas que active su cuenta.'
+        ? 'Guarda el PDF como derivación pendiente para poder crear la orden.'
         : !patientReady && !_attachToExistingOrder
-        ? 'Busca al paciente por correo. Si no tiene cuenta, verifica su identidad, entrega un código de activación y conserva la derivación pendiente. Cuando active su cuenta, búscalo de nuevo.'
+        ? 'Busca la cuenta activada por correo. Si es un paciente nuevo, abre la opción de invitación.'
         : !patientReady
         ? 'Selecciona la orden registrada que corresponde al documento original.'
         : !reviewed
         ? 'Compara los datos del paciente, los exámenes, la fecha y el profesional con el PDF original; después confirma el cotejo.'
         : 'Los datos esenciales están confirmados. Comprueba nuevamente el documento original y completa el registro.';
-    const stages = ['Recibir solicitud', 'Identificar paciente', 'Revisar exámenes', 'Crear orden'];
+    const stages = [
+      'Recibir solicitud',
+      'Identificar paciente',
+      'Revisar exámenes',
+      'Crear orden',
+    ];
     return SilWorkspaceSurface(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Wrap(
-          spacing: 10,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SilWorkspaceStatus(label: 'Paso ${current + 1} de ${stages.length}', positive: true),
-            Text(stages[current], style: const TextStyle(fontWeight: FontWeight.w700)),
-            TextButton(
-              onPressed: () => showDialog<void>(
-                context: context,
-                builder: (dialogContext) => AlertDialog(
-                  title: const Text('Guía postanalítica'),
-                  scrollable: true,
-                  content: const SizedBox(width: 480, child: SilWorkspaceProcessPath()),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(dialogContext).pop(),
-                      child: const Text('Cerrar'),
-                    ),
-                  ],
-                ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SilWorkspaceStatus(
+                label: 'Paso ${current + 1} de ${stages.length}',
+                positive: true,
               ),
-              child: const Text('Ver guía'),
-            ),
-          ],
-        ),
-        Semantics(
-          liveRegion: true,
-          child: Text(message, style: Theme.of(context).textTheme.bodySmall),
-        ),
-      ]),
+              Text(
+                stages[current],
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              TextButton(
+                onPressed: () => showDialog<void>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    title: const Text('Guía postanalítica'),
+                    scrollable: true,
+                    content: const SizedBox(
+                      width: 480,
+                      child: SilWorkspaceProcessPath(),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: const Text('Cerrar'),
+                      ),
+                    ],
+                  ),
+                ),
+                child: const Text('Ver guía'),
+              ),
+            ],
+          ),
+          Semantics(
+            liveRegion: true,
+            child: Text(message, style: Theme.of(context).textTheme.bodySmall),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1799,439 +1833,613 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     children: [
       _requestGuide(),
       const SizedBox(height: 14),
-      // Lectura de izquierda a derecha y de arriba hacia abajo:
-      // 1 -> 2, seguido de 3 -> 4. En móvil el orden se mantiene.
-      SilWorkspaceColumns(
-        primary: _section('1. Recibir la solicitud médica',
+      _section(
+        '1. Recibir la solicitud médica',
         'Carga una solicitud o retoma un PDF guardado en el laboratorio.',
-        Icons.description_outlined, [
-        FilledButton.icon(
-          onPressed:_busy?null:_pickMedicalRequest,
-          icon:const Icon(Icons.picture_as_pdf_outlined),
-          label:Text(_medicalRequestFile?.name ??
-            (_pendingRequestId==null?'Seleccionar solicitud PDF':
-              'Seleccionar un PDF distinto')),
-        ),
-        const SizedBox(height:10),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Vincular a una orden existente'),
-          value: _attachToExistingOrder,
-          onChanged: _busy ? null : (value) => setState(() {
-            _attachToExistingOrder = value;
-            _requestIdentityChecked = false;
-            _requestHumanChecked = false;
-            if(value)_pendingRequestId=null;
-          }),
-        ),
-        if(!_attachToExistingOrder)...[
-          OutlinedButton.icon(
-            onPressed:_busy?null:()=>_execute(_loadPendingRequests,showNotice:false),
-            icon:const Icon(Icons.refresh_outlined),
-            label:const Text('Actualizar derivaciones pendientes'),
+        Icons.description_outlined,
+        [
+          if (_medicalRequestFile != null)
+            ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.picture_as_pdf_outlined),
+              title: Text(_medicalRequestFile!.name),
+              subtitle: const Text('PDF seleccionado'),
+            ),
+          if (!_hasRequestDocument)
+            FilledButton.icon(
+              onPressed: _busy ? null : _pickMedicalRequest,
+              icon: const Icon(Icons.picture_as_pdf_outlined),
+              label: const Text('Seleccionar solicitud PDF'),
+            )
+          else
+            TextButton.icon(
+              onPressed: _busy ? null : _pickMedicalRequest,
+              icon: const Icon(Icons.swap_horiz),
+              label: const Text('Cambiar PDF'),
+            ),
+          const SizedBox(height: 10),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Vincular a una orden existente'),
+            value: _attachToExistingOrder,
+            onChanged: _busy
+                ? null
+                : (value) => setState(() {
+                    _attachToExistingOrder = value;
+                    _requestIdentityChecked = false;
+                    _requestHumanChecked = false;
+                    if (value) _pendingRequestId = null;
+                  }),
           ),
-          if(_pendingRequests.isNotEmpty)...[
-            const SizedBox(height:9),
-            DropdownButtonFormField<String>(
-              key:ValueKey((_labId,_pendingRequestId,'pending-referrals')),
-              initialValue: _pendingRequestId,
-              isExpanded:true,
-              decoration:const InputDecoration(
-                border:OutlineInputBorder(),labelText:'Derivación pendiente guardada',
+          if (!_attachToExistingOrder) ...[
+            OutlinedButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () => _execute(_loadPendingRequests, showNotice: false),
+              icon: const Icon(Icons.refresh_outlined),
+              label: const Text('Actualizar derivaciones pendientes'),
+            ),
+            if (_pendingRequests.isNotEmpty) ...[
+              const SizedBox(height: 9),
+              DropdownButtonFormField<String>(
+                key: ValueKey((_labId, _pendingRequestId, 'pending-referrals')),
+                initialValue: _pendingRequestId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Derivación pendiente guardada',
+                ),
+                items: [
+                  for (final pending in _pendingRequests)
+                    DropdownMenuItem<String>(
+                      value: pending['id'] as String,
+                      child: Text(
+                        '${pending['fileName']} · '
+                        '${pending['patientEmail'] ?? 'Paciente por identificar'}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: _busy ? null : _selectPendingRequest,
               ),
-              items:[
-                for(final pending in _pendingRequests)
-                  DropdownMenuItem<String>(
-                    value:pending['id'] as String,
-                    child:Text(
-                      '${pending['fileName']} · '
-                      '${pending['patientEmail'] ?? 'Paciente por identificar'}',
-                      overflow:TextOverflow.ellipsis),
+            ],
+          ],
+          if (_medicalRequestFile != null) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _busy
+                      ? null
+                      : () =>
+                            _execute(_previewMedicalRequest, showNotice: false),
+                  icon: const Icon(Icons.document_scanner_outlined),
+                  label: const Text('Leer PDF y sugerir datos'),
+                ),
+                if (!_attachToExistingOrder && _pendingRequestId == null)
+                  FilledButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => _execute(_savePendingRequest),
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Guardar derivación pendiente'),
                   ),
               ],
-              onChanged:_busy?null:_selectPendingRequest,
             ),
           ],
-        ],
-        const SizedBox(height:8),
-        OutlinedButton.icon(
-          onPressed: _busy || _medicalRequestFile == null ? null :
-            () => _execute(_previewMedicalRequest, showNotice: false),
-          icon: const Icon(Icons.document_scanner_outlined),
-          label: const Text('Leer PDF y sugerir datos'),
-        ),
-        if(!_attachToExistingOrder)...[
-          const SizedBox(height:8),
-          OutlinedButton.icon(
-            onPressed:_busy||_medicalRequestFile==null||_pendingRequestId!=null
-              ?null:()=>_execute(_savePendingRequest),
-            icon:const Icon(Icons.save_outlined),
-            label:const Text('Guardar derivación pendiente'),
-          ),
-          if(_pendingRequestId!=null)...[
-            const SizedBox(height:8),
-            OutlinedButton.icon(
-              onPressed:_busy?null:()=>_execute(_downloadPendingRequest,showNotice:false),
-              icon:const Icon(Icons.download_outlined),
-              label:const Text('Descargar derivación pendiente original'),
-            ),
-            const SizedBox(height:6),
-            const Text('El archivo está guardado en Vitalia. '
-              'Puede retomar su recepción aunque cierre la sesión.'),
+          if (!_attachToExistingOrder) ...[
+            if (_pendingRequestId != null) ...[
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () =>
+                          _execute(_downloadPendingRequest, showNotice: false),
+                icon: const Icon(Icons.download_outlined),
+                label: const Text('Descargar derivación pendiente original'),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'El archivo está guardado en Vitalia. '
+                'Puede retomar su recepción aunque cierre la sesión.',
+              ),
+            ],
           ],
-        ],
-        const SizedBox(height:12),
-        if (_requestPreviewNotice != null) Text(_requestPreviewNotice!),
-        if(_requestIdentitySuggestions.values.any((v)=>v is String&&v.isNotEmpty))
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            initiallyExpanded: true,
-            title: const Text('Datos identificatorios sugeridos por el PDF'),
-            subtitle: const Text('Coteja estas sugerencias con el documento.'),
-            children: [
-              for(final field in <(String,String)>[
-                ('fullName','Nombre completo'),('identifier','RUT/RUN'),
-                ('birthDate','Fecha de nacimiento'),('email','Correo'),
-                ('phone','Teléfono'),('sex','Sexo'),
-              ])
-                if(_requestIdentitySuggestions[field.$1] case final String value)
-                  ListTile(
-                    dense:true,
-                    title:Text(field.$2),
-                    subtitle:SelectableText(value),
-                  ),
-            ],
-          ),
-      ]),
-        secondary: _section('2. Identificar al paciente',
-        'Comprueba a quién pertenece la solicitud.',
-        Icons.badge_outlined, [
-        if (_attachToExistingOrder)
-          DropdownButtonFormField<String>(
-            initialValue: _requestOrderId,
-            isExpanded:true,
-            decoration:const InputDecoration(
-              border:OutlineInputBorder(),labelText:'Orden del paciente',
-            ),
-            items:[
-              for(final order in _workflowOrders.where((v)=>v['status']=='registered'))
-                DropdownMenuItem<String>(
-                  value:order['id'] as String,
-                  child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
-                ),
-            ],
-            onChanged: _busy ? null : (value) => setState(() {
-              _requestOrderId = value;
-              _requestIdentityChecked = false;
-              _requestHumanChecked = false;
-            }),
-          )
-        else ...[
-          const Padding(
-            padding: EdgeInsets.only(bottom:10),
-            child:Text('Paciente de esta derivación',
-              style:TextStyle(fontWeight:FontWeight.w700)),
-          ),
-          const Text('Busca la cuenta activada. Si aún no existe, '
-              'verifica la identidad y emite una invitación.'),
-          const SizedBox(height:10),
-          _field(_requestInviteEmail,'Correo del paciente',onChanged: (_) => setState(() {
-            _requestPatient.clear();
-            _requestIdentityEvidence.clear();
-            _requestPatientVerified = false;
-            _requestPatientStatus = null;
-            _requestIdentityChecked = false;
-            _requestHumanChecked = false;
-          })),
-          _field(_requestIdentityEvidence,'Referencia de verificación de identidad',
-            onChanged: (_) => setState(() => _requestPatientVerified = false)),
-          CheckboxListTile(
-            contentPadding:EdgeInsets.zero,
-            controlAffinity:ListTileControlAffinity.leading,
-            title:const Text('Verifiqué la identidad antes de invitar'),
-            subtitle:const Text('El correo por sí solo no demuestra identidad. '
-                'No ingreses datos sensibles como evidencia.'),
-            value:_requestPatientVerified,
-            onChanged:_busy?null:(value)=>setState(
-              ()=>_requestPatientVerified=value??false),
-          ),
-          OutlinedButton.icon(
-            // La invitación debe estar disponible tanto para un PDF local
-            // como para una derivación pendiente recuperada de PostgreSQL.
-            onPressed: _busy ||
-                (_medicalRequestFile == null && _pendingRequestId == null) ||
-                !_requestPatientVerified ||
-                _requestIdentityEvidence.text.trim().length < 6 ||
-                !_requestInviteEmail.text.contains('@')
-                ? null : () => _execute(
-                    () => _invitePatient(fromRequest: true), showNotice: false),
-            icon:const Icon(Icons.mark_email_read_outlined),
-            label:const Text('Emitir invitación de paciente'),
-          ),
-          const SizedBox(height:8),
-          OutlinedButton.icon(
-            onPressed:_busy?null:()=>_execute(_findRequestPatient,showNotice:false),
-            icon:const Icon(Icons.person_search_outlined),
-            label:const Text('Buscar paciente activado'),
-          ),
-          if(_requestPatientStatus!=null)
-            Padding(
-              padding:const EdgeInsets.symmetric(vertical:8),
-              child:Text(_requestPatientStatus!,
-                style:const TextStyle(color:ColoresVitalia.azul)),
-            ),
-          if (_requestPatient.text.isNotEmpty)
-            const OperatorNextStep(
-              icon: Icons.verified_user_outlined,
-              title: 'Paciente encontrado en este laboratorio',
-              message: 'Ya puedes cotejar la identidad del paciente con la derivación y continuar.',
-              accent: OperatorPalette.teal,
-              background: ColoresVitalia.verdeSuave,
+          const SizedBox(height: 12),
+          if (_requestPreviewNotice != null) Text(_requestPreviewNotice!),
+          if (_requestIdentitySuggestions.values.any(
+            (v) => v is String && v.isNotEmpty,
+          ))
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('Datos identificatorios sugeridos por el PDF'),
+              subtitle: const Text(
+                'Coteja estas sugerencias con el documento.',
+              ),
+              children: [
+                for (final field in <(String, String)>[
+                  ('fullName', 'Nombre completo'),
+                  ('identifier', 'RUT/RUN'),
+                  ('birthDate', 'Fecha de nacimiento'),
+                  ('email', 'Correo'),
+                  ('phone', 'Teléfono'),
+                  ('sex', 'Sexo'),
+                ])
+                  if (_requestIdentitySuggestions[field.$1]
+                      case final String value)
+                    ListTile(
+                      dense: true,
+                      title: Text(field.$2),
+                      subtitle: SelectableText(value),
+                    ),
+              ],
             ),
         ],
-      ]),
       ),
-      const SizedBox(height: 12),
-      SilWorkspaceColumns(
-        primary: _section('3. Revisar la solicitud y los exámenes',
-        'Coteja y ajusta los datos y las prestaciones antes de registrar.',
-        Icons.playlist_add_check_outlined, [
-        if (!_attachToExistingOrder) ...[
-          const Text('Prestaciones solicitadas'),
-          Wrap(spacing: 8, children: [
-            for (final (code,label) in _catalog)
-              FilterChip(
-                label: Text(label),
-                selected: _requestExams.contains(code),
-                onSelected: _busy ? null : (selected) => setState(() {
-                  if (selected) {
-                    _requestExams.add(code);
-                  } else {
-                    _requestExams.remove(code);
-                  }
+      if (_hasRequestDocument) ...[
+        const SizedBox(height: 12),
+        _section(
+          '2. Identificar al paciente',
+          'Comprueba a quién pertenece la solicitud.',
+          Icons.badge_outlined,
+          [
+            if (_attachToExistingOrder)
+              DropdownButtonFormField<String>(
+                initialValue: _requestOrderId,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Orden del paciente',
+                ),
+                items: [
+                  for (final order in _workflowOrders.where(
+                    (v) => v['status'] == 'registered',
+                  ))
+                    DropdownMenuItem<String>(
+                      value: order['id'] as String,
+                      child: Text(
+                        _orderLabel(order),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() {
+                        _requestOrderId = value;
+                        _requestIdentityChecked = false;
+                        _requestHumanChecked = false;
+                      }),
+              )
+            else ...[
+              _field(
+                _requestInviteEmail,
+                'Correo del paciente',
+                onChanged: (_) => setState(() {
+                  _requestPatient.clear();
+                  _requestIdentityEvidence.clear();
+                  _requestPatientVerified = false;
+                  _requestPatientStatus = null;
+                  _requestIdentityChecked = false;
+                  _requestHumanChecked = false;
                 }),
               ),
-          ]),
-        ],
-        const Text('Identificador administrativo: Vitalia lo asigna automáticamente al registrar la solicitud.'),
-        const SizedBox(height:8),
-        _field(_requestPrescriber,'Profesional solicitante'),
-        _field(_requestDate,'Fecha de solicitud médica (AAAA-MM-DD)'),
-        const Text('Fecha sugerida desde el PDF o, si falta, la de hoy. Coteja siempre con la orden médica.',
-          style:TextStyle(fontSize:12,color:ColoresVitalia.textoSecundario)),
-      ]),
-        secondary: _section('4. Confirmar y crear la orden',
-        'Confirma el cotejo para guardar la solicitud en una orden.',
-        Icons.fact_check_outlined, [
-        CheckboxListTile(
-          contentPadding:EdgeInsets.zero,
-          controlAffinity:ListTileControlAffinity.leading,
-          title:const Text('Identidad del paciente contrastada'),
-          subtitle:const Text('Comprueba que la solicitud corresponde al paciente vinculado.'),
-          value:_requestIdentityChecked,
-          onChanged:_busy?null:(v)=>setState(()=>_requestIdentityChecked=v??false),
+              FilledButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () => _execute(_findRequestPatient, showNotice: false),
+                icon: const Icon(Icons.person_search_outlined),
+                label: const Text('Buscar paciente activado'),
+              ),
+              if (!_hasRequestPatient)
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  title: const Text('Invitar a un paciente nuevo'),
+                  leading: const Icon(Icons.person_add_alt_1_outlined),
+                  children: [
+                    _field(
+                      _requestIdentityEvidence,
+                      'Referencia de verificación de identidad',
+                      onChanged: (_) =>
+                          setState(() => _requestPatientVerified = false),
+                    ),
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: const Text(
+                        'Verifiqué la identidad antes de invitar',
+                      ),
+                      subtitle: const Text(
+                        'El correo por sí solo no demuestra identidad. '
+                        'No ingreses datos sensibles como evidencia.',
+                      ),
+                      value: _requestPatientVerified,
+                      onChanged: _busy
+                          ? null
+                          : (value) => setState(
+                              () => _requestPatientVerified = value ?? false,
+                            ),
+                    ),
+                    OutlinedButton.icon(
+                      // La invitación debe estar disponible tanto para un PDF local
+                      // como para una derivación pendiente recuperada de PostgreSQL.
+                      onPressed:
+                          _busy ||
+                              (_medicalRequestFile == null &&
+                                  _pendingRequestId == null) ||
+                              !_requestPatientVerified ||
+                              _requestIdentityEvidence.text.trim().length < 6 ||
+                              !_requestInviteEmail.text.contains('@')
+                          ? null
+                          : () => _execute(
+                              () => _invitePatient(fromRequest: true),
+                              showNotice: false,
+                            ),
+                      icon: const Icon(Icons.mark_email_read_outlined),
+                      label: const Text('Emitir invitación de paciente'),
+                    ),
+                  ],
+                ),
+              if (_requestPatientStatus != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    _requestPatientStatus!,
+                    style: const TextStyle(color: ColoresVitalia.azul),
+                  ),
+                ),
+            ],
+          ],
         ),
-        CheckboxListTile(
-          contentPadding:EdgeInsets.zero,
-          controlAffinity:ListTileControlAffinity.leading,
-          title:const Text('Revisé el contenido del PDF original'),
-          value:_requestHumanChecked,
-          onChanged:_busy?null:(v)=>setState(()=>_requestHumanChecked=v??false),
-        ),
-        if(_attachToExistingOrder)
-          _action('Registrar solicitud',Icons.post_add_outlined,_attachMedicalRequest,
-            showNotice:false)
-        else SizedBox(
-          width:double.infinity,
-          child:FilledButton.icon(
-            onPressed: _busy || _pendingRequestId == null ||
-                _requestPatient.text.isEmpty || _requestExams.isEmpty ||
-                !_requestIdentityChecked || !_requestHumanChecked
-                ? null : () => _execute(_completePendingRequest,showNotice:false),
-            icon:const Icon(Icons.post_add_outlined),
-            label:const Text('Crear orden con solicitud'),
+      ],
+      if (_hasRequestDocument && _hasRequestPatient) ...[
+        const SizedBox(height: 12),
+        SilWorkspaceColumns(
+          primary: _section(
+            '3. Revisar la solicitud y los exámenes',
+            'Coteja y ajusta los datos y las prestaciones antes de registrar.',
+            Icons.playlist_add_check_outlined,
+            [
+              if (!_attachToExistingOrder) ...[
+                const Text('Prestaciones solicitadas'),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final (code, label) in _catalog)
+                      FilterChip(
+                        label: Text(label),
+                        selected: _requestExams.contains(code),
+                        onSelected: _busy
+                            ? null
+                            : (selected) => setState(() {
+                                if (selected) {
+                                  _requestExams.add(code);
+                                } else {
+                                  _requestExams.remove(code);
+                                }
+                              }),
+                      ),
+                  ],
+                ),
+              ],
+              const Text(
+                'Identificador administrativo: Vitalia lo asigna automáticamente al registrar la solicitud.',
+              ),
+              const SizedBox(height: 8),
+              _field(_requestPrescriber, 'Profesional solicitante'),
+              _field(_requestDate, 'Fecha de solicitud médica (AAAA-MM-DD)'),
+              const Text(
+                'Fecha sugerida desde el PDF o, si falta, la de hoy. Coteja siempre con la orden médica.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: ColoresVitalia.textoSecundario,
+                ),
+              ),
+            ],
+          ),
+          secondary: _section(
+            '4. Confirmar y crear la orden',
+            'Confirma el cotejo para guardar la solicitud en una orden.',
+            Icons.fact_check_outlined,
+            [
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Identidad del paciente contrastada'),
+                subtitle: const Text(
+                  'Comprueba que la solicitud corresponde al paciente vinculado.',
+                ),
+                value: _requestIdentityChecked,
+                onChanged: _busy
+                    ? null
+                    : (v) =>
+                          setState(() => _requestIdentityChecked = v ?? false),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text('Revisé el contenido del PDF original'),
+                value: _requestHumanChecked,
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(() => _requestHumanChecked = v ?? false),
+              ),
+              if (_attachToExistingOrder)
+                FilledButton.icon(
+                  onPressed:
+                      _busy || !_requestIdentityChecked || !_requestHumanChecked
+                      ? null
+                      : () =>
+                            _execute(_attachMedicalRequest, showNotice: false),
+                  icon: const Icon(Icons.post_add_outlined),
+                  label: const Text('Registrar solicitud'),
+                )
+              else
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed:
+                        _busy ||
+                            _pendingRequestId == null ||
+                            _requestPatient.text.isEmpty ||
+                            _requestExams.isEmpty ||
+                            !_requestIdentityChecked ||
+                            !_requestHumanChecked
+                        ? null
+                        : () => _execute(
+                            _completePendingRequest,
+                            showNotice: false,
+                          ),
+                    icon: const Icon(Icons.post_add_outlined),
+                    label: const Text('Crear orden con solicitud'),
+                  ),
+                ),
+            ],
           ),
         ),
-      ]),
-      ),
+      ],
     ],
   );
 
-  Widget _reportUpload() => _section('Adjuntar informe autorizado',
-        'Solo se reciben PDF ya validados externamente. '
+  Widget _reportUpload() => _section(
+    'Documento y autorización',
+    'Solo se reciben PDF ya validados externamente. '
         'El informe queda pendiente de revisión antes de publicarlo.',
-        Icons.upload_file_outlined,[
-        Semantics(
-          identifier:'sil-upload-order',
-          child:DropdownButtonFormField<String>(
-            initialValue: _uploadOrderId,
-            isExpanded:true,
-            decoration:const InputDecoration(
-              border:OutlineInputBorder(),labelText:'Orden disponible',
-            ),
-            items:[
-              for(final order in _workflowOrders.where((v)=>v['status']=='registered'))
-                DropdownMenuItem<String>(
-                  value:order['id'] as String,
-                  child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
-                ),
-            ],
-            onChanged:_busy?null:(v)=>setState(() {
-              _uploadOrderId = v;
-              _confirmedMatch = false;
-            }),
+    Icons.upload_file_outlined,
+    [
+      Semantics(
+        identifier: 'sil-upload-order',
+        child: DropdownButtonFormField<String>(
+          initialValue: _uploadOrderId,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            labelText: 'Orden disponible',
           ),
+          items: [
+            for (final order in _workflowOrders.where(
+              (v) => v['status'] == 'registered',
+            ))
+              DropdownMenuItem<String>(
+                value: order['id'] as String,
+                child: Text(
+                  _orderLabel(order),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: _busy
+              ? null
+              : (v) => setState(() {
+                  _uploadOrderId = v;
+                  _confirmedMatch = false;
+                }),
         ),
-        const SizedBox(height:10),
+      ),
+      if (_uploadOrderId != null) ...[
+        const SizedBox(height: 10),
         OutlinedButton.icon(
-          onPressed:_busy?null:_pickPdf,
-          icon:const Icon(Icons.picture_as_pdf_outlined),
-          label:Text(_pdf?.name??'Elegir archivo PDF (máx. 2 MiB)'),
+          onPressed: _busy ? null : _pickPdf,
+          icon: const Icon(Icons.picture_as_pdf_outlined),
+          label: Text(_pdf?.name ?? 'Elegir archivo PDF (máx. 2 MiB)'),
         ),
-        const SizedBox(height:8),
-        _field(_reportProfessional,'Profesional que autorizó el PDF',
-          identifier:'sil-report-professional'),
-        _field(_reportReference,'Referencia de autorización externa',
-          identifier:'sil-report-reference'),
-        _field(_reportDate,'Fecha de autorización (AAAA-MM-DD)'),
+      ],
+      if (_uploadOrderId != null && _pdf != null) ...[
+        const SizedBox(height: 8),
+        _field(
+          _reportProfessional,
+          'Profesional que autorizó el PDF',
+          identifier: 'sil-report-professional',
+        ),
+        _field(
+          _reportReference,
+          'Referencia de autorización externa',
+          identifier: 'sil-report-reference',
+        ),
+        _field(_reportDate, 'Fecha de autorización (AAAA-MM-DD)'),
         OutlinedButton.icon(
           onPressed: _busy ? null : _selectReportDate,
           icon: const Icon(Icons.calendar_today_outlined),
           label: const Text('Elegir fecha de autorización'),
         ),
         CheckboxListTile(
-          contentPadding:EdgeInsets.zero,
-          controlAffinity:ListTileControlAffinity.leading,
-          title:const Text('El informe ya fue autorizado fuera de Vitalia'),
-          value:_externallyAuthorized,
-          onChanged:_busy?null:(v)=>setState(()=>_externallyAuthorized=v??false),
+          contentPadding: EdgeInsets.zero,
+          controlAffinity: ListTileControlAffinity.leading,
+          title: const Text('El informe ya fue autorizado fuera de Vitalia'),
+          value: _externallyAuthorized,
+          onChanged: _busy
+              ? null
+              : (v) => setState(() => _externallyAuthorized = v ?? false),
         ),
         CheckboxListTile(
-          contentPadding:EdgeInsets.zero,
-          controlAffinity:ListTileControlAffinity.leading,
-          title:const Text('Confirmé que el PDF corresponde al paciente de la orden'),
-          value:_confirmedMatch,
-          onChanged:_busy?null:(v)=>setState(()=>_confirmedMatch=v??false),
+          contentPadding: EdgeInsets.zero,
+          controlAffinity: ListTileControlAffinity.leading,
+          title: const Text(
+            'Confirmé que el PDF corresponde al paciente de la orden',
+          ),
+          value: _confirmedMatch,
+          onChanged: _busy
+              ? null
+              : (v) => setState(() => _confirmedMatch = v ?? false),
         ),
-        _action('Adjuntar para revisión',Icons.upload_file,_attachReport),
-      ]);
+        FilledButton.icon(
+          onPressed: _busy || !_externallyAuthorized || !_confirmedMatch
+              ? null
+              : () => _execute(_attachReport),
+          icon: const Icon(Icons.upload_file_outlined),
+          label: const Text('Adjuntar para revisión'),
+        ),
+      ],
+    ],
+  );
 
   Widget _reviewPanel() {
     // Un acceso directo desde una orden reciente conserva esa selección,
     // incluso cuando la orden no esté en la página actual de la bandeja.
-    final choices = <String,Map<String,dynamic>>{
-      for (final order in _reviewOrders)
-        order['id'] as String: order,
+    final choices = <String, Map<String, dynamic>>{
+      for (final order in _reviewOrders) order['id'] as String: order,
       if (_reviewSelectedOrder != null &&
           _reviewSelectedOrder!['id'] is String &&
           _isReviewable(_reviewSelectedOrder!))
         _reviewSelectedOrder!['id'] as String: _reviewSelectedOrder!,
     }.values.toList();
-    return _section('Validación y publicación',
+    return _section(
+      'Validación y publicación',
       'Revisa el PDF y confirma su autorización externa antes de publicarlo.',
-      Icons.fact_check_outlined, [
-      const Text(
-        'Esta bandeja consulta las órdenes pendientes por páginas '
-        'de 20; no se limita a las órdenes recientes del resumen.',
-        style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario),
-      ),
-      const SizedBox(height: 10),
-      Semantics(
-        identifier: 'sil-review-order',
-        child: DropdownButtonFormField<String>(
-          key: ValueKey((_labId, _reviewOffset, _reviewOrderId, 'review-queue')),
-          initialValue: _reviewOrderId,
-          isExpanded: true,
-          decoration: const InputDecoration(
-            border: OutlineInputBorder(),
-            labelText: 'Informe pendiente de revisión',
-          ),
-          items: [
-            for (final order in choices)
-              DropdownMenuItem<String>(
-                value: order['id'] as String,
-                child: Text(_orderLabel(order), overflow: TextOverflow.ellipsis),
+      Icons.fact_check_outlined,
+      [
+        if (choices.isNotEmpty)
+          Semantics(
+            identifier: 'sil-review-order',
+            child: DropdownButtonFormField<String>(
+              key: ValueKey((
+                _labId,
+                _reviewOffset,
+                _reviewOrderId,
+                'review-queue',
+              )),
+              initialValue: _reviewOrderId,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Informe pendiente de revisión',
               ),
-          ],
-          onChanged: _busy ? null : (v) => setState(() {
-            _reviewOrderId = v;
-            _reviewSelectedOrder = v == null ? null
-              : choices.where((order) => order['id'] == v).firstOrNull;
-            _reviewPdfDownloaded = false;
-            _reviewConfirmed = false;
-          }),
-        ),
-      ),
-      const SizedBox(height: 10),
-      if (choices.isEmpty && !_busy)
-        const Padding(
-          padding: EdgeInsets.only(bottom: 10),
-          child: Text('No hay informes pendientes en esta página. '
-            'Actualiza la bandeja o consulta otra página.'),
-        ),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          OutlinedButton(
-            onPressed: _busy || _reviewOffset == 0 ? null
-              : () => _execute(
-                () => _changeReviewPage(_reviewOffset - _reviewPageSize),
-                showNotice: false,
-              ),
-            child: const Text('Revisiones anteriores'),
-          ),
-          Text('Página ${_reviewOffset ~/ _reviewPageSize + 1}'),
-          OutlinedButton(
-            onPressed: _busy || !_moreReviewOrders || _reviewOffset >= 10000
-              ? null : () => _execute(
-                () => _changeReviewPage(_reviewOffset + _reviewPageSize),
-                showNotice: false,
-              ),
-            child: const Text('Revisiones siguientes'),
-          ),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _execute(
-              () => _loadReviewPage(offset: _reviewOffset),
-              showNotice: false,
+              items: [
+                for (final order in choices)
+                  DropdownMenuItem<String>(
+                    value: order['id'] as String,
+                    child: Text(
+                      _orderLabel(order),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: _busy
+                  ? null
+                  : (v) => setState(() {
+                      _reviewOrderId = v;
+                      _reviewSelectedOrder = v == null
+                          ? null
+                          : choices
+                                .where((order) => order['id'] == v)
+                                .firstOrNull;
+                      _reviewPdfDownloaded = false;
+                      _reviewConfirmed = false;
+                    }),
             ),
-            icon: const Icon(Icons.refresh_outlined),
-            label: const Text('Actualizar revisiones'),
+          ),
+        const SizedBox(height: 10),
+        if (choices.isEmpty && !_busy)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 10),
+            child: Text('No hay informes pendientes en esta página.'),
+          ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            if (_reviewOffset > 0)
+              OutlinedButton(
+                onPressed: _busy
+                    ? null
+                    : () => _execute(
+                        () =>
+                            _changeReviewPage(_reviewOffset - _reviewPageSize),
+                        showNotice: false,
+                      ),
+                child: const Text('Revisiones anteriores'),
+              ),
+            if (_reviewOffset > 0 || _moreReviewOrders)
+              Text('Página ${_reviewOffset ~/ _reviewPageSize + 1}'),
+            if (_moreReviewOrders && _reviewOffset < 10000)
+              OutlinedButton(
+                onPressed: _busy
+                    ? null
+                    : () => _execute(
+                        () =>
+                            _changeReviewPage(_reviewOffset + _reviewPageSize),
+                        showNotice: false,
+                      ),
+                child: const Text('Revisiones siguientes'),
+              ),
+            OutlinedButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () => _execute(
+                      () => _loadReviewPage(offset: _reviewOffset),
+                      showNotice: false,
+                    ),
+              icon: const Icon(Icons.refresh_outlined),
+              label: const Text('Actualizar revisiones'),
+            ),
+          ],
+        ),
+        if (_reviewOrderId != null) ...[
+          const SizedBox(height: 10),
+          FilledButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _execute(_downloadReportForReview, showNotice: false),
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            label: const Text('Descargar PDF para revisión'),
           ),
         ],
-      ),
-      const SizedBox(height: 10),
-      OutlinedButton.icon(
-        onPressed: _busy || _reviewOrderId == null
-            ? null
-            : () => _execute(_downloadReportForReview, showNotice: false),
-        icon: const Icon(Icons.picture_as_pdf_outlined),
-        label: const Text('Descargar PDF para revisión'),
-      ),
-      const SizedBox(height: 8),
-      const Text(
-        'Antes de publicar, revisa el PDF original y su autorización '
-        'en el procedimiento clínico de tu laboratorio. '
-        'Esta pantalla no sustituye ese procedimiento.',
-        style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario),
-      ),
-      CheckboxListTile(
-        contentPadding: EdgeInsets.zero,
-        controlAffinity: ListTileControlAffinity.leading,
-        title: const Text('Confirmo que revisé el PDF y su autorización externa'),
-        value: _reviewConfirmed,
-        onChanged: _busy || !_reviewPdfDownloaded
-            ? null
-            : (v) => setState(() => _reviewConfirmed = v ?? false),
-      ),
-      FilledButton.icon(
-        onPressed: _busy || !_reviewConfirmed
-            ? null : () => _execute(_publishReport),
-        icon: const Icon(Icons.verified_outlined),
-        label: const Text('Publicar informe'),
-      ),
-    ]);
+        if (_reviewOrderId != null && _reviewPdfDownloaded) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Antes de publicar, revisa el PDF original y su autorización '
+            'en el procedimiento clínico de tu laboratorio. '
+            'Esta pantalla no sustituye ese procedimiento.',
+            style: TextStyle(
+              fontSize: 12,
+              color: ColoresVitalia.textoSecundario,
+            ),
+          ),
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            title: const Text(
+              'Confirmo que revisé el PDF y su autorización externa',
+            ),
+            value: _reviewConfirmed,
+            onChanged: _busy || !_reviewPdfDownloaded
+                ? null
+                : (v) => setState(() => _reviewConfirmed = v ?? false),
+          ),
+          FilledButton.icon(
+            onPressed: _busy || !_reviewConfirmed
+                ? null
+                : () => _execute(_publishReport),
+            icon: const Icon(Icons.verified_outlined),
+            label: const Text('Publicar informe'),
+          ),
+        ],
+      ],
+    );
   }
 
   Future<void> _loadPatients({required int offset, String? search}) async {
@@ -2645,7 +2853,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             children: [_newOrder()],
           ),
           const SizedBox(height: 12),
-          _reportUpload(),
+          SilWorkspaceDisclosure(
+            title: 'Adjuntar informe autorizado',
+            icon: Icons.upload_file_outlined,
+            child: _reportUpload(),
+          ),
         ]),
       ),
       _StationSection.requests => _operatorSubpage(
@@ -2656,11 +2868,15 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _StationSection.patients => _operatorSubpage(
         title: 'Pacientes y activación de cuentas',
         description: 'Busca a un paciente que ya tiene acceso o invita a uno nuevo para que active su cuenta.',
-        child: SilWorkspaceColumns(
-          primary: _patientDirectory(),
-          secondary: _patientLink(),
-          primaryFlex: 6, secondaryFlex: 5,
-        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          _patientDirectory(),
+          const SizedBox(height: 12),
+          SilWorkspaceDisclosure(
+            title: 'Invitar paciente',
+            icon: Icons.person_add_alt_1_outlined,
+            child: _patientLink(),
+          ),
+        ]),
       ),
       _StationSection.clinical => _operatorSubpage(
         title: 'Control de muestras y resultados',
@@ -2699,18 +2915,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           ? _operatorSubpage(
               title: 'Bandeja de revisión',
               description: 'Verifica el PDF y su autorización externa antes de publicar.',
-              support: OperatorInfoNote(
-                icon: Icons.fact_check_outlined,
-                title: 'Revisión y publicación',
-                description: (_operatorSummary == null
-                    ? 'Pendientes entre órdenes recientes: '
-                    : 'Pendientes en este laboratorio: ') +
-                    _summaryCount('inReview',
-                      _orders.where(_isReviewable).length).toString() +
-                    '. La publicación requiere autorización.',
-                color: OperatorPalette.teal,
-                background: ColoresVitalia.verdeSuave,
-              ),
               child: _reviewPanel(),
             )
           : _dashboard(),

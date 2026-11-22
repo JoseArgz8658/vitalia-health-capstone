@@ -39,6 +39,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
   final _filter = TextEditingController();
   final Map<String, List<Map<String, String>>> _conversations = {};
   String? _activeChatReport;
+  String? _expandedReportId;
   String? _chatBusyReport;
   String? _chatError;
   late Future<Map<String, dynamic>> _profileRequest;
@@ -77,6 +78,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       setState(() {
         _reports = reports;
         _conversations.removeWhere((id, _) => !ids.contains(id));
+        if (!ids.contains(_expandedReportId)) _expandedReportId = null;
         if (!ids.contains(_activeChatReport)) {
           _activeChatReport = null;
           _question.clear();
@@ -620,8 +622,10 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     final theme = Theme.of(context);
     final exams = _examNames(report);
     final id = report['id'] as String;
+    final detailsOpen = _expandedReportId == id;
     final chatOpen = _activeChatReport == id;
     final details = [
+      if (exams.length > 1) exams.join(' · '),
       if (report['prescriberName'] != null)
         'Solicitó: ${report['prescriberName']}',
       if (report['requestDate'] != null)
@@ -653,9 +657,13 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      exams.isEmpty
-                          ? report['fileName'] as String
-                          : exams.join(' · '),
+                      switch (exams.length) {
+                        0 => report['fileName'] as String,
+                        1 => exams.first,
+                        2 => '${exams.first} y 1 examen más',
+                        _ =>
+                          '${exams.first} y ${exams.length - 1} exámenes más',
+                      },
                       style: theme.textTheme.titleMedium?.copyWith(
                         color: ColoresVitalia.texto,
                         fontWeight: FontWeight.w800,
@@ -672,10 +680,6 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                       runSpacing: 4,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        const SilWorkspaceStatus(
-                          label: 'Publicado',
-                          positive: true,
-                        ),
                         Text(_date(report['publishedAt']), style: meta),
                         Text('Orden ${report['orderNumber']}', style: meta),
                       ],
@@ -685,16 +689,6 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               ),
             ],
           ),
-          if (details.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 12,
-              runSpacing: 3,
-              children: [
-                for (final detail in details) Text(detail, style: meta),
-              ],
-            ),
-          ],
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
@@ -705,27 +699,69 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 icon: const Icon(Icons.analytics_outlined, size: 18),
                 label: const Text('Ver resultados'),
               ),
-              OutlinedButton.icon(
-                onPressed: _downloading == null
-                    ? () => _download(report)
-                    : null,
-                icon: const Icon(Icons.download_outlined, size: 18),
-                label: Text(
-                  _downloading == id ? 'Preparando descarga…' : 'Descargar PDF',
-                ),
-              ),
-              TextButton.icon(
-                onPressed: _chatBusyReport == null
-                    ? () => _toggleChat(id)
-                    : null,
-                icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                label: Text(
-                  chatOpen ? 'Cerrar asistente' : 'Preguntar sobre el informe',
+              Semantics(
+                expanded: detailsOpen,
+                child: TextButton.icon(
+                  onPressed: _chatBusyReport != null
+                      ? null
+                      : () => setState(() {
+                          _expandedReportId = detailsOpen ? null : id;
+                          _activeChatReport = null;
+                          _question.clear();
+                          _chatError = null;
+                        }),
+                  icon: Icon(
+                    detailsOpen ? Icons.expand_less : Icons.expand_more,
+                  ),
+                  label: Text(
+                    detailsOpen ? 'Ocultar opciones' : 'Más opciones',
+                  ),
                 ),
               ),
             ],
           ),
-          if (chatOpen) _chatPanel(report),
+          if (detailsOpen) ...[
+            const Divider(height: 22),
+            if (details.isNotEmpty) ...[
+              Wrap(
+                spacing: 12,
+                runSpacing: 4,
+                children: [
+                  for (final detail in details) Text(detail, style: meta),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _downloading == null
+                      ? () => _download(report)
+                      : null,
+                  icon: const Icon(Icons.download_outlined, size: 18),
+                  label: Text(
+                    _downloading == id
+                        ? 'Preparando descarga…'
+                        : 'Descargar PDF',
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: _chatBusyReport == null
+                      ? () => _toggleChat(id)
+                      : null,
+                  icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                  label: Text(
+                    chatOpen
+                        ? 'Cerrar asistente'
+                        : 'Preguntar sobre el informe',
+                  ),
+                ),
+              ],
+            ),
+            if (chatOpen) _chatPanel(report),
+          ],
         ],
       ),
     );

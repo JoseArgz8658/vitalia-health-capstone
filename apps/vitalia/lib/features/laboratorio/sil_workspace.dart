@@ -101,6 +101,34 @@ class SilWorkspaceSurface extends StatelessWidget {
   );
 }
 
+/// Abre una tarea secundaria en su contexto y evita cargar el formulario
+/// en la vista de trabajo hasta que se necesita.
+class SilWorkspaceDisclosure extends StatelessWidget {
+  const SilWorkspaceDisclosure({
+    super.key,
+    required this.title,
+    required this.icon,
+    required this.child,
+  });
+
+  final String title;
+  final IconData icon;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => SilWorkspaceSurface(
+    child: ExpansionTile(
+      leading: Icon(icon, color: ColoresVitalia.azul),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+      tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+      childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+      shape: const Border(),
+      collapsedShape: const Border(),
+      children: [child],
+    ),
+  );
+}
 class SilWorkspaceStatus extends StatelessWidget {
   const SilWorkspaceStatus({
     super.key,

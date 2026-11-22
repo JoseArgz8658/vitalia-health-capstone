@@ -210,11 +210,18 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
       pickerPosition.y + pickerPosition.height <= page.viewportSize().height,
       'El selector de PDF debe quedar visible sin desplazarse en móvil.');
     const pdfReader=button('Leer PDF y sugerir datos');
-    await pdfReader.waitFor();
-    assert.equal(await pdfReader.isEnabled(),false,'Primero se debe seleccionar un PDF');
+    assert.equal(await pdfReader.count(),0,'La lectura aparece al seleccionar un PDF');
+    assert.equal(await button('Buscar paciente activado').count(),0);
     if(captures)await page.screenshot({path:resolve(captures,'recepcion-movil.png')});
     await page.setViewportSize({width:1440,height:1150});
+    const requestChooser = page.waitForEvent('filechooser');
+    await click(pdfPicker, 'Seleccionar solicitud PDF');
+    await (await requestChooser).setFiles({
+      name: 'solicitud-ensayo.pdf', mimeType: 'application/pdf', buffer: samplePdf,
+    });
+    await pdfReader.waitFor();
     await button('Buscar paciente activado').waitFor();
+    assert.equal(await button('Crear orden con solicitud').count(),0);
     if(captures)await page.screenshot({path:resolve(captures,'recepcion-escritorio.png')});
     console.log('Microsoft Edge: navegación y recepción verificadas a 390 y 1440 px.');
     await click(button('Órdenes'),'Órdenes');
@@ -252,6 +259,8 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
     await closeHistory.waitFor({state:'hidden'});
     console.log('Microsoft Edge: el operador consultó el evento real de la orden.');
     await click(button('Órdenes'),'Órdenes');
+    assert.equal(await id('sil-upload-order').count(),0);
+    await click(page.getByText('Adjuntar informe autorizado',{exact:true}), 'Adjuntar informe autorizado');
     await select('sil-upload-order');
     const choose=page.waitForEvent('filechooser');
     await click(button('Elegir archivo PDF (máx. 2 MiB)'),'Elegir archivo PDF');
@@ -294,13 +303,14 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
     await page.getByRole('button',{name:/^Revisión interna/}).click();
     await select('sil-review-order');
     const publication=button('Publicar informe');
-    await reach(page,publication,'Publicar informe');
-    assert.equal(await publication.isEnabled(),false,'Se exige revisar antes de publicar');
+    assert.equal(await publication.count(),0,'Se exige revisar antes de publicar');
     const download=page.waitForEvent('download');
     const reviewResponse=page.waitForResponse(r=>r.url().endsWith(endpoint+'/file') && r.request().method()==='GET');
     await click(button('Descargar PDF para revisión'),'Descargar para revisión');
     assert.equal((await reviewResponse).status(),200);
     assert.deepEqual(readFileSync(await (await download).path()),pdf);
+    await publication.waitFor();
+    assert.equal(await publication.isEnabled(),false,'Se exige confirmar el cotejo');
     await confirm('Confirmo que revisé el PDF y su autorización externa');
     const posted=page.waitForResponse(r=>r.url().endsWith(endpoint+'/publish') && r.request().method()==='POST');
     await click(publication,'Publicar informe');
@@ -466,6 +476,8 @@ async function browserJourney(order, base, sampleOrder, samplePdf) {
       await closeProfile.click();
 
       const downloadButton=page.getByRole('button',{name:'Descargar PDF',exact:true}).first();
+      assert.equal(await downloadButton.count(),0);
+      await page.getByRole('button',{name:'Más opciones',exact:true}).first().click();
       await downloadButton.waitFor({timeout:20000});
       if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
         await page.setViewportSize({width:1440,height:1050});
