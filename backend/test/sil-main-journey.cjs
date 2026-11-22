@@ -422,16 +422,19 @@ async function browserJourney(order, base, sampleOrder, samplePdf) {
         'El paciente no debe ver la estación interna del operador.');
 
       const help=patientNav.getByRole('button',{name:'Ayuda',exact:true});
-      // En 390 px la última pestaña puede estar fuera de la barra; usar
-      // los botones visibles en vez de depender del scroll automático DOM.
+      // La barra solo muestra flechas si realmente hay desbordamiento.
+      // No reservar espacio para una flecha inexistente: con menos pestañas
+      // el botón Ayuda puede caber íntegro a 390 px.
+      const forward=page.getByRole('button',
+        {name:'Mostrar más secciones',exact:true});
       for(let attempt=0;attempt<4;attempt++){
         const box=await help.boundingBox({timeout:500}).catch(()=>null);
-        if(box && box.x>=0 && box.x+box.width<=page.viewportSize().width-48){
+        const arrowsVisible=await forward.count()>0;
+        const rightEdge=page.viewportSize().width-(arrowsVisible?48:0);
+        if(box && box.x>=0 && box.x+box.width<=rightEdge){
           break;
         }
-        const forward=page.getByRole('button',
-          {name:'Mostrar más secciones',exact:true});
-        assert.ok(await forward.count() && await forward.isEnabled(),
+        assert.ok(arrowsVisible && await forward.isEnabled(),
           'La ayuda debe ser alcanzable desde la navegación móvil.');
         await forward.click();
       }
