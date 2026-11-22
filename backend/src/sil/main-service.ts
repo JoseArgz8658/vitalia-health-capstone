@@ -391,8 +391,13 @@ export function createSilMainService(db:Pool) {
       const counts=result.rows[0];
       // PostgreSQL devuelve count() como bigint de texto.
       const toCount=(value:string)=>{
+        // count() de PostgreSQL llega como entero decimal, nunca como null.
+        // Evitar presentar 0 si una respuesta malformada trae null o vacío.
+        if(typeof value!=='string'||!/^(0|[1-9][0-9]*)$/.test(value)){
+          throw new SilMainConflict();
+        }
         const number=Number(value);
-        if(!Number.isSafeInteger(number)||number<0)throw new SilMainConflict();
+        if(!Number.isSafeInteger(number))throw new SilMainConflict();
         return number;
       };
       return {summary:{
