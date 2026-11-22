@@ -440,18 +440,26 @@ async function main() {
     }
 
     process.env.VITALIA_SIL_MAIN_MODE='YES';
-    const host=express();
     const web=process.env.VITALIA_JOURNEY_WEB;
-    host.use(createApp({
-      authenticate:await createCredentialAuthenticator(db,{guardPatientSession:process.env.VITALIA_SIL_MAIN_MODE==='YES'}),
+    const authServices={
+      authenticate:await createCredentialAuthenticator(db,{guardPatientSession:true}),
       issue:(id,mode,hash)=>issueSession(db,id,mode,hash),
       find:token=>findSessionAccount(db,token),
       revoke:token=>revokeSession(db,token),
-    },...Array(18).fill(undefined),createSilMainService(db)));
-    server=await new Promise((accept,reject)=>{
-      const listener=host.listen(3119,'127.0.0.1',()=>accept(listener));
-      listener.once('error',reject);
-    });
+    };
+    const startTemporaryServer=()=>{
+      // Cada instancia mantiene el límite de 10 intentos/15 min por IP.
+      // Separar API y navegador evita interferencia entre pruebas, sin
+      // cambiar ni deshabilitar el limitador de producción.
+      const host=express();
+      host.use(createApp(authServices,...Array(18).fill(undefined),
+        createSilMainService(db)));
+      return new Promise((accept,reject)=>{
+        const listener=host.listen(3119,'127.0.0.1',()=>accept(listener));
+        listener.once('error',reject);
+      });
+    };
+    server=await startTemporaryServer();
 
     const tokens={};
     for(const [name,mode] of Object.entries(roles)){
@@ -865,6 +873,14 @@ async function main() {
           input.close();
         }
       } else {
+        // Las pruebas API anteriores realizan inicios de sesión y ensayos de
+        // credenciales inválidas. La app temporal del navegador debe tener
+        // su propio cupo, tal como ocurre al iniciar un servidor nuevo.
+        // La base, los tokens almacenados y el aislamiento se conservan.
+        await new Promise((resolveClose,rejectClose)=>{
+          server.close(error=>error?rejectClose(error):resolveClose());
+        });
+        server=await startTemporaryServer();
         await browserJourney(ready,base,sampleOrder,samplePdf);
       }
     }
