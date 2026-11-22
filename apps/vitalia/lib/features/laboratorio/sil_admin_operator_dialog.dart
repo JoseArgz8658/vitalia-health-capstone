@@ -71,6 +71,7 @@ class SilAdminOperatorDialog {
                   const SizedBox(height: 12),
                 ],
                 DropdownButtonFormField<String>(
+                  isExpanded: true,
                   initialValue: mode,
                   decoration: const InputDecoration(labelText: 'Acceso a sedes'),
                   items: const [
