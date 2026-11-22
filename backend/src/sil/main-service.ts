@@ -324,9 +324,16 @@ export function createSilMainService(db:Pool) {
       return transaction(async tx=>{
         if(role!=='administrador')await operator(labId,actorId,tx);
         const found=await tx.query(
-          `SELECT ${siteFields} FROM public.vitalia_sil_main_sites
-           WHERE lab_id=$1 AND ($2::boolean OR active) ORDER BY lower(name),id`,
-          [labId,role==='administrador']);
+          `SELECT ${siteFields} FROM public.vitalia_sil_main_sites si
+           WHERE si.lab_id=$1 AND ($2::boolean OR si.active)
+             AND ($2::boolean OR EXISTS (
+               SELECT 1 FROM public.vitalia_sil_main_staff st
+               WHERE st.lab_id=si.lab_id AND st.account_id=$3 AND st.kind='operator' AND st.active
+                 AND (st.site_access_mode='all' OR EXISTS (
+                   SELECT 1 FROM public.vitalia_sil_main_staff_sites ss
+                   WHERE ss.lab_id=si.lab_id AND ss.account_id=$3 AND ss.site_id=si.id))))
+           ORDER BY lower(si.name),si.id`,
+          [labId,role==='administrador',actorId]);
         return {sites:found.rows};
       });
     },
