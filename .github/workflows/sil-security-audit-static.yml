@@ -1,0 +1,24 @@
+name: SIL - auditoria seguridad estatica
+
+on:
+  pull_request:
+    paths:
+      - 'deploy/auditar-postgres-sil.ps1'
+      - 'deploy/sql/auditar-privilegios-sil.sql'
+      - 'deploy/tests/auditar-postgres-sil.test.ps1'
+      - '.github/workflows/sil-security-audit-static.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-read-only:
+    name: Contrato de auditoria PostgreSQL sin datos
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar sintaxis PowerShell y consultas read-only
+        shell: pwsh
+        run: ./deploy/tests/auditar-postgres-sil.test.ps1
