@@ -138,6 +138,52 @@ async function reach(page, locator, description) {
   throw new Error('Control de operador fuera de alcance: '+description);
 }
 
+// Ensayo visual del rol administrador con las mismas sesiones que la API real.
+// No concede permisos ni cambia registros: comprueba navegación y aislamiento.
+async function adminJourney(browser) {
+  const page=await browser.newPage({viewport:{width:1440,height:1050}});
+  try {
+    await signIn(page,'admin','#/laboratorio');
+    const button=name=>page.getByRole('button',{name,exact:true});
+    await page.getByText('Administración de laboratorios',{exact:true}).waitFor();
+    await button('Laboratorios').waitFor();
+    await button('Operadores y permisos').waitFor();
+    await button('Actividad').waitFor();
+    assert.equal(await button('Recibir solicitud').count(),0,
+      'Administración no debe mostrar recepción del operador.');
+    assert.equal(await button('Publicar informe').count(),0,
+      'Administración no debe publicar informes.');
+
+    await button('Operadores y permisos').click();
+    await page.getByText('Operadores y permisos',{exact:true}).last().waitFor();
+    // Los laboratorios se ordenan por nombre. Norte contiene ambas cuentas
+    // autorizadas; Sur sólo contiene la cuenta secundaria.
+    await page.getByText('uploader@example.invalid',{exact:true}).waitFor();
+    await page.getByText('reviewer@example.invalid',{exact:true}).waitFor();
+    assert.equal(await button('Retirar permiso de revisión').count(),2,
+      'Los permisos administrados deben reflejar la membresía real en Norte.');
+    if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+      await page.screenshot({path:resolve(
+        process.env.VITALIA_JOURNEY_SCREENSHOTS,'administracion-escritorio.png')});
+    }
+
+    // Navegación móvil: mismo perfil, sin revelar funciones del operador.
+    await page.setViewportSize({width:390,height:844});
+    await button('Operadores y permisos').waitFor();
+    await button('Actividad').click();
+    await page.getByText('Actividad del laboratorio',{exact:true}).waitFor();
+    assert.equal(await button('Publicar informe').count(),0);
+    if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+      await page.screenshot({path:resolve(
+        process.env.VITALIA_JOURNEY_SCREENSHOTS,'administracion-movil.png')});
+    }
+    console.log('Microsoft Edge: administrador validado a 1440 y 390 px; '
+      +'navegación, permisos y separación de funciones correctos.');
+  } finally {
+    await page.close();
+  }
+}
+
 async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
   const name='VH-'+String(order.orderNumber).padStart(6,'0');
   const endpoint='/api/sil/main'+base+'/orders/'+order.id+'/report';
@@ -308,9 +354,14 @@ async function browserJourney(order, base, sampleOrder, samplePdf) {
   const {chromium}=require(process.env.VITALIA_JOURNEY_PLAYWRIGHT);
   const browser=await chromium.launch({channel:'msedge'});
   try {
+    await adminJourney(browser);
     const publishedId=await operatorJourney(browser,order,base,sampleOrder,samplePdf);
     const page=await browser.newPage({viewport:{width:390,height:844}});
     await signIn(page,'patient');
+    assert.equal(await page.getByRole('button',{name:'Recibir solicitud',exact:true}).count(),0,
+      'El paciente no debe acceder a la estación de recepción.');
+    assert.equal(await page.getByRole('button',{name:'Operadores y permisos',exact:true}).count(),0,
+      'El paciente no debe acceder a la administración.');
     const downloadButton=page.getByRole('button',{name:'Descargar PDF',exact:true}).first();
     await downloadButton.waitFor({timeout:20000});
     const downloaded=page.waitForEvent('download');
