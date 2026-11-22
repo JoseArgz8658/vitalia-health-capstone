@@ -232,9 +232,23 @@ git pull --ff-only origin develop
 .\deploy\backup-main-before-sil.ps1
 ```
 
-Conserva la ruta del respaldo y la huella SHA-256 que imprime el script.
+El script informa la ruta real del respaldo y su huella SHA-256.
+**Registra la ruta exacta** que aparece después de «Destino:»; no uses
+una ruta inventada ni el nombre de un respaldo anterior. Luego calcula
+la huella del mismo archivo para el ensayo, en esta sesión de PowerShell:
+
+```powershell
+$backupFile = Read-Host 'Pega la ruta exacta indicada en Destino'
+if (-not (Test-Path -LiteralPath $backupFile -PathType Leaf)) {
+  throw 'No existe el respaldo indicado. No continuar.'
+}
+$backupSha256 = (Get-FileHash -LiteralPath $backupFile -Algorithm SHA256).Hash
+if ($backupSha256.Length -ne 64) { throw 'SHA256 inválido. No continuar.' }
+```
+
+Comprueba que coincida con la huella impresa por el script de respaldo.
 Compila la imagen nueva sin iniciar la API, y ensaya el migrador usando
-el respaldo en el contenedor PostgreSQL aislado.
+el respaldo en un PostgreSQL aislado:
 
 ```powershell
 docker compose build api
