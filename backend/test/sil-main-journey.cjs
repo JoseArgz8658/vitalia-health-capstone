@@ -310,7 +310,18 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
 async function adminJourney(browser, base) {
   const page=await browser.newPage({viewport:{width:1440,height:1050}});
   try {
+    const responseLabs=page.waitForResponse(r=>
+      new URL(r.url()).pathname==='/api/sil/main/labs' &&
+      r.request().method()==='GET',{timeout:15000});
     await signIn(page,'admin','#/administracion');
+    const labsHttp=await responseLabs;
+    const labData=await labsHttp.json();
+    console.log('Edge admin: GET /labs HTTP '+labsHttp.status()+
+      ' cantidad='+String(labData.laboratories?.length ?? 'invalida'));
+    assert.equal(labsHttp.status(),200);
+    assert.ok(Array.isArray(labData.laboratories) &&
+      labData.laboratories.length>=2,
+      'La sesión de administración debe recibir ambos laboratorios de ensayo.');
     await page.getByText('Administración de laboratorios',{exact:true})
       .waitFor({timeout:15000});
     const nav=label=>page.getByRole('button',{name:label,exact:true});
@@ -326,6 +337,16 @@ async function adminJourney(browser, base) {
     await nav('Registrar laboratorio').waitFor({timeout:10000});
 
     await nav('Operadores y permisos').click();
+    console.log('Edge admin: pestaña operadores. '+
+      'seleccionaLab='+await page.getByText('Selecciona un laboratorio').count()+
+      ' invitacion='+await page.getByText('Invitar operador de laboratorio').count()+
+      ' panelPermisos='+await page.getByText('Operadores y permisos de revisión').count());
+    if(process.env.VITALIA_JOURNEY_SCREENSHOTS){
+      await page.screenshot({
+        path:resolve(process.env.VITALIA_JOURNEY_SCREENSHOTS,
+          'admin-operadores-diagnostico.png'),
+      });
+    }
     // El panel de personal aparece debajo de la invitación; Flutter
     // no expone al árbol de accesibilidad los widgets que quedan fuera
     // de la pantalla hasta que se desplaza el contenedor.
