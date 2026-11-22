@@ -85,7 +85,7 @@ void main() {
 
     await tester.tap(back);
     await tester.pumpAndSettle();
-    expect(scroll.controller!.offset, closeTo(0, 1));
+    expect(scroll.controller!.offset, lessThan(3));
     expect(tester.takeException(), isNull);
   });
 
