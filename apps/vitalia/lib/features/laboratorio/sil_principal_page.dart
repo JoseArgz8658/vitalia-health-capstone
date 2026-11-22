@@ -1793,60 +1793,120 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         _action('Adjuntar para revisión',Icons.upload_file,_attachReport),
       ]);
 
-  Widget _reviewPanel(){
+  Widget _reviewPanel() {
+    // Un acceso directo desde una orden reciente conserva esa selección,
+    // incluso cuando la orden no esté en la página actual de la bandeja.
+    final choices = <String,Map<String,dynamic>>{
+      for (final order in _reviewOrders)
+        order['id'] as String: order,
+      if (_reviewSelectedOrder != null &&
+          _reviewSelectedOrder!['id'] is String &&
+          _isReviewable(_reviewSelectedOrder!))
+        _reviewSelectedOrder!['id'] as String: _reviewSelectedOrder!,
+    }.values.toList();
     return _section('Validación y publicación',
       'Revisa el PDF y confirma su autorización externa antes de publicarlo.',
-      Icons.fact_check_outlined,[
+      Icons.fact_check_outlined, [
+      const Text(
+        'Esta bandeja consulta las órdenes pendientes por páginas '
+        'de 20; no se limita a las órdenes recientes del resumen.',
+        style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario),
+      ),
+      const SizedBox(height: 10),
       Semantics(
-        identifier:'sil-review-order',
-        child:DropdownButtonFormField<String>(
-          value:_reviewOrderId,
-          isExpanded:true,
-          decoration:const InputDecoration(
-            border:OutlineInputBorder(),labelText:'Informe pendiente de revisión',
+        identifier: 'sil-review-order',
+        child: DropdownButtonFormField<String>(
+          key: ValueKey((_labId, _reviewOffset, _reviewOrderId, 'review-queue')),
+          value: _reviewOrderId,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            labelText: 'Informe pendiente de revisión',
           ),
-          items:[
-            for(final order in _workflowOrders.where(_isReviewable))
+          items: [
+            for (final order in choices)
               DropdownMenuItem<String>(
-                value:order['id'] as String,
-                child:Text(_orderLabel(order),overflow:TextOverflow.ellipsis),
+                value: order['id'] as String,
+                child: Text(_orderLabel(order), overflow: TextOverflow.ellipsis),
               ),
           ],
-          onChanged:_busy?null:(v)=>setState((){
-            _reviewOrderId=v;
-            _reviewPdfDownloaded=false;
-            _reviewConfirmed=false;
+          onChanged: _busy ? null : (v) => setState(() {
+            _reviewOrderId = v;
+            _reviewSelectedOrder = v == null ? null
+              : choices.where((order) => order['id'] == v).firstOrNull;
+            _reviewPdfDownloaded = false;
+            _reviewConfirmed = false;
           }),
         ),
       ),
-      const SizedBox(height:10),
-      OutlinedButton.icon(
-        onPressed:_busy||_reviewOrderId==null
-            ?null
-            :()=>_execute(_downloadReportForReview,showNotice:false),
-        icon:const Icon(Icons.picture_as_pdf_outlined),
-        label:const Text('Descargar PDF para revisión'),
+      const SizedBox(height: 10),
+      if (choices.isEmpty && !_busy)
+        const Padding(
+          padding: EdgeInsets.only(bottom: 10),
+          child: Text('No hay informes pendientes en esta página. '
+            'Actualiza la bandeja o consulta otra página.'),
+        ),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          OutlinedButton(
+            onPressed: _busy || _reviewOffset == 0 ? null
+              : () => _execute(
+                () => _changeReviewPage(_reviewOffset - _reviewPageSize),
+                showNotice: false,
+              ),
+            child: const Text('Revisiones anteriores'),
+          ),
+          Text('Página ${_reviewOffset ~/ _reviewPageSize + 1}'),
+          OutlinedButton(
+            onPressed: _busy || !_moreReviewOrders || _reviewOffset >= 10000
+              ? null : () => _execute(
+                () => _changeReviewPage(_reviewOffset + _reviewPageSize),
+                showNotice: false,
+              ),
+            child: const Text('Revisiones siguientes'),
+          ),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _execute(
+              () => _loadReviewPage(offset: _reviewOffset),
+              showNotice: false,
+            ),
+            icon: const Icon(Icons.refresh_outlined),
+            label: const Text('Actualizar revisiones'),
+          ),
+        ],
       ),
-      const SizedBox(height:8),
+      const SizedBox(height: 10),
+      OutlinedButton.icon(
+        onPressed: _busy || _reviewOrderId == null
+            ? null
+            : () => _execute(_downloadReportForReview, showNotice: false),
+        icon: const Icon(Icons.picture_as_pdf_outlined),
+        label: const Text('Descargar PDF para revisión'),
+      ),
+      const SizedBox(height: 8),
       const Text(
         'Antes de publicar, revisa el PDF original y su autorización '
         'en el procedimiento clínico de tu laboratorio. '
         'Esta pantalla no sustituye ese procedimiento.',
-        style:TextStyle(fontSize:12,color:ColoresVitalia.textoSecundario),
+        style: TextStyle(fontSize: 12, color: ColoresVitalia.textoSecundario),
       ),
       CheckboxListTile(
-        contentPadding:EdgeInsets.zero,
-        controlAffinity:ListTileControlAffinity.leading,
-        title:const Text('Confirmo que revisé el PDF y su autorización externa'),
-        value:_reviewConfirmed,
-        onChanged:_busy||!_reviewPdfDownloaded
-            ?null
-            :(v)=>setState(()=>_reviewConfirmed=v??false),
+        contentPadding: EdgeInsets.zero,
+        controlAffinity: ListTileControlAffinity.leading,
+        title: const Text('Confirmo que revisé el PDF y su autorización externa'),
+        value: _reviewConfirmed,
+        onChanged: _busy || !_reviewPdfDownloaded
+            ? null
+            : (v) => setState(() => _reviewConfirmed = v ?? false),
       ),
       FilledButton.icon(
-        onPressed:_busy||!_reviewConfirmed?null:()=>_execute(_publishReport),
-        icon:const Icon(Icons.verified_outlined),
-        label:const Text('Publicar informe'),
+        onPressed: _busy || !_reviewConfirmed
+            ? null : () => _execute(_publishReport),
+        icon: const Icon(Icons.verified_outlined),
+        label: const Text('Publicar informe'),
       ),
     ]);
   }
