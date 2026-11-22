@@ -42,13 +42,16 @@ async function main() {
             WHERE version='038_sil_main_postanalytical')
           AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
             WHERE version='040_sil_main_clinical_access')
+          AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
+            WHERE version='041_sil_main_pending_referrals')
+          AND to_regclass('public.vitalia_sil_main_pending_requests') IS NOT NULL
           AND NOT EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
             WHERE left(version,3) BETWEEN '033' AND '037') AS ok`);
       if(ready.rows[0]?.ok!==true){
         throw new Error('Base principal aún no integrada: no se aplicará ninguna migración automática.');
       }
       await client.query('COMMIT');
-      console.info('Vitalia principal: esquema SIL 040 verificado en solo lectura.');
+      console.info('Vitalia principal: esquema SIL 041 verificado en solo lectura.');
       return;
     }
     // La migración automática solo se conserva para vitalia_dev aislada.

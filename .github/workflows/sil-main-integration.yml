@@ -3,13 +3,29 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - develop
       - feat/sil-integracion-vitalia-principal
+    paths:
+      - backend/**
+      - apps/vitalia/**
+      - deploy/**
+      - .github/workflows/sil-main-integration.yml
   pull_request:
     paths:
       - backend/**
       - apps/vitalia/**
+      - deploy/**
       - .github/workflows/sil-main-integration.yml
 jobs:
+  deploy-preflight:
+    name: Configuracion SIL (sin secretos ni datos)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar casos de configuracion PowerShell
+        shell: pwsh
+        run: ./deploy/tests/validar-modo-sil.test.ps1
+
   backend:
     name: Backend TypeScript y Jest
     runs-on: ubuntu-latest

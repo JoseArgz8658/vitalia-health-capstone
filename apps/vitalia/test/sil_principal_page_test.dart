@@ -10,17 +10,20 @@ class _StationApi extends AuthApi {
   bool pendingWithoutDate=false;
   bool expandedSummary=false;
   bool unavailableSummary=false;
+  bool reviewPages=false;
   static const allowedLab = '11111111-1111-4111-8111-111111111111';
   static const restrictedLab = '22222222-2222-4222-8222-222222222222';
   static const ownOrder = '33333333-3333-4333-8333-333333333333';
   static const otherOrder = '44444444-4444-4444-8444-444444444444';
+  static const olderReviewOrder = '77777777-7777-4777-8777-777777777777';
 
   @override
   Future<Map<String, dynamic>> silMainRequest(
     String path, {
     Map<String, dynamic>? body,
   }) async {
-    final requestPath=Uri.parse(path).path;
+    final requestUri=Uri.parse(path);
+    final requestPath=requestUri.path;
     if (requestPath=='/labs/$allowedLab/summary') {
       if (unavailableSummary) throw StateError('Sin resumen de prueba');
       return {'summary': expandedSummary
@@ -38,6 +41,19 @@ class _StationApi extends AuthApi {
         'ordersTotal':0,'registered':0,'inReview':0,
         'published':0,'pendingRequests':0,
       }};
+    }
+    if (reviewPages && requestPath=='/labs/$allowedLab/orders' &&
+        requestUri.queryParameters['status']=='report_attached') {
+      final offset=int.tryParse(requestUri.queryParameters['offset']??'0')??0;
+      return offset==0
+        ? {'orders':[
+            {'id':ownOrder,'orderNumber':1,'status':'report_attached'},
+            {'id':otherOrder,'orderNumber':2,'status':'report_attached'},
+          ],'hasMore':true}
+        : {'orders':[
+            {'id':olderReviewOrder,'orderNumber':80,
+              'status':'report_attached'},
+          ],'hasMore':false};
     }
     if(requestPath=='/labs/$allowedLab/medical-requests/pending'){
       return {'pending':showPending?[{
@@ -355,6 +371,62 @@ void main() {
         'enabled':true,
       }
     ]);
+    expect(tester.takeException(),isNull);
+  });
+
+  testWidgets('revisión encuentra informes antiguos con paginación y borra confirmaciones', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api=_StationApi()..reviewPages=true;
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home:SilPrincipalPage(
+      api:api,role:'operador_laboratorio',
+      onExpired:(){},onLogout:(){},
+    )));
+    await tester.pumpAndSettle();
+
+    final reviewTab=find.text('Revisión interna (2)');
+    await tester.ensureVisible(reviewTab);
+    await tester.tap(reviewTab);
+    await tester.pumpAndSettle();
+
+    final review=_field('Informe pendiente de revisión');
+    DropdownButton<String> reviewDropdown()=>tester.widget<DropdownButton<String>>(
+      find.ancestor(of:review, matching:find.byType(DropdownButton<String>)));
+    expect(reviewDropdown().items?.map((item)=>item.value),
+      [_StationApi.ownOrder,_StationApi.otherOrder]);
+    expect(find.text('Página 1'),findsOneWidget);
+    final publish=find.widgetWithText(FilledButton,'Publicar informe');
+    expect(tester.widget<FilledButton>(publish).onPressed,isNull);
+
+    final next=find.widgetWithText(OutlinedButton,'Revisiones siguientes');
+    await tester.ensureVisible(next);
+    await tester.tap(next);
+    await tester.pumpAndSettle();
+    expect(find.text('Página 2'),findsOneWidget);
+    expect(reviewDropdown().items?.map((item)=>item.value),
+      [_StationApi.olderReviewOrder]);
+
+    await tester.ensureVisible(review);
+    await tester.tap(review);
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('VH-000080').last);
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(publish).onPressed,isNull,
+      reason:'Ver un informe no autoriza su publicación.');
+    expect(tester.widget<CheckboxListTile>(
+      find.widgetWithText(CheckboxListTile,
+        'Confirmo que revisé el PDF y su autorización externa')).onChanged,isNull,
+      reason:'No se puede confirmar sin descargar primero el PDF original.');
+
+    final previous=find.widgetWithText(OutlinedButton,'Revisiones anteriores');
+    await tester.ensureVisible(previous);
+    await tester.tap(previous);
+    await tester.pumpAndSettle();
+    expect(find.text('Página 1'),findsOneWidget);
+    expect(reviewDropdown().value,isNull,
+      reason:'El informe seleccionado no debe persistir al cambiar de página.');
+    expect(tester.widget<FilledButton>(publish).onPressed,isNull);
     expect(tester.takeException(),isNull);
   });
 

@@ -19,44 +19,32 @@ mediante Tailscale Serve. No se comparten archivos .env, contraseñas ni copias 
 
 ## Actualización segura en el PC anfitrión (PowerShell)
 
-Desde una rama local que siga a `feat/sil-integracion-vitalia-principal`
-sin cambios versionados sin guardar:
+La rama de trabajo integrada es `develop`, no la antigua
+`feat/sil-integracion-vitalia-principal`. Consultar primero
+[Operación segura del SIL principal](../docs/OPERACION_SIL_PRINCIPAL.md):
+contiene el preflight, requisitos del esquema **041**, compilación web
+con same-origin y verificación de la ruta principal.
+
+**Antes de cualquier despliegue:** revisar que el backend ya ejecute
+`VITALIA_SIL_MAIN_MODE=YES` y que la base principal esté correctamente
+integrada. `deploy/crear-web.ps1` ahora comprueba `.env` antes de compilar;
+nunca aplica migraciones ni modifica Docker. Si falla, se detiene la operación
+sin cambiar la instancia.
 
 ```powershell
-cd C:\Users\dpalm\Documents\vitalia-health-git
+# Solo después de integrar un PR y con el árbol local sin cambios pendientes.
+git fetch origin
+git switch develop
+git pull --ff-only origin develop
 
-if ((@(git status --porcelain --untracked-files=no)).Count -gt 0) {
-  throw "Hay cambios locales versionados. Revisa antes de continuar."
-}
-git fetch origin feat/sil-integracion-vitalia-principal
-if ($LASTEXITCODE -ne 0) { throw "git fetch falló" }
-git switch feat/sil-integracion-vitalia-principal
-if ($LASTEXITCODE -ne 0) { throw "git switch falló" }
-git pull --ff-only origin feat/sil-integracion-vitalia-principal
-if ($LASTEXITCODE -ne 0) { throw "git pull falló" }
-
-cd apps\vitalia
-flutter pub get
-if ($LASTEXITCODE -ne 0) { throw "flutter pub get falló" }
-flutter build web --release --no-web-resources-cdn `
-  --dart-define=VITALIA_SIL_MAIN_MODE=true `
-  --dart-define=VITALIA_API_SAME_ORIGIN=true
-if ($LASTEXITCODE -ne 0) { throw "flutter build web falló" }
-
-cd ..\..
-docker compose --profile web up -d --force-recreate --no-deps web
-if ($LASTEXITCODE -ne 0) { throw "No fue posible actualizar Nginx" }
-docker compose exec web nginx -t
-Invoke-RestMethod http://localhost:5173/api/health
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\validar-modo-sil.ps1
+# Compilación local (no despliega ni reinicia contenedores).
+powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy\crear-web.ps1
 ```
 
-`Invoke-RestMethod` debe devolver el servicio Vitalia con estado `ok`.
-Si algo falla, detenerse y diagnosticar antes de habilitar Serve.
-
-El modo `VITALIA_API_SAME_ORIGIN=true` hace que el navegador consuma
-`/api/...` desde el origen del sitio web actual, tanto si es localhost
-como si es el dominio HTTPS privado. Nginx proxifica internamente /api/
-hacia el backend Docker. No se habilita CORS abierto.
+Para publicar la compilación debe existir autorización expresa del equipo
+y seguirse el apartado de actualización web de la guía anterior. No se
+destruyen volúmenes, ni se reinicia PostgreSQL ni se habilita Funnel.
 
 ## Publicación privada
 
