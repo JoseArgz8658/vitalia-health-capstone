@@ -21,6 +21,10 @@ function demo(role='operador_laboratorio',authenticated=true){
     reportForReview:jest.fn().mockResolvedValue({fileName:'revision.pdf',bytes:Buffer.from('%PDF-1.4')}),
     grantStaff:jest.fn().mockResolvedValue({membership:{labId:lab}}),
     associatePatient:jest.fn().mockResolvedValue({patientId:patient,linked:true}),
+    issuePatientLinkCode:jest.fn().mockResolvedValue({
+      code:'a'.repeat(43),expiresAt:'2026-11-22T18:00:00.000Z',
+    }),
+    redeemPatientLinkCode:jest.fn().mockResolvedValue({linked:true}),
     createOrder:jest.fn().mockResolvedValue({order:{id:order}}),
     listPatients:jest.fn().mockResolvedValue({patients:[],hasMore:false}),
     listOrders:jest.fn().mockResolvedValue({orders:[]}),
@@ -413,4 +417,37 @@ test('suspender operador anula permiso de revisión y audita la membresía',asyn
   await expect(service.setStaffMembershipActive(lab,operator,operator,false))
     .rejects.toBeInstanceOf(SilMainConflict);
   expect(auditParams).toHaveLength(1);
+});
+
+test('Camino B exige rol, no almacena códigos en caché y valida el canje',async()=>{
+  const patientApp=demo('paciente');
+  const issued=await request(patientApp.application)
+    .post('/api/sil/main/patient/link-code').set(bearer)
+    .send({}).expect(201);
+  expect(issued.headers['cache-control']).toBe('private, no-store');
+  expect(issued.body.code).toHaveLength(43);
+  expect(patientApp.service.issuePatientLinkCode).toHaveBeenCalledWith(operator);
+  await request(patientApp.application).post('/api/sil/main/patient/link-code')
+    .set(bearer).send({patientId:patient}).expect(400);
+  const operatorApp=demo('operador_laboratorio');
+  await request(operatorApp.application).post('/api/sil/main/patient/link-code')
+    .set(bearer).send({}).expect(403);
+  expect(operatorApp.service.issuePatientLinkCode).not.toHaveBeenCalled();
+
+  const path='/api/sil/main/labs/'+lab+'/patient-link-code';
+  const claim={code:'a'.repeat(43),
+    identityReference:'CHECK-20261122',identityConfirmed:true};
+  const redeemed=await request(operatorApp.application).post(path)
+    .set(bearer).send(claim).expect(200);
+  expect(redeemed.headers['cache-control']).toBe('private, no-store');
+  expect(redeemed.body).toEqual({linked:true});
+  expect(operatorApp.service.redeemPatientLinkCode).toHaveBeenCalledWith(
+    lab,operator,claim.code,claim.identityReference);
+  await request(patientApp.application).post(path).set(bearer)
+    .send(claim).expect(403);
+  await request(operatorApp.application).post(path).set(bearer)
+    .send({...claim,identityConfirmed:false}).expect(400);
+  await request(operatorApp.application).post(path).set(bearer)
+    .send({...claim,patientId:patient}).expect(400);
+  expect(operatorApp.service.redeemPatientLinkCode).toHaveBeenCalledTimes(1);
 });
