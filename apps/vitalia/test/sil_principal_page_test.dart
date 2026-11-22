@@ -540,7 +540,7 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton,'Actividad'));
     await tester.pumpAndSettle();
     expect(find.text('Estado administrativo'),findsOneWidget);
-    expect(find.textContaining('El historial de auditoría administrativa requiere'),findsOneWidget);
+    expect(find.text('Ver auditoría administrativa'),findsOneWidget);
     expect(find.text('Gestión de órdenes'),findsNothing);
     expect(find.text('1 operadores asociados'), findsOneWidget);
 

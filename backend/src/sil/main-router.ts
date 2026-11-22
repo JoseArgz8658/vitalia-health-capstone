@@ -140,6 +140,39 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       data.data.displayName,res.locals.account.id));
   });
 
+  const adminHistoryPage=z.object({
+    limit:z.coerce.number().int().min(1).max(50).default(20),
+    offset:z.coerce.number().int().min(0).max(10000).default(0),
+  }).strict();
+
+  router.get('/labs/:labId/operator-invitations',administrator,labPath,async(req,res)=>{
+    const page=adminHistoryPage.safeParse(req.query);
+    if(!page.success){
+      res.status(400).json({error:{code:'INVALID_PAGINATION'}});return;
+    }
+    res.json(await main.listOperatorInvitations(
+      req.params.labId as string,page.data.limit,page.data.offset));
+  });
+
+  router.get('/labs/:labId/administrative-audit',administrator,labPath,async(req,res)=>{
+    const page=adminHistoryPage.safeParse(req.query);
+    if(!page.success){
+      res.status(400).json({error:{code:'INVALID_PAGINATION'}});return;
+    }
+    res.json(await main.listAdministrativeAudit(
+      req.params.labId as string,page.data.limit,page.data.offset));
+  });
+
+  router.post('/labs/:labId/operator-invitations/revoke',administrator,labPath,
+    async(req,res)=>{
+      const data=z.object({invitationId:uuid}).strict().safeParse(req.body);
+      if(!data.success){
+        res.status(400).json({error:{code:'INVALID_INVITATION'}});return;
+      }
+      res.json(await main.revokeOperatorInvitation(
+        req.params.labId as string,data.data.invitationId,res.locals.account.id));
+    });
+
   router.post('/labs/:labId/operator-invitations',administrator,labPath,
     async(req,res)=>{
       const data=z.object({
