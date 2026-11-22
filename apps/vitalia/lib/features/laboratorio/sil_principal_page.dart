@@ -575,6 +575,46 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     await _loadStaff();
   }
 
+  // Control exclusivo de la membresía del laboratorio seleccionado.
+  Future<void> _confirmStaffMembership(
+      String rawAccountId,String email,bool enabled) async {
+    final lab=_labId,accountId=_requireUuid(rawAccountId);
+    if(!_admin||_busy||lab==null||accountId==null)return;
+    final accepted=await showDialog<bool>(
+      context:context,
+      builder:(dialogContext)=>AlertDialog(
+        title:Text(enabled?'¿Restablecer acceso?':'¿Suspender acceso?'),
+        content:Text(enabled
+          ? 'Se restablecerá el acceso de $email a este laboratorio. '
+            'El permiso de revisión no se recupera automáticamente.'
+          : 'Se suspenderá el acceso de $email a este laboratorio. '
+            'No se eliminará la cuenta ni se afectarán otros laboratorios. '
+            'También se retirará su permiso de revisión.'),
+        actions:[
+          TextButton(
+            onPressed:()=>Navigator.pop(dialogContext,false),
+            child:const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed:()=>Navigator.pop(dialogContext,true),
+            child:Text(enabled?'Confirmar reactivación':'Confirmar suspensión'),
+          ),
+        ],
+      ),
+    );
+    if(accepted!=true||!mounted||lab!=_labId)return;
+    await _execute(() async {
+      await widget.api.silMainRequest('/labs/$lab/staff/membership',body:{
+        'accountId':accountId,'active':enabled,
+      });
+      if(!mounted||lab!=_labId)return;
+      await _loadStaff();
+      if(mounted&&lab==_labId)setState(()=>_notice=enabled
+          ? 'Acceso al laboratorio restablecido. Revisa los permisos.'
+          : 'Acceso suspendido y registrado en auditoría.');
+    },showNotice:false);
+  }
+
   Future<void> _invitePatient({bool fromRequest = false}) async {
     final lab = _labId;
     final email = (fromRequest ? _requestInviteEmail : _invitedPatientEmail)
@@ -1478,6 +1518,22 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       label: active && canReview ? 'Autorizada' : 'Sin autorización',
       positive: active && canReview,
     );
+    final accessAction = PopupMenuButton<bool>(
+      tooltip: 'Administrar acceso al laboratorio',
+      enabled: !_busy,
+      onSelected: (enabled) => _confirmStaffMembership(
+        member['accountId'] as String,
+        member['email'] as String,
+        enabled,
+      ),
+      itemBuilder: (_) => [
+        PopupMenuItem<bool>(
+          value: !active,
+          child: Text(active ? 'Suspender acceso' : 'Reactivar acceso'),
+        ),
+      ],
+      icon: const Icon(Icons.more_horiz),
+    );
     final action = OutlinedButton.icon(
       onPressed: _busy || !active
           ? null
@@ -1520,7 +1576,13 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                   flex: 4,
                   child: Align(
                     alignment: AlignmentDirectional.centerEnd,
-                    child: action,
+                    child: Wrap(
+                      alignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [action, accessAction],
+                    ),
                   ),
                 ),
               ],
@@ -1544,7 +1606,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                action,
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [action, accessAction],
+                ),
               ],
             ),
     );
