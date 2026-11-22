@@ -1080,12 +1080,14 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 'y una guía sencilla para comprenderlos. '
                 'Toda tu información de laboratorio en un espacio privado.',
             icon: Icons.favorite_outline,
+            calm: true,
+            showLaboratoryArt: false,
             compact: MediaQuery.sizeOf(context).width < 600,
             action: FilledButton.icon(
               onPressed: _scrollToReports,
               style: FilledButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: ColoresVitalia.azulActivo,
+                backgroundColor: ColoresVitalia.azul,
+                foregroundColor: Colors.white,
                 disabledBackgroundColor: const Color(0xFFD2E4EA),
                 disabledForegroundColor: ColoresVitalia.azulActivo,
               ),
@@ -1160,7 +1162,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
               detail: _reports.length >= 2
                   ? 'Compara mediciones cuando sean compatibles.'
                   : 'Disponible cuando tengas al menos dos informes.',
-              onTap: _reports.length >= 2 ? () => _openOverview() : null,
+              onTap: null,
             ),
           ];
           return Wrap(
@@ -1243,11 +1245,6 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                   label: 'Mis informes', icon: Icons.description_outlined,
                   selected: _reportsTabSelected,
                   onPressed: _scrollToReports,
-                ),
-                SilWorkspaceTab(
-                  label: 'Explorar resultados', icon: Icons.query_stats_outlined,
-                  selected: false,
-                  onPressed: _reports.isEmpty ? null : () => _openOverview(),
                 ),
                 SilWorkspaceTab(
                   label: 'Ayuda', icon: Icons.help_outline,
