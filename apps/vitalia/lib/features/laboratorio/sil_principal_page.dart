@@ -724,12 +724,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       ),
     );
     if (!mounted || _labId != lab || selected == null ||
-        _requireUuid(selected['id'] as String?) == null) return;
+        _requireUuid((selected['id'] as String?) ?? '') == null) return;
     setState(() => _manualPatient = selected);
   }
 
   Future<void> _createOrder() async {
-    final lab=_labId,patientId=_requireUuid(_manualPatient?['id'] as String?);
+    final lab=_labId,patientId=_requireUuid((_manualPatient?['id'] as String?) ?? '');
     if(lab==null||patientId==null||_codes.isEmpty){
       throw const AuthFailure('Selecciona laboratorio, paciente y al menos un examen.');
     }
