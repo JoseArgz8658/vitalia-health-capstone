@@ -177,9 +177,12 @@ Future<void> _findSavedReferralPatient(WidgetTester tester) async {
 
 void main() {
 
-  testWidgets('Las estaciones del laboratorio requieren escritorio', (tester) async {
+  testWidgets('Las estaciones mantienen navegación en Android', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     for (final role in ['operador_laboratorio', 'administrador']) {
       final api = _StationApi();
+      addTearDown(api.close);
       await tester.pumpWidget(MaterialApp(
         home: SilPrincipalPage(
           key: ValueKey(role),
@@ -190,8 +193,11 @@ void main() {
         ),
       ));
       await tester.pumpAndSettle();
-      expect(find.text('Abre Vitalia en un computador'), findsOneWidget);
-      expect(api.requestPaths, isEmpty);
+      expect(find.text('Abre Vitalia en un computador'), findsNothing);
+      expect(api.requestPaths, contains('/labs'));
+      expect(find.text(role == 'administrador'
+          ? 'Administración de laboratorios' : 'Panel del laboratorio'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     }
   }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
