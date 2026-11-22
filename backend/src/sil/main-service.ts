@@ -1063,13 +1063,13 @@ export function createSilMainService(db:Pool) {
                 extraction_status AS "extractionStatus",
                 suggestions_json AS suggestions,
                 created_at AS "createdAt",status,site_id AS "siteId"
-         FROM public.vitalia_sil_main_pending_requests
-         WHERE lab_id=$1 AND status='pending'
+         FROM public.vitalia_sil_main_pending_requests p
+         WHERE p.lab_id=$1 AND p.status='pending'
            AND EXISTS(SELECT 1 FROM public.vitalia_sil_main_staff st
              WHERE st.lab_id=$1 AND st.account_id=$4 AND st.kind='operator' AND st.active
                AND (st.site_access_mode='all' OR EXISTS (
                  SELECT 1 FROM public.vitalia_sil_main_staff_sites ss
-                 WHERE ss.lab_id=$1 AND ss.account_id=$4 AND ss.site_id=site_id)))
+                 WHERE ss.lab_id=$1 AND ss.account_id=$4 AND ss.site_id=p.site_id)))
          ORDER BY created_at DESC,id DESC LIMIT $2 OFFSET $3`,
         [labId,limit,offset,operatorId]);
       return {pending:found.rows};
