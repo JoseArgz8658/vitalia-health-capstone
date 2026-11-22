@@ -47,7 +47,12 @@ async function main() {
           AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
             WHERE version='042_sil_main_pending_closure')
           AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
+            WHERE version='043_sil_main_operator_membership')
+          AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
+            WHERE version='044_sil_main_operator_invite_revocation')
+          AND EXISTS (SELECT 1 FROM public.vitalia_schema_migrations
             WHERE version='045_sil_main_patient_link_codes')
+          AND to_regclass('public.vitalia_sil_main_patient_link_codes') IS NOT NULL
           AND to_regclass('public.vitalia_sil_main_pending_requests') IS NOT NULL
           AND EXISTS (SELECT 1 FROM information_schema.columns
             WHERE table_schema='public' AND table_name='vitalia_sil_main_pending_requests'
