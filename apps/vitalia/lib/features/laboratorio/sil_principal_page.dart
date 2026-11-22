@@ -81,6 +81,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   XFile? _pdf;
   List<Map<String,dynamic>> _labs = [];
   List<Map<String,dynamic>> _orders = [];
+  // Totales calculados por PostgreSQL; null = aún no disponible.
+  Map<String,int>? _operatorSummary;
+  int _summaryCount(String key,int fallback) =>
+      _operatorSummary?[key] ?? fallback;
   final _orderSearch = TextEditingController();
   List<Map<String,dynamic>> _orderPage = [];
   Map<String,dynamic>? _clinicalOrder;
@@ -175,6 +179,40 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if(_admin && _labId!=null) await _loadStaff();
   }
 
+  /// Consulta cifras completas del laboratorio; nunca se atribuyen totales
+  /// al subconjunto de 50 órdenes visible en la estación.
+  Future<void> _refreshOperatorSummary() async {
+    final lab = _labId;
+    if (!_operator || lab == null) {
+      if (mounted) setState(() => _operatorSummary = null);
+      return;
+    }
+    // Al cambiar de laboratorio o refrescar, no mostrar cifras caducadas.
+    if (mounted) setState(() => _operatorSummary = null);
+    try {
+      final response = await widget.api.silMainRequest('/labs/$lab/summary');
+      if (!mounted || lab != _labId) return;
+      final raw = response['summary'];
+      if (raw is! Map) return;
+      const fields = [
+        'ordersTotal','registered','inReview','published','pendingRequests',
+      ];
+      final parsed = <String,int>{};
+      for (final field in fields) {
+        final value = raw[field];
+        if (value is! int || value < 0) return;
+        parsed[field] = value;
+      }
+      setState(() => _operatorSummary = parsed);
+    } on AuthFailure catch (error) {
+      if (error.status == 401) rethrow;
+      // El trabajo operativo sigue disponible, pero no se presentan
+      // estimaciones como estadísticas completas.
+    } catch (_) {
+      // Las listas recientes siguen disponibles con su alcance identificado.
+    }
+  }
+
   Future<void> _loadPendingRequests() async {
     final lab=_labId;
     if(!_operator||lab==null) {
@@ -186,6 +224,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if(!mounted||_labId!=lab)return;
     setState(()=>_pendingRequests=(data['pending'] as List? ?? [])
       .map((row)=>Map<String,dynamic>.from(row as Map)).toList());
+    await _refreshOperatorSummary();
   }
 
   // Lista de operadores que ya tienen acceso al laboratorio actual.
@@ -219,6 +258,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if (_activeSection == _StationSection.orders || _admin || _orderPage.isNotEmpty) {
       await _loadOrderPage(offset: _orderOffset);
     }
+    if (_operator) await _refreshOperatorSummary();
   }
 
   void _validateOrderSelections() {
@@ -298,6 +338,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _patientOffset = 0;
     _morePatients = false;
     _orders = [];
+    _operatorSummary = null;
     _orderPage = [];
     _clinicalOrder = null;
     _ordersPatient = null;
