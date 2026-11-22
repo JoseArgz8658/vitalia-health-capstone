@@ -29,6 +29,8 @@ function checkMedicalRequest(input:MedicalRequestInput,bytes:Buffer){
 }
 
 type SiteFields={name:string;address:string;commune:string;region?:string;phone?:string;email?:string};
+type SiteAccess={mode:'all'|'selected';siteIds:string[]};
+const allSites:SiteAccess={mode:'all',siteIds:[]};
 const siteFields='id,name,address,commune,region,phone,email,active,created_at AS "createdAt",updated_at AS "updatedAt"';
 
 type Queryable=Pick<Pool,'query'>;
@@ -48,7 +50,8 @@ export function createSilMainService(db:Pool) {
       'pending_request_saved'|'pending_request_downloaded'|'pending_request_completed'|
       'pending_request_cancelled'|'operator_membership_disabled'|
       'operator_membership_enabled'|'operator_invitation_revoked'|
-      'site_created'|'site_updated'|'site_activated'|'site_deactivated',
+      'site_created'|'site_updated'|'site_activated'|'site_deactivated'|
+      'operator_sites_changed',
     orderId:string|null=null,details:Record<string,unknown>={}) {
     await tx.query(
       `INSERT INTO public.vitalia_sil_main_audit
@@ -84,14 +87,79 @@ export function createSilMainService(db:Pool) {
     }finally{tx.release(failed);}
   }
 
+  // Alcance explícito por sede; la autorización se verifica en PostgreSQL.
+  // 'all' conserva el acceso histórico; 'selected' nunca incluye órdenes sin sede.
+  async function applySiteAccess(tx:PoolClient,labId:string,accountId:string,
+    access:SiteAccess){
+    const ids=access.siteIds;
+    if(ids.length>100 || new Set(ids).size!==ids.length ||
+       (access.mode==='all'&&ids.length!==0) ||
+       (access.mode==='selected'&&ids.length===0))throw new SilMainConflict();
+    if(ids.length){
+      const valid=await tx.query<{id:string}>(
+        `SELECT id FROM public.vitalia_sil_main_sites
+         WHERE lab_id=$1 AND active AND id=ANY($2::uuid[]) FOR SHARE`,
+        [labId,ids]);
+      if(valid.rows.length!==ids.length)throw new SilMainConflict();
+    }
+    const updated=await tx.query(
+      `UPDATE public.vitalia_sil_main_staff SET site_access_mode=$3
+       WHERE lab_id=$1 AND account_id=$2 AND kind='operator' RETURNING account_id`,
+      [labId,accountId,access.mode]);
+    if(!updated.rows.length)throw new SilMainNotFound();
+    await tx.query(
+      `DELETE FROM public.vitalia_sil_main_staff_sites WHERE lab_id=$1 AND account_id=$2`,
+      [labId,accountId]);
+    if(ids.length){
+      await tx.query(
+        `INSERT INTO public.vitalia_sil_main_staff_sites(lab_id,account_id,site_id)
+         SELECT $1,$2,unnest($3::uuid[])`,[labId,accountId,ids]);
+    }
+  }
+  async function requireOrderSite(tx:PoolClient,labId:string,orderId:string,accountId:string){
+    const result=await tx.query(
+      `SELECT 1 FROM public.vitalia_sil_main_orders o
+       JOIN public.vitalia_sil_main_staff s
+         ON s.lab_id=o.lab_id AND s.account_id=$3 AND s.kind='operator' AND s.active
+       WHERE o.id=$1 AND o.lab_id=$2 AND
+         (s.site_access_mode='all' OR EXISTS (
+           SELECT 1 FROM public.vitalia_sil_main_staff_sites ss
+           WHERE ss.lab_id=o.lab_id AND ss.account_id=$3 AND ss.site_id=o.site_id))
+       FOR SHARE OF o,s`,[orderId,labId,accountId]);
+    if(!result.rows.length)throw new SilMainNotFound();
+  }
+  async function requirePendingSite(tx:PoolClient,labId:string,pendingId:string,accountId:string){
+    const result=await tx.query(
+      `SELECT 1 FROM public.vitalia_sil_main_pending_requests p
+       JOIN public.vitalia_sil_main_staff s
+         ON s.lab_id=p.lab_id AND s.account_id=$3 AND s.kind='operator' AND s.active
+       WHERE p.id=$1 AND p.lab_id=$2 AND
+         (s.site_access_mode='all' OR EXISTS (
+           SELECT 1 FROM public.vitalia_sil_main_staff_sites ss
+           WHERE ss.lab_id=p.lab_id AND ss.account_id=$3 AND ss.site_id=p.site_id))
+       FOR SHARE OF p,s`,[pendingId,labId,accountId]);
+    if(!result.rows.length)throw new SilMainNotFound();
+  }
+
   let readingPdf=false;
 
-  async function chooseSite(tx:PoolClient,labId:string,siteId?:string){
+  async function chooseSite(tx:PoolClient,labId:string,operatorId:string,siteId?:string){
     const sites=await tx.query<{id:string}>(
-      `SELECT id FROM public.vitalia_sil_main_sites
-       WHERE lab_id=$1 AND active AND ($2::uuid IS NULL OR id=$2)
-       ORDER BY id LIMIT 2 FOR SHARE`,[labId,siteId??null]);
+      `SELECT si.id FROM public.vitalia_sil_main_sites si
+       JOIN public.vitalia_sil_main_staff st ON st.lab_id=si.lab_id
+         AND st.account_id=$2 AND st.active AND st.kind='operator'
+       WHERE si.lab_id=$1 AND si.active AND ($3::uuid IS NULL OR si.id=$3)
+         AND (st.site_access_mode='all' OR EXISTS(
+           SELECT 1 FROM public.vitalia_sil_main_staff_sites ss
+           WHERE ss.lab_id=si.lab_id AND ss.account_id=$2 AND ss.site_id=si.id))
+       ORDER BY si.id LIMIT 2 FOR SHARE OF si,st`,[labId,operatorId,siteId??null]);
     if(sites.rows.length>1 || (siteId && !sites.rows.length))throw new SilMainConflict();
+    if(!sites.rows.length){
+      const member=await tx.query<{mode:string}>(
+        `SELECT site_access_mode AS mode FROM public.vitalia_sil_main_staff
+         WHERE lab_id=$1 AND account_id=$2 FOR SHARE`,[labId,operatorId]);
+      if(member.rows[0]?.mode!=='all')throw new SilMainAccessDenied();
+    }
     return sites.rows[0]?.id??null;
   }
 
@@ -105,7 +173,7 @@ export function createSilMainService(db:Pool) {
        WHERE active AND code=ANY($1::text[])`,[examCodes]);
     if(codes.rows.length!==examCodes.length || new Set(examCodes).size!==examCodes.length)
       throw new SilMainConflict();
-    const site=await chooseSite(tx,labId,siteId);
+    const site=await chooseSite(tx,labId,operatorId,siteId);
     const id=randomUUID();
     const inserted=await tx.query(
       `INSERT INTO public.vitalia_sil_main_orders
@@ -191,7 +259,11 @@ export function createSilMainService(db:Pool) {
         `SELECT s.account_id AS "accountId",
                 a.email,
                 s.active,
-                s.can_review_reports AS "canReviewReports"
+                s.can_review_reports AS "canReviewReports",
+                s.site_access_mode AS "siteAccessMode",
+                ARRAY(SELECT ss.site_id FROM public.vitalia_sil_main_staff_sites ss
+                      WHERE ss.lab_id=s.lab_id AND ss.account_id=s.account_id
+                      ORDER BY ss.site_id) AS "siteIds"
          FROM public.vitalia_sil_main_staff s
          JOIN public.vitalia_sil_main_laboratories l
            ON l.id=s.lab_id AND l.active
@@ -351,7 +423,7 @@ export function createSilMainService(db:Pool) {
       });
     },
 
-    async inviteOperator(labId:string,email:string,adminId:string){
+    async inviteOperator(labId:string,email:string,adminId:string,siteAccess:SiteAccess=allSites){
       const code=randomBytes(32).toString('base64url');
       const digest=createHash('sha256').update(code).digest('hex');
       const normalized=email.trim().toLowerCase();
@@ -378,11 +450,21 @@ export function createSilMainService(db:Pool) {
           [labId,normalized]);
         const id=randomUUID();
         const expiresAt=new Date(Date.now()+24*60*60*1000);
+        // Comprobar el alcance antes de crear una invitación con código.
+        if(siteAccess.mode==='selected'){
+          if(!siteAccess.siteIds.length||new Set(siteAccess.siteIds).size!==siteAccess.siteIds.length)
+            throw new SilMainConflict();
+          const valid=await tx.query(
+            `SELECT id FROM public.vitalia_sil_main_sites
+             WHERE lab_id=$1 AND active AND id=ANY($2::uuid[]) FOR SHARE`,
+            [labId,siteAccess.siteIds]);
+          if(valid.rows.length!==siteAccess.siteIds.length)throw new SilMainConflict();
+        }else if(siteAccess.siteIds.length)throw new SilMainConflict();
         await tx.query(
           `INSERT INTO public.vitalia_sil_main_operator_invites
-           (id,lab_id,email,token_hash,issued_by,expires_at)
-           VALUES($1,$2,$3,$4,$5,$6)`,
-          [id,labId,normalized,digest,adminId,expiresAt]);
+           (id,lab_id,email,token_hash,issued_by,expires_at,site_access_mode,site_ids)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8::uuid[])`,
+          [id,labId,normalized,digest,adminId,expiresAt,siteAccess.mode,siteAccess.siteIds]);
         await audit(tx,labId,adminId,'operator_invited',null,{inviteId:id});
         // Se entrega una única vez, por canal verificado externo.
         return {invitation:{labId,email:normalized,code,expiresAt}};
@@ -395,8 +477,8 @@ export function createSilMainService(db:Pool) {
       const normalized=email.trim().toLowerCase();
       const digest=createHash('sha256').update(code).digest('hex');
       return transaction(async tx=>{
-        const result=await tx.query<{id:string;labId:string}>(
-          `SELECT id,lab_id AS "labId"
+        const result=await tx.query<{id:string;labId:string;siteAccessMode:'all'|'selected';siteIds:string[]}>(
+          `SELECT id,lab_id AS "labId",site_access_mode AS "siteAccessMode",site_ids AS "siteIds"
            FROM public.vitalia_sil_main_operator_invites
            WHERE email=$1 AND token_hash=$2 AND consumed_at IS NULL
              AND revoked_at IS NULL AND expires_at>CURRENT_TIMESTAMP
@@ -418,6 +500,8 @@ export function createSilMainService(db:Pool) {
            SELECT $1,$2,'operator',issued_by
            FROM public.vitalia_sil_main_operator_invites WHERE id=$3`,
           [invite.labId,accountId,invite.id]);
+        await applySiteAccess(tx,invite.labId,accountId,
+          {mode:invite.siteAccessMode,siteIds:invite.siteIds});
         await tx.query(
           `UPDATE public.vitalia_sil_main_operator_invites
            SET consumed_at=CURRENT_TIMESTAMP WHERE id=$1`,[invite.id]);
@@ -427,7 +511,7 @@ export function createSilMainService(db:Pool) {
       });
     },
 
-    async grantStaff(labId:string,identity:string|{email:string},adminId:string){
+    async grantStaff(labId:string,identity:string|{email:string},adminId:string,siteAccess:SiteAccess=allSites){
       return transaction(async tx=>{
         const lab=await tx.query(
           'SELECT 1 FROM public.vitalia_sil_main_laboratories WHERE id=$1 AND active FOR UPDATE',
@@ -456,8 +540,28 @@ export function createSilMainService(db:Pool) {
            ON CONFLICT(lab_id,account_id) DO NOTHING RETURNING lab_id`,
           [labId,accountId,adminId]);
         if(!created.rows.length)throw new SilMainConflict();
+        await applySiteAccess(tx,labId,accountId,siteAccess);
         await audit(tx,labId,adminId,'staff_granted',null,{accountId,kind:'operator'});
-        return {membership:{labId,accountId,kind:'operator',active:true,canReviewReports:false}};
+        return {membership:{labId,accountId,kind:'operator',active:true,
+          canReviewReports:false,siteAccessMode:siteAccess.mode,siteIds:siteAccess.siteIds}};
+      });
+    },
+
+    async setStaffSites(labId:string,accountId:string,adminId:string,siteAccess:SiteAccess){
+      return transaction(async tx=>{
+        const lab=await tx.query(
+          'SELECT 1 FROM public.vitalia_sil_main_laboratories WHERE id=$1 AND active FOR UPDATE',[labId]);
+        if(!lab.rows.length)throw new SilMainNotFound();
+        const membership=await tx.query(
+          `SELECT 1 FROM public.vitalia_sil_main_staff
+           WHERE lab_id=$1 AND account_id=$2 AND kind='operator' FOR UPDATE`,
+          [labId,accountId]);
+        if(!membership.rows.length)throw new SilMainNotFound();
+        await applySiteAccess(tx,labId,accountId,siteAccess);
+        await audit(tx,labId,adminId,'operator_sites_changed',null,
+          {accountId,mode:siteAccess.mode,siteIds:siteAccess.siteIds});
+        return {membership:{labId,accountId,siteAccessMode:siteAccess.mode,
+          siteIds:siteAccess.siteIds}};
       });
     },
 
