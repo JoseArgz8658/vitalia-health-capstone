@@ -17,6 +17,7 @@ function demo(role='operador_laboratorio',authenticated=true){
     createLaboratory:jest.fn().mockResolvedValue({laboratory:{id:lab}}),
     listStaff:jest.fn().mockResolvedValue({staff:[]}),
     setReviewPermission:jest.fn().mockResolvedValue({membership:{canReviewReports:true}}),
+    setStaffMembershipActive:jest.fn().mockResolvedValue({membership:{active:false,canReviewReports:false}}),
     reportForReview:jest.fn().mockResolvedValue({fileName:'revision.pdf',bytes:Buffer.from('%PDF-1.4')}),
     grantStaff:jest.fn().mockResolvedValue({membership:{labId:lab}}),
     associatePatient:jest.fn().mockResolvedValue({patientId:patient,linked:true}),
@@ -348,4 +349,68 @@ test('cierre de derivación es transaccional y registra solo motivo codificado',
   await expect(service.cancelPendingMedicalRequest(
     '77777777-7777-4777-8777-777777777777',pendingId,
     operator,'other')).rejects.toBeInstanceOf(SilMainNotFound);
+});
+
+test('administrador suspende membresía por laboratorio y los otros roles no',async()=>{
+  const path='/api/sil/main/labs/'+lab+'/staff/membership';
+  const admin=demo('administrador');
+  await request(admin.application).post(path).set(bearer)
+    .send({accountId:operator,active:false}).expect(200);
+  expect(admin.service.setStaffMembershipActive)
+    .toHaveBeenCalledWith(lab,operator,operator,false);
+  for(const role of ['operador_laboratorio','paciente','profesional']){
+    const denied=demo(role);
+    await request(denied.application).post(path).set(bearer)
+      .send({accountId:operator,active:false}).expect(403);
+    expect(denied.service.setStaffMembershipActive).not.toHaveBeenCalled();
+  }
+  for(const invalid of [
+    {accountId:'bad',active:false},
+    {accountId:operator,active:'false'},
+    {accountId:operator,active:false,token:'secret'},
+  ]){
+    await request(admin.application).post(path).set(bearer)
+      .send(invalid).expect(400);
+  }
+  expect(admin.service.setStaffMembershipActive).toHaveBeenCalledTimes(1);
+});
+
+test('suspender operador anula permiso de revisión y audita la membresía',async()=>{
+  const auditParams=[];
+  let active=true;
+  let review=true;
+  const tx={
+    query:jest.fn(async(sql,params=[])=>{
+      if(['BEGIN','COMMIT','ROLLBACK'].includes(sql))return {rows:[]};
+      if(sql.includes('FROM public.vitalia_sil_main_laboratories'))
+        return {rows:[{exists:1}]};
+      if(sql.includes('FROM public.vitalia_sil_main_staff s'))
+        return {rows:[{active,roleActive:true}]};
+      if(sql.includes('UPDATE public.vitalia_sil_main_staff')){
+        expect(params).toEqual([lab,operator,false]);
+        active=false;review=false;
+        return {rows:[{active,canReviewReports:review}]};
+      }
+      if(sql.includes('INSERT INTO public.vitalia_sil_main_audit')){
+        auditParams.push(params);
+        return {rows:[]};
+      }
+      throw Error('SQL no esperado: '+sql);
+    }),
+    release:jest.fn(),
+  };
+  const service=createSilMainService({
+    connect:jest.fn().mockResolvedValue(tx),query:jest.fn(),
+  });
+  const result=await service.setStaffMembershipActive(lab,operator,operator,false);
+  expect(result.membership).toEqual({
+    labId:lab,accountId:operator,active:false,canReviewReports:false,
+  });
+  expect(auditParams).toHaveLength(1);
+  expect(auditParams[0][4]).toBe('operator_membership_disabled');
+  expect(JSON.parse(auditParams[0][5])).toEqual({accountId:operator});
+  expect(tx.query.mock.calls.some(([sql])=>sql==='COMMIT')).toBe(true);
+  await expect(service.setStaffMembershipActive(lab,operator,operator,false))
+    .rejects.toBeInstanceOf(SilMainConflict);
+  expect(auditParams).toHaveLength(1);
 });
