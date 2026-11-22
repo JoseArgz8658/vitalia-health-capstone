@@ -390,6 +390,19 @@ async function browserJourney(order, base, sampleOrder, samplePdf) {
         'El paciente no debe ver la estación interna del operador.');
 
       const help=page.getByRole('button',{name:'Ayuda',exact:true});
+      // En 390 px la última pestaña puede estar fuera de la barra; usar
+      // los botones visibles en vez de depender del scroll automático DOM.
+      for(let attempt=0;attempt<4;attempt++){
+        const box=await help.boundingBox({timeout:500}).catch(()=>null);
+        if(box && box.x>=0 && box.x+box.width<=page.viewportSize().width-48){
+          break;
+        }
+        const forward=page.getByRole('button',
+          {name:'Mostrar más secciones',exact:true});
+        assert.ok(await forward.count() && await forward.isEnabled(),
+          'La ayuda debe ser alcanzable desde la navegación móvil.');
+        await forward.click();
+      }
       await help.click();
       await page.getByText('¿Qué informes puedo consultar?',{exact:true})
         .waitFor({timeout:10000});
