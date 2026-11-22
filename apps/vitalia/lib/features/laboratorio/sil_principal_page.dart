@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -120,6 +121,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ('perfil_hepatico','Perfil hepático'),
   ];
 
+  bool get _mobileDevice => switch (defaultTargetPlatform) {
+    TargetPlatform.android || TargetPlatform.iOS => true,
+    _ => false,
+  };
+
   bool get _admin => widget.role=='administrador';
   bool get _operator => widget.role=='operador_laboratorio';
   bool get _canReview => _operator && _labs.any(
@@ -131,6 +137,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   @override
   void initState(){
     super.initState();
+    if (_mobileDevice) return;
     WidgetsBinding.instance.addPostFrameCallback((_){
       if(mounted)_execute(_loadLabs,showNotice:false);
     });
@@ -988,7 +995,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     return Card(
       clipBehavior:Clip.antiAlias,
       child:Padding(
-        padding:const EdgeInsets.all(21),
+        padding:const EdgeInsets.all(24),
         child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
           Row(children:[
             Container(
@@ -1002,13 +1009,15 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             const SizedBox(width:11),
             Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
               Text(title,style:const TextStyle(fontSize:18,fontWeight:FontWeight.w800)),
-              const SizedBox(height:3),
-              Text(detail,style:const TextStyle(
-                color:ColoresVitalia.textoSecundario,fontSize:12,height:1.4,
-              )),
+              if (detail.isNotEmpty) ...[
+                const SizedBox(height:5),
+                Text(detail,style:const TextStyle(
+                color:ColoresVitalia.textoSecundario,fontSize:14,height:1.4,
+                )),
+              ],
             ])),
           ]),
-          const SizedBox(height:16),
+          const SizedBox(height:20),
           ...children,
         ]),
       ),
@@ -1080,7 +1089,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     final list=recent ? _orders.take(5) : _orderPage;
     return _section(
       recent ? 'Órdenes recientes' : 'Órdenes del laboratorio',
-      recent ? 'Últimas órdenes del laboratorio.' : 'Filtra y abre una orden para continuar su gestión.',
+      '',
       Icons.assignment_outlined,
       [
         if (!recent) ...[
@@ -1155,7 +1164,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         else
           for(final order in list.take(50))
             Container(
-              padding:const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+              padding:const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
               decoration: const BoxDecoration(
                 border: Border(top: BorderSide(color: ColoresVitalia.bordeTenue)),
               ),
@@ -1292,9 +1301,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       SilWorkspaceHeading(
-        section: true,
-        title: 'Directorio de laboratorios',
-        description: 'Selecciona un laboratorio para gestionar su personal.',
+        title: 'Administración de laboratorios',
         actions: [
           if (_labId != null)
             OutlinedButton.icon(
@@ -1464,9 +1471,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       SilWorkspaceHeading(
-        section: true,
         title: 'Directorio de operadores',
         actions: [
+          _labSelector(),
           OutlinedButton.icon(
             onPressed: _busy
                 ? null
@@ -1591,14 +1598,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
 
   Widget _patientLink() => _section(
     'Registrar paciente nuevo',
-    'El personal verifica la identidad y entrega una invitación. El paciente activa su propia cuenta.',
+    '',
     Icons.person_add_alt_1_outlined, [
-      const OperatorNextStep(
-        icon: Icons.info_outline,
-        title: '¿Cuándo se crea la cuenta?',
-        message: 'Al activar el código, el paciente configura su contraseña y Vitalia crea su cuenta vinculada a este laboratorio. No debes ingresar números internos ni crear contraseñas por él.',
-      ),
-      const SizedBox(height: 14),
       _field(_invitedPatientEmail, 'Correo electrónico del paciente',
           onChanged: (_) => setState(() {
             _verifiedPatient = false;
@@ -1642,17 +1643,14 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         icon: const Icon(Icons.person_search_outlined),
         label: const Text('Comprobar si activó su cuenta'),
       ),
-      const Divider(height: 28),
-      const Text('Instrucciones que puedes entregar al paciente',
-        style: TextStyle(fontWeight: FontWeight.w700)),
-      const SizedBox(height: 8),
-      const Text('1. Abre la página «Activar cuenta de paciente» de Vitalia.'),
-      const Text('2. Ingresa el correo y el código entregado por el laboratorio.'),
-      const Text('3. Crea y confirma tu contraseña personal.'),
-      const Text('4. Informa al laboratorio que terminaste la activación.'),
-      const SizedBox(height: 8),
-      const Text('En la DEMO local, la activación está en localhost:5173/#/activar-portal. El código vence a las 24 horas y debe entregarse por un canal verificado.',
-        style: TextStyle(color: ColoresVitalia.textoSecundario, fontSize: 12)),
+      if (_patientInviteStatus != null)
+        const Padding(
+          padding: EdgeInsets.only(top: 16),
+          child: Text(
+            'Entrega el código por un canal verificado. El paciente ingresa '
+            'su correo y código en «Activar cuenta» y crea su contraseña.',
+          ),
+        ),
     ],
   );
 
@@ -1763,68 +1761,40 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         : !reviewed
         ? 2
         : 3;
-    final message = !documentReady
-        ? 'Selecciona un PDF o retoma una derivación guardada.'
-        : !_attachToExistingOrder && _pendingRequestId == null
-        ? 'Guarda el PDF como derivación pendiente para poder crear la orden.'
-        : !patientReady && !_attachToExistingOrder
-        ? 'Busca la cuenta activada por correo. Si es un paciente nuevo, abre la opción de invitación.'
-        : !patientReady
-        ? 'Selecciona la orden registrada que corresponde al documento original.'
-        : !reviewed
-        ? 'Compara los datos del paciente, los exámenes, la fecha y el profesional con el PDF original; después confirma el cotejo.'
-        : 'Los datos esenciales están confirmados. Comprueba nuevamente el documento original y completa el registro.';
     const stages = [
       'Recibir solicitud',
       'Identificar paciente',
       'Revisar exámenes',
       'Crear orden',
     ];
-    return SilWorkspaceSurface(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 10,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SilWorkspaceStatus(
-                label: 'Paso ${current + 1} de ${stages.length}',
-                positive: true,
-              ),
-              Text(
-                stages[current],
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-              TextButton(
-                onPressed: () => showDialog<void>(
-                  context: context,
-                  builder: (dialogContext) => AlertDialog(
-                    title: const Text('Guía postanalítica'),
-                    scrollable: true,
-                    content: const SizedBox(
-                      width: 480,
-                      child: SilWorkspaceProcessPath(),
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        child: const Text('Cerrar'),
-                      ),
-                    ],
-                  ),
+    return Wrap(
+      spacing: 14,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        SilWorkspaceStatus(
+          label: 'Paso ${current + 1} de ${stages.length}',
+          positive: true,
+        ),
+        Semantics(liveRegion: true, child: Text(stages[current])),
+        TextButton(
+          onPressed: () => showDialog<void>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('Guía postanalítica'),
+              scrollable: true,
+              content: const SizedBox(width: 480, child: SilWorkspaceProcessPath()),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cerrar'),
                 ),
-                child: const Text('Ver guía'),
-              ),
-            ],
+              ],
+            ),
           ),
-          Semantics(
-            liveRegion: true,
-            child: Text(message, style: Theme.of(context).textTheme.bodySmall),
-          ),
-        ],
-      ),
+          child: const Text('Ver guía'),
+        ),
+      ],
     );
   }
 
@@ -1834,8 +1804,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _requestGuide(),
       const SizedBox(height: 14),
       _section(
-        '1. Recibir la solicitud médica',
-        'Carga una solicitud o retoma un PDF guardado en el laboratorio.',
+        'Documento de origen',
+        '',
         Icons.description_outlined,
         [
           if (_medicalRequestFile != null)
@@ -2492,7 +2462,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   }
 
   Widget _patientDirectory() => _section(
-    'Directorio de pacientes', 'Busca por nombre o correo. Aquí solo aparecen cuentas activas y asociadas al laboratorio.',
+    'Directorio de pacientes', '',
     Icons.badge_outlined, [
       _field(_patientSearch, 'Buscar por nombre o correo'),
       _action('Buscar pacientes', Icons.search,
@@ -2503,14 +2473,15 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           child: OperatorNextStep(
             icon: Icons.person_search_outlined,
             title: 'Sin pacientes en esta búsqueda',
-            message: 'Prueba otro nombre o correo. Para un paciente nuevo, utiliza «Registrar paciente nuevo»: primero se emite un código y después el paciente activa su cuenta.',
+            message: 'Prueba otro nombre o correo. Si el paciente aún no tiene acceso, usa «Invitar paciente».',
           ),
         ),
       for (final patient in _patients)
         ListTile(
           contentPadding: EdgeInsets.zero,
           title: Text(_patientName(patient)),
-          subtitle: Text(patient['email'] as String),
+          subtitle: _patientName(patient) == patient['email']
+              ? null : Text(patient['email'] as String),
           trailing: PopupMenuButton<_StationSection>(
             tooltip: 'Acciones del paciente',
             enabled: !_busy,
@@ -2815,7 +2786,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
 
   Widget _operatorSubpage({
     required String title,
-    required String description,
+    String? description,
     required Widget child,
     Widget? support,
   }) => Column(
@@ -2841,42 +2812,44 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _StationSection.dashboard => _dashboard(),
       _StationSection.orders => _operatorSubpage(
         title: 'Órdenes',
-        description: 'Busca órdenes existentes, consulta su estado y continúa con la siguiente tarea.',
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _ordersPanel(),
-          const SizedBox(height: 12),
-          ExpansionTile(
-            initiallyExpanded: false,
-            title: const Text('Crear orden sin derivación PDF'),
-            subtitle: const Text('Opción para casos autorizados, con un paciente ya activado'),
-            leading: const Icon(Icons.post_add_outlined),
-            children: [_newOrder()],
+        child: SilWorkspaceColumns(
+          primaryFlex: 7,
+          secondaryFlex: 4,
+          primary: _ordersPanel(),
+          secondary: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SilWorkspaceDisclosure(
+                title: 'Adjuntar informe autorizado',
+                icon: Icons.upload_file_outlined,
+                child: _reportUpload(),
+              ),
+              const SizedBox(height: 16),
+              SilWorkspaceDisclosure(
+                title: 'Crear orden sin derivación PDF',
+                icon: Icons.post_add_outlined,
+                child: _newOrder(),
+              ),
+            ],
           ),
-          const SizedBox(height: 12),
-          SilWorkspaceDisclosure(
-            title: 'Adjuntar informe autorizado',
-            icon: Icons.upload_file_outlined,
-            child: _reportUpload(),
-          ),
-        ]),
+        ),
       ),
       _StationSection.requests => _operatorSubpage(
         title: 'Recibir solicitud',
-        description: 'Carga una derivación PDF, coteja la identidad y confirma su vinculación.',
         child: _requestIntake(),
       ),
       _StationSection.patients => _operatorSubpage(
-        title: 'Pacientes y activación de cuentas',
-        description: 'Busca a un paciente que ya tiene acceso o invita a uno nuevo para que active su cuenta.',
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          _patientDirectory(),
-          const SizedBox(height: 12),
-          SilWorkspaceDisclosure(
+        title: 'Pacientes',
+        child: SilWorkspaceColumns(
+          primaryFlex: 7,
+          secondaryFlex: 4,
+          primary: _patientDirectory(),
+          secondary: SilWorkspaceDisclosure(
             title: 'Invitar paciente',
             icon: Icons.person_add_alt_1_outlined,
             child: _patientLink(),
           ),
-        ]),
+        ),
       ),
       _StationSection.clinical => _operatorSubpage(
         title: 'Control de muestras y resultados',
@@ -2914,7 +2887,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       _StationSection.review => _canReview
           ? _operatorSubpage(
               title: 'Bandeja de revisión',
-              description: 'Verifica el PDF y su autorización externa antes de publicar.',
               child: _reviewPanel(),
             )
           : _dashboard(),
@@ -2950,8 +2922,34 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_mobileDevice) {
+      return Scaffold(
+        appBar: AppBar(title: const SilWorkspaceBrand()),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SilWorkspaceHeading(
+                    title: 'Abre Vitalia en un computador',
+                    description: 'La estación del laboratorio está disponible en escritorio.',
+                  ),
+                  const SizedBox(height: 24),
+                  OutlinedButton(
+                    onPressed: widget.onLogout,
+                    child: const Text('Cerrar sesión'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
-      backgroundColor: const Color(0xFFF2F6FA),
+      backgroundColor: ColoresVitalia.fondoAzul,
       appBar: AppBar(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
@@ -2983,25 +2981,20 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                 return SingleChildScrollView(
                   key: ValueKey((_activeSection, _adminSection)),
                   padding: EdgeInsets.symmetric(
-                    horizontal: constraints.maxWidth < 600 ? 12 : 24,
-                    vertical: 20,
+                    horizontal: constraints.maxWidth < 600 ? 16 : 36,
+                    vertical: constraints.maxWidth < 600 ? 20 : 32,
                   ),
                   child: Align(
                     alignment: Alignment.topCenter,
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1480),
+                      constraints: const BoxConstraints(maxWidth: 1320),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (_admin) ...[
+                          if (_admin && _adminSection == _AdminSection.activity) ...[
                             SilWorkspaceHeading(
-                              title: switch (_adminSection) {
-                                _AdminSection.laboratories => 'Administración de laboratorios',
-                                _AdminSection.operators => 'Operadores y permisos',
-                                _AdminSection.activity => 'Actividad del laboratorio',
-                              },
-                              actions: _adminSection == _AdminSection.laboratories
-                                ? const [] : [_labSelector()],
+                              title: 'Actividad del laboratorio',
+                              actions: [_labSelector()],
                             ),
                             const SizedBox(height: 18),
                           ],

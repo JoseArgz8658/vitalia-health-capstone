@@ -120,7 +120,8 @@ class SilWorkspaceDisclosure extends StatelessWidget {
     child: ExpansionTile(
       leading: Icon(icon, color: ColoresVitalia.azul),
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-      tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+      tilePadding: const EdgeInsets.symmetric(horizontal: 24),
+      minTileHeight: 64,
       childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
       expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
       shape: const Border(),
@@ -210,13 +211,13 @@ class SilWorkspaceColumns extends StatelessWidget {
     builder: (context, constraints) => constraints.maxWidth < 780
         ? Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [primary, const SizedBox(height: 12), secondary],
+            children: [primary, const SizedBox(height: 20), secondary],
           )
         : Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(flex: primaryFlex, child: primary),
-              const SizedBox(width: 16),
+              const SizedBox(width: 24),
               Expanded(flex: secondaryFlex, child: secondary),
             ],
           ),
@@ -408,7 +409,7 @@ class _SilWorkspaceTopNavigationState
                               icon: Icon(widget.tabs[i].icon, size: 18),
                               label: Text(widget.tabs[i].label, maxLines: 1),
                               style: TextButton.styleFrom(
-                                minimumSize: const Size(48, 44),
+                                minimumSize: const Size(48, 48),
                                 foregroundColor: widget.tabs[i].selected
                                     ? ColoresVitalia.azulActivo
                                     : ColoresVitalia.textoSecundario,

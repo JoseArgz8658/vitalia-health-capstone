@@ -176,6 +176,25 @@ Future<void> _findSavedReferralPatient(WidgetTester tester) async {
 }
 
 void main() {
+
+  testWidgets('Las estaciones del laboratorio requieren escritorio', (tester) async {
+    for (final role in ['operador_laboratorio', 'administrador']) {
+      final api = _StationApi();
+      await tester.pumpWidget(MaterialApp(
+        home: SilPrincipalPage(
+          key: ValueKey(role),
+          api: api,
+          role: role,
+          onExpired: () {},
+          onLogout: () {},
+        ),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Abre Vitalia en un computador'), findsOneWidget);
+      expect(api.requestPaths, isEmpty);
+    }
+  }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
   testWidgets('se recupera un PDF pendiente y no se crea orden sin validación', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
     addTearDown(()=>tester.binding.setSurfaceSize(null));
@@ -216,7 +235,7 @@ void main() {
       reason: 'La cuenta está activa, pero aún falta cotejar el PDF.');
     expect(api.pendingCompletions, isEmpty);
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('fecha médica propone hoy cuando el PDF pendiente carece de fecha legible', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
@@ -239,7 +258,7 @@ void main() {
     expect(find.text('Referencia de solicitud'),findsNothing);
     expect(find.textContaining('Vitalia lo asigna automáticamente'),findsOneWidget);
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('desde derivación permite localizar paciente activado sin escribir UUID', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 900));
@@ -269,7 +288,7 @@ void main() {
     expect(find.text('Seleccionar paciente por identificador (avanzado)'), findsNothing);
     expect(find.text('UUID del paciente vinculado'), findsNothing);
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('órdenes manuales seleccionan paciente activo por nombre, nunca por UUID', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1050));
@@ -294,7 +313,7 @@ void main() {
     expect(patientSelection, findsOneWidget);
     expect(find.text('Buscar paciente por nombre o correo'), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('panel usa totales completos sin confundirlos con las últimas órdenes', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
@@ -325,7 +344,7 @@ void main() {
       reason:'Nunca mostrar cifras del laboratorio anterior.');
     expect(find.text('0'),findsWidgets);
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('si falla resumen muestra alcance parcial en vez de fingir totales', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
@@ -340,9 +359,9 @@ void main() {
       findsOneWidget);
     expect(find.text('Totales actuales del laboratorio seleccionado.'), findsNothing);
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
-  testWidgets('administración móvil abre y cancela formularios desde el directorio', (tester) async {
+  testWidgets('administración en una ventana estrecha abre y cancela formularios desde el directorio', (tester) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final api = _StationApi();
@@ -352,7 +371,7 @@ void main() {
     )));
     await tester.pumpAndSettle();
 
-    expect(find.text('Directorio de laboratorios'), findsOneWidget);
+    expect(find.text('Administración de laboratorios'), findsOneWidget);
     expect(find.text('Nombre del laboratorio'), findsNothing);
     await tester.tap(find.widgetWithText(FilledButton, 'Registrar laboratorio'));
     await tester.pumpAndSettle();
@@ -374,7 +393,7 @@ void main() {
     await tester.tap(find.widgetWithText(TextButton, 'Cancelar'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('administración muestra operadores y autoriza revisión desde un botón', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
@@ -438,7 +457,7 @@ void main() {
     expect(clinicalRequests, isEmpty,
       reason: 'El panel administrativo solo necesita información del personal.');
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('revisión encuentra informes antiguos con paginación y borra confirmaciones', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
@@ -491,7 +510,7 @@ void main() {
       reason:'El informe seleccionado no debe persistir al cambiar de página.');
     expect(publish, findsNothing);
     expect(tester.takeException(),isNull);
-  });
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   for (final width in [390.0, 1280.0]) {
     testWidgets('revisión incluye los informes propios del laboratorio a ${width.toInt()} px', (
@@ -569,6 +588,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(_field('Orden para muestras y resultados'), findsOneWidget);
       expect(tester.takeException(), isNull);
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
   }
 }

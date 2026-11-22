@@ -3,16 +3,16 @@ import 'package:flutter/material.dart';
 /// Sistema visual Vitalia: contraste legible y colores reservados para acciones
 /// y estados. Los tonos suaves favorecen el uso prolongado de la aplicación.
 abstract final class ColoresVitalia {
-  static const azul = Color(0xFF236A86);
-  static const azulActivo = Color(0xFF17354E);
-  static const azulSuave = Color(0xFFEAF3F6);
+  static const azul = Color(0xFF155D73);
+  static const azulActivo = Color(0xFF172E40);
+  static const azulSuave = Color(0xFFE5F0F3);
   static const verde = Color(0xFF1A776D);
   static const verdeSuave = Color(0xFFE7F3F2);
-  static const fondoAzul = Color(0xFFF4F7FA);
+  static const fondoAzul = Color(0xFFF5F7F8);
   static const blanco = Color(0xFFFFFFFF);
-  static const texto = Color(0xFF17354E);
-  static const textoSecundario = Color(0xFF536B7C);
-  static const borde = Color(0xFFDCE4EA);
+  static const texto = Color(0xFF172E40);
+  static const textoSecundario = Color(0xFF4A6274);
+  static const borde = Color(0xFFD3DDE4);
   static const bordeTenue = Color(0xFFE9EEF2);
   static const advertenciaSuave = Color(0xFFFEF5E8);
   static const pendienteSuave = Color(0xFFECF0FA);
@@ -74,7 +74,7 @@ ThemeData temaVitalia() {
       filled: true,
       fillColor: ColoresVitalia.blanco,
       isDense: true,
-      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 17),
       labelStyle: TextStyle(color: ColoresVitalia.textoSecundario),
       helperStyle: TextStyle(
         color: ColoresVitalia.textoSecundario,
@@ -95,7 +95,7 @@ ThemeData temaVitalia() {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-        minimumSize: const Size(48, 44),
+        minimumSize: const Size(48, 48),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(10),
@@ -104,7 +104,7 @@ ThemeData temaVitalia() {
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-        minimumSize: const Size(48, 44),
+        minimumSize: const Size(48, 48),
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
         side: const BorderSide(color: ColoresVitalia.borde),
         shape: RoundedRectangleBorder(
@@ -113,7 +113,7 @@ ThemeData temaVitalia() {
       ),
     ),
     textButtonTheme: TextButtonThemeData(
-      style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
+      style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
     ),
     chipTheme: const ChipThemeData(
       backgroundColor: ColoresVitalia.fondoAzul,

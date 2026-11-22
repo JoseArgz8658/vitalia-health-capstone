@@ -637,7 +637,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       color: ColoresVitalia.textoSecundario,
     );
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -768,7 +768,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
   }
 
   Widget _portalTools() => SilWorkspaceSurface(
-    padding: const EdgeInsets.all(16),
+    padding: const EdgeInsets.all(22),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -776,14 +776,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
           section: true,
           title: 'Historial y orientación',
         ),
-        const SizedBox(height: 8),
-        Text(
-          _reports.length >= 2
-              ? 'Compara mediciones del mismo examen, analito, unidad y laboratorio.'
-              : 'Consulta qué significan los términos y las unidades de tu informe.',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 14),
         Align(
           alignment: AlignmentDirectional.centerStart,
           child: OutlinedButton.icon(
@@ -1052,7 +1045,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 controller: _pageScroll,
           padding: EdgeInsets.symmetric(
             horizontal: narrow ? 14 : 25,
-            vertical: narrow ? 17 : 26,
+            vertical: narrow ? 22 : 36,
           ),
           child: Center(
             child: ConstrainedBox(
@@ -1061,7 +1054,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _patientGreeting(),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 26),
                   SilWorkspaceColumns(
                     primaryFlex: 8,
                     secondaryFlex: 4,
