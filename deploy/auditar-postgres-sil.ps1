@@ -35,6 +35,9 @@ try {
       [string]$apiDatabase -cne [string]$dbDatabase) {
     throw 'Roles o bases distintos entre API y PostgreSQL: no atribuir resultados al usuario de la API.'
   }
+  if ([string]$apiDatabase -cne 'vitalia') {
+    throw 'Esta auditoria solo corresponde a la base principal vitalia; no ejecutar sobre la DEMO.'
+  }
 
   Write-Host 'Conexion de API y PostgreSQL: mismo rol/base (nombres ocultos).'
   Write-Host 'Ejecutando SELECT de metadatos mediante transaccion READ ONLY.'
