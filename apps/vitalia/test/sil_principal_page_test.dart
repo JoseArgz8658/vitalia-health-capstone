@@ -646,7 +646,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton,'Guardar asignación'));
     await tester.pumpAndSettle();
-    expect(api.operatorSiteActions,singleElement);
+    expect(api.operatorSiteActions,hasLength(1));
     expect(api.operatorSiteActions.single['siteAccess'],{
       'mode':'selected',
       'siteIds':[
