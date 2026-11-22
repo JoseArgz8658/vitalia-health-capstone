@@ -474,6 +474,14 @@ async function main() {
       registered.request.documentReference);
     await call('uploader','POST',intake,409,confirmation);
     assert.equal((await (await call('uploader','GET',base+'/orders',200)).json()).orders.length,1);
+    const summaryPath=base+'/summary';
+    const summary=(await (await call('uploader','GET',summaryPath,200)).json()).summary;
+    assert.deepEqual(summary,{
+      ordersTotal:1,registered:1,inReview:0,published:0,pendingRequests:0,
+    },'El resumen debe contar la tabla completa del laboratorio.');
+    await call('patient','GET',summaryPath,403);
+    await call('admin','GET',summaryPath,403);
+    await call('uploader','GET',otherLab+'/summary',403);
     const requestPath='/orders/'+orderId+'/medical-request/file';
     await call('patient','GET',base+requestPath,403);
     await call('uploader','GET',otherLab+requestPath,403);
@@ -617,6 +625,9 @@ async function main() {
     await call('uploader','POST',pendingPath,409,pendingUpload);
     const savedList=await (await call('uploader','GET',pendingPath,200)).json();
     assert.ok(savedList.pending.some(item=>item.id===pendingId));
+    const beforeComplete=(await (await call('uploader','GET',summaryPath,200)).json()).summary;
+    assert.equal(beforeComplete.pendingRequests,1,
+      'Una derivación guardada debe sumar en el total del laboratorio.');
     await call('patient','GET',pendingPath,401);
     await call('reviewer','GET',otherLab+'/medical-requests/pending/'+pendingId+'/file',404);
     const savedPdf=await call('uploader','GET',
@@ -689,6 +700,9 @@ async function main() {
     await call('uploader','POST',pendingComplete,404,{json:pendingData});
     const pendingAfter=await (await call('uploader','GET',pendingPath,200)).json();
     assert.ok(!pendingAfter.pending.some(item=>item.id===pendingId));
+    const afterComplete=(await (await call('uploader','GET',summaryPath,200)).json()).summary;
+    assert.equal(afterComplete.pendingRequests,0);
+    assert.ok(afterComplete.ordersTotal>=2);
     const pendingSaved=await db.query(
       'SELECT status,order_id FROM public.vitalia_sil_main_pending_requests WHERE id=$1',
       [pendingId]);

@@ -364,6 +364,51 @@ export function createSilMainService(db:Pool) {
       });
     },
 
+    // Agregados del laboratorio, no el subconjunto de últimas 50 órdenes.
+    // El permiso se comprueba antes de leer los conteos y la consulta no
+    // devuelve identidades, documentos ni resultados clínicos.
+    async operatorSummary(labId:string,operatorId:string){
+      await operator(labId,operatorId);
+      const result=await db.query<{
+        ordersTotal:string; registered:string; inReview:string;
+        published:string; pendingRequests:string
+      }>(
+        `SELECT
+          (SELECT count(*) FROM public.vitalia_sil_main_orders o
+             WHERE o.lab_id=l.id) AS "ordersTotal",
+          (SELECT count(*) FROM public.vitalia_sil_main_orders o
+             WHERE o.lab_id=l.id AND o.status='registered') AS registered,
+          (SELECT count(*) FROM public.vitalia_sil_main_orders o
+             WHERE o.lab_id=l.id AND o.status='report_attached') AS "inReview",
+          (SELECT count(*) FROM public.vitalia_sil_main_orders o
+             WHERE o.lab_id=l.id AND o.status='report_published') AS published,
+          (SELECT count(*) FROM public.vitalia_sil_main_pending_requests p
+             WHERE p.lab_id=l.id AND p.status='pending') AS "pendingRequests"
+        FROM public.vitalia_sil_main_laboratories l
+        WHERE l.id=$1 AND l.active`,
+        [labId]);
+      if(!result.rows.length)throw new SilMainNotFound();
+      const counts=result.rows[0];
+      // PostgreSQL devuelve count() como bigint de texto.
+      const toCount=(value:string)=>{
+        // count() de PostgreSQL llega como entero decimal, nunca como null.
+        // Evitar presentar 0 si una respuesta malformada trae null o vacío.
+        if(typeof value!=='string'||!/^(0|[1-9][0-9]*)$/.test(value)){
+          throw new SilMainConflict();
+        }
+        const number=Number(value);
+        if(!Number.isSafeInteger(number))throw new SilMainConflict();
+        return number;
+      };
+      return {summary:{
+        ordersTotal:toCount(counts.ordersTotal),
+        registered:toCount(counts.registered),
+        inReview:toCount(counts.inReview),
+        published:toCount(counts.published),
+        pendingRequests:toCount(counts.pendingRequests),
+      }};
+    },
+
     async listOrders(labId:string,accountId:string,role:string,
       limit:number,offset:number,filters:{search?:string;status?:string;patientId?:string}={}){
       const search=filters.search??null;

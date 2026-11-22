@@ -208,6 +208,16 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       res.locals.account.id,data.data.identityEvidenceReference));
   });
 
+  // Conteos administrativos sin información identificatoria de pacientes.
+  // Nunca son públicos ni se comparten entre laboratorios.
+  router.get('/labs/:labId/summary',staff,labPath,async(req,res)=>{
+    if(res.locals.account.role!=='operador_laboratorio'){
+      res.status(403).json({error:{code:'FORBIDDEN'}});return;
+    }
+    res.json(await main.operatorSummary(
+      req.params.labId as string,res.locals.account.id));
+  });
+
   router.get('/labs/:labId/orders',staff,labPath,async(req,res)=>{
     const data=z.object({
       limit:z.coerce.number().int().min(1).max(50).default(20),

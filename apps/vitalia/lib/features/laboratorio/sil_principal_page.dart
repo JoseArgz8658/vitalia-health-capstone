@@ -86,6 +86,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   XFile? _pdf;
   List<Map<String,dynamic>> _labs = [];
   List<Map<String,dynamic>> _orders = [];
+  // Totales calculados por PostgreSQL; null = aún no disponible.
+  Map<String,int>? _operatorSummary;
+  int _summaryCount(String key,int fallback) =>
+      _operatorSummary?[key] ?? fallback;
   final _orderSearch = TextEditingController();
   List<Map<String,dynamic>> _orderPage = [];
   Map<String,dynamic>? _clinicalOrder;
@@ -180,6 +184,40 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if(_admin && _labId!=null) await _loadStaff();
   }
 
+  /// Consulta cifras completas del laboratorio; nunca se atribuyen totales
+  /// al subconjunto de 50 órdenes visible en la estación.
+  Future<void> _refreshOperatorSummary() async {
+    final lab = _labId;
+    if (!_operator || lab == null) {
+      if (mounted) setState(() => _operatorSummary = null);
+      return;
+    }
+    // Al cambiar de laboratorio o refrescar, no mostrar cifras caducadas.
+    if (mounted) setState(() => _operatorSummary = null);
+    try {
+      final response = await widget.api.silMainRequest('/labs/$lab/summary');
+      if (!mounted || lab != _labId) return;
+      final raw = response['summary'];
+      if (raw is! Map) return;
+      const fields = [
+        'ordersTotal','registered','inReview','published','pendingRequests',
+      ];
+      final parsed = <String,int>{};
+      for (final field in fields) {
+        final value = raw[field];
+        if (value is! int || value < 0) return;
+        parsed[field] = value;
+      }
+      setState(() => _operatorSummary = parsed);
+    } on AuthFailure catch (error) {
+      if (error.status == 401) rethrow;
+      // El trabajo operativo sigue disponible, pero no se presentan
+      // estimaciones como estadísticas completas.
+    } catch (_) {
+      // Las listas recientes siguen disponibles con su alcance identificado.
+    }
+  }
+
   Future<void> _loadPendingRequests() async {
     final lab=_labId;
     if(!_operator||lab==null) {
@@ -191,6 +229,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if(!mounted||_labId!=lab)return;
     setState(()=>_pendingRequests=(data['pending'] as List? ?? [])
       .map((row)=>Map<String,dynamic>.from(row as Map)).toList());
+    await _refreshOperatorSummary();
   }
 
   // Lista de operadores que ya tienen acceso al laboratorio actual.
@@ -224,6 +263,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if (_activeSection == _StationSection.orders || _admin || _orderPage.isNotEmpty) {
       await _loadOrderPage(offset: _orderOffset);
     }
+    if (_operator) await _refreshOperatorSummary();
   }
 
   void _validateOrderSelections() {
@@ -362,6 +402,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _patientOffset = 0;
     _morePatients = false;
     _orders = [];
+    _operatorSummary = null;
     _orderPage = [];
     _clinicalOrder = null;
     _ordersPatient = null;
@@ -2013,7 +2054,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   );
 
   Widget _navigation() {
-    final pending = _orders.where(_isReviewable).length;
+    final pending = _summaryCount(
+      'inReview',_orders.where(_isReviewable).length);
     final destinations = [
       (_StationSection.dashboard, Icons.dashboard_outlined, 'Resumen'),
       (_StationSection.orders, Icons.assignment_outlined, 'Órdenes'),
@@ -2111,26 +2153,30 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
 
 
   Widget _operatorMetrics() {
-    // El API entrega hasta 50 órdenes y 50 derivaciones pendientes.
-    // Las tarjetas muestran solo el recuento del conjunto consultado.
+    // Si el resumen está disponible, son totales de este laboratorio.
+    // Sin él, mostrar las cifras recientes con un alcance explícito.
     final counts = <({IconData icon, String label, int value,
       _StationSection destination, Color color, Color tint})>[
       (icon: Icons.note_add_outlined, label: 'Derivaciones pendientes',
-        value: _pendingRequests.length, destination: _StationSection.requests,
+        value: _summaryCount('pendingRequests',_pendingRequests.length),
+        destination: _StationSection.requests,
         color: const Color(0xFFB54B5D), tint: ColoresVitalia.errorSuave),
-      (icon: Icons.assignment_outlined, label: 'Órdenes consultadas',
-        value: _orders.length, destination: _StationSection.orders,
+      (icon: Icons.assignment_outlined, label: 'Total de órdenes',
+        value: _summaryCount('ordersTotal',_orders.length),
+        destination: _StationSection.orders,
         color: OperatorPalette.blue, tint: ColoresVitalia.azulSuave),
       (icon: Icons.inventory_2_outlined, label: 'Órdenes registradas',
-        value: _orders.where((o) => o['status'] == 'registered').length,
+        value: _summaryCount('registered',
+          _orders.where((o) => o['status'] == 'registered').length),
         destination: _StationSection.orders,
         color: const Color(0xFF99630F), tint: ColoresVitalia.advertenciaSuave),
       (icon: Icons.fact_check_outlined, label: 'PDF pendientes de revisión',
-        value: _orders.where(_isReviewable).length,
+        value: _summaryCount('inReview',_orders.where(_isReviewable).length),
         destination: _canReview ? _StationSection.review : _StationSection.orders,
         color: const Color(0xFF7454A8), tint: ColoresVitalia.pendienteSuave),
       (icon: Icons.picture_as_pdf_outlined, label: 'Informes publicados',
-        value: _orders.where((o) => o['status'] == 'report_published').length,
+        value: _summaryCount('published',
+          _orders.where((o) => o['status'] == 'report_published').length),
         destination: _StationSection.orders,
         color: OperatorPalette.teal, tint: ColoresVitalia.verdeSuave),
     ];
@@ -2150,7 +2196,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               count: item.value,
               accent: item.color,
               tint: item.tint,
-              caption: 'En listas recientes (máx. 50)',
+              caption: _operatorSummary != null
+                ? 'Total del laboratorio'
+                : 'Solo lista reciente (máx. 50)',
               onTap: _busy ? null : () => _openSection(item.destination),
             ),
           ),
@@ -2159,7 +2207,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   }
 
   Widget _dashboard() {
-    final pending = _orders.where(_isReviewable).length;
+    final pending = _summaryCount(
+      'inReview',_orders.where(_isReviewable).length);
+    final isTotal = _operatorSummary != null;
     final shortcuts = _section('Accesos rápidos',
       'Inicia o continúa una tarea desde el mismo panel.',
       Icons.bolt_outlined, [
@@ -2195,15 +2245,19 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         ],
       ]);
     final queues = _section('Colas del laboratorio',
-      'Recuentos de las listas cargadas, no del histórico completo.',
+      isTotal
+          ? 'Totales actuales del laboratorio seleccionado.'
+          : 'Solo registros recientes cargados; no representan el total del laboratorio.',
       Icons.work_outline, [
         _queueLink(Icons.note_add_outlined, 'Derivaciones pendientes',
-          _pendingRequests.length, _StationSection.requests),
-        _queueLink(Icons.assignment_outlined, 'Órdenes consultadas',
-          _orders.length, _StationSection.orders),
+          _summaryCount('pendingRequests',_pendingRequests.length),
+          _StationSection.requests, total: isTotal),
+        _queueLink(Icons.assignment_outlined, 'Órdenes del laboratorio',
+          _summaryCount('ordersTotal',_orders.length),
+          _StationSection.orders, total: isTotal),
         if (_canReview)
           _queueLink(Icons.fact_check_outlined, 'Informes por revisar',
-            pending, _StationSection.review),
+            pending, _StationSection.review, total: isTotal),
       ]);
     final notices = _section('Trabajo seguro',
       'La publicación es una acción independiente.',
@@ -2280,12 +2334,15 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     ]);
   }
 
-  Widget _queueLink(IconData icon, String title, int count, _StationSection section) =>
+  Widget _queueLink(IconData icon, String title, int count,
+      _StationSection section, {bool total = false}) =>
     ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(icon, color: ColoresVitalia.azul),
       title: Text(title),
-      subtitle: Text('$count en la lista'),
+      subtitle: Text(total
+          ? '$count en el laboratorio'
+          : '$count en la lista reciente (parcial)'),
       trailing: const Icon(Icons.chevron_right),
       onTap: _busy ? null : () => _openSection(section),
     );
@@ -2403,8 +2460,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               support: OperatorInfoNote(
                 icon: Icons.fact_check_outlined,
                 title: 'Revisión y publicación',
-                description: 'Pendientes en órdenes recientes: ' +
-                    _orders.where(_isReviewable).length.toString() +
+                description: (_operatorSummary == null
+                    ? 'Pendientes entre órdenes recientes: '
+                    : 'Pendientes en este laboratorio: ') +
+                    _summaryCount('inReview',
+                      _orders.where(_isReviewable).length).toString() +
                     '. La publicación requiere autorización.',
                 color: OperatorPalette.teal,
                 background: ColoresVitalia.verdeSuave,
