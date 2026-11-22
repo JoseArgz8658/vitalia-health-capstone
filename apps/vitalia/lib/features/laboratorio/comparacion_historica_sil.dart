@@ -35,7 +35,7 @@ class ComparacionHistoricaSil extends StatelessWidget {
       final rawValue = measurement['value'];
       final date = DateTime.tryParse(
         (measurement['authorizedAt'] ?? '').toString(),
-      );
+      )?.toLocal();
       if (rawValue is! num || !rawValue.isFinite || date == null) continue;
       points.add(_HistoryPoint(
         date: date,
