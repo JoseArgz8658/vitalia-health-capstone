@@ -898,41 +898,41 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
     );
   }
 
-  Widget _portalTools() => SilWorkspaceSurface(
+  Widget _portalTools() => SilWorkspaceColumns(
+    primary: _portalAction(
+      title: 'Historial de resultados',
+      description: 'Revisa tus informes publicados y compara resultados de distintas fechas.',
+      icon: Icons.timeline_outlined,
+      action: _reports.length >= 2 ? 'Comparar informes' : 'Cómo leer mis resultados',
+      onPressed: _reports.length >= 2
+          ? () => _openOverview()
+          : () => PortalAyudaSil.preguntasFrecuentes(context),
+    ),
+    secondary: _portalAction(
+      title: 'Ayuda con tus informes',
+      description: 'Encuentra cómo comunicarte con el laboratorio que emitió el informe.',
+      icon: Icons.support_agent_outlined,
+      action: 'Contacto del laboratorio',
+      onPressed: _openLaboratoryContact,
+    ),
+  );
+
+  Widget _portalAction({
+    required String title,
+    required String description,
+    required IconData icon,
+    required String action,
+    required VoidCallback onPressed,
+  }) => SilWorkspaceSurface(
     padding: const EdgeInsets.all(22),
     child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SilWorkspaceHeading(
-          section: true,
-          title: 'Historial y orientación',
-        ),
+        Icon(icon, color: ColoresVitalia.verde, size: 27),
+        const SizedBox(height: 12),
+        SilWorkspaceHeading(section: true, title: title, description: description),
         const SizedBox(height: 14),
-        Align(
-          alignment: AlignmentDirectional.centerStart,
-          child: OutlinedButton.icon(
-            onPressed: _reports.length >= 2
-                ? () => _openOverview()
-                : () => PortalAyudaSil.preguntasFrecuentes(context),
-            icon: Icon(
-              _reports.length >= 2 ? Icons.compare_arrows : Icons.help_outline,
-            ),
-            label: Text(
-              _reports.length >= 2
-                  ? 'Comparar informes'
-                  : 'Cómo leer mis resultados',
-            ),
-          ),
-        ),
-        const Divider(height: 24),
-        Align(
-          alignment: AlignmentDirectional.centerStart,
-          child: TextButton.icon(
-            onPressed: _openLaboratoryContact,
-            icon: const Icon(Icons.support_agent_outlined),
-            label: const Text('Contacto del laboratorio'),
-          ),
-        ),
+        OutlinedButton(onPressed: onPressed, child: Text(action)),
       ],
     ),
   );
@@ -1212,8 +1212,8 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 '${publishedAt == null ? '' : ' · ${_date(publishedAt)}'}',
         action: OutlinedButton.icon(
           style: OutlinedButton.styleFrom(
-            backgroundColor: const Color(0xFFBEEFE3),
-            foregroundColor: const Color(0xFF102C3F),
+            backgroundColor: const Color(0xFFD8EDCA),
+            foregroundColor: const Color(0xFF18382C),
             side: BorderSide.none,
           ),
           onPressed: _scrollToReports,

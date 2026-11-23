@@ -83,6 +83,9 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   Map<String,dynamic>? _reviewSelectedOrder;
   List<Map<String,dynamic>> _reviewOrders = [];
   int _reviewOffset = 0;
+  String _reviewSearch = '';
+  final _reviewSearchInput = TextEditingController();
+  final _reviewDetailKey = GlobalKey();
   bool _moreReviewOrders = false;
   static const _reviewPageSize = 20;
   XFile? _pdf;
@@ -140,7 +143,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   @override
   void dispose(){
     for(final ctrl in [
-      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_evidence,
+      _name,_inviteEmail,_staffAccount,_invitedPatientEmail,_patientSearch,_orderSearch,_reviewSearchInput,_evidence,
       _requestPatient,_requestInviteEmail,_requestIdentityEvidence,
       _requestPrescriber,_requestDate,
       _reportProfessional,_reportReference,_reportDate,
@@ -351,6 +354,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       'limit': '$_reviewPageSize',
       'offset': '$offset',
       'status': 'report_attached',
+      if (_reviewSearch.isNotEmpty) 'search': _reviewSearch,
     }).query;
     final data = await widget.api.silMainRequest('/labs/$lab/orders?$query');
     if (!mounted || _labId != lab || !_canReview) return;
@@ -455,6 +459,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     _reviewSelectedOrder = null;
     _reviewOrders = [];
     _reviewOffset = 0;
+    _reviewSearch = '';
+    _reviewSearchInput.clear();
     _moreReviewOrders = false;
     _reviewPdfDownloaded = false;
     _reviewConfirmed = false;
@@ -2266,7 +2272,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
               decoration: BoxDecoration(
                 color: index == current
-                    ? const Color(0xFFBEEFE3)
+                    ? const Color(0xFFD8EDCA)
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -2785,66 +2791,76 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   );
 
   Widget _reviewPanel() {
-    // Un acceso directo desde una orden reciente conserva esa selección,
-    // incluso cuando la orden no esté en la página actual de la bandeja.
-    final choices = <String, Map<String, dynamic>>{
-      for (final order in _reviewOrders) order['id'] as String: order,
-      if (_reviewSelectedOrder != null &&
-          _reviewSelectedOrder!['id'] is String &&
-          _isReviewable(_reviewSelectedOrder!))
-        _reviewSelectedOrder!['id'] as String: _reviewSelectedOrder!,
-    }.values.toList();
-    return _section(
-      'Validación y publicación',
-      'Revisa el PDF y confirma su autorización externa antes de publicarlo.',
-      Icons.fact_check_outlined,
+    final selected = _reviewSelectedOrder;
+    final queue = _section(
+      'Informes pendientes',
+      'Busca y selecciona un informe para abrir su revisión.',
+      Icons.inbox_outlined,
       [
-        if (choices.isNotEmpty)
-          Semantics(
-            identifier: 'sil-review-order',
-            child: DropdownButtonFormField<String>(
-              key: ValueKey((
-                _labId,
-                _reviewOffset,
-                _reviewOrderId,
-                'review-queue',
-              )),
-              initialValue: _reviewOrderId,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                border: OutlineInputBorder(),
-                labelText: 'Informe pendiente de revisión',
-              ),
-              items: [
-                for (final order in choices)
-                  DropdownMenuItem<String>(
-                    value: order['id'] as String,
-                    child: Text(
-                      _orderLabel(order),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-              ],
-              onChanged: _busy
-                  ? null
-                  : (v) => setState(() {
-                      _reviewOrderId = v;
-                      _reviewSelectedOrder = v == null
-                          ? null
-                          : choices
-                                .where((order) => order['id'] == v)
-                                .firstOrNull;
-                      _reviewPdfDownloaded = false;
-                      _reviewConfirmed = false;
-                    }),
+        TextField(
+          controller: _reviewSearchInput,
+          maxLength: 150,
+          decoration: const InputDecoration(
+            labelText: 'Folio, nombre o correo del paciente',
+            prefixIcon: Icon(Icons.search),
+            counterText: '',
+          ),
+          textInputAction: TextInputAction.search,
+          onSubmitted: _busy ? null : (_) => _searchReviewQueue(),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            FilledButton.tonal(
+              onPressed: _busy ? null : _searchReviewQueue,
+              child: const Text('Buscar informes'),
             ),
+            if (_reviewSearch.isNotEmpty)
+              TextButton(
+                onPressed: _busy ? null : () {
+                  _reviewSearchInput.clear();
+                  _searchReviewQueue();
+                },
+                child: const Text('Limpiar búsqueda'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (_reviewOrders.isEmpty && !_busy)
+          Text(_reviewSearch.isEmpty
+              ? 'No hay informes pendientes.'
+              : 'No encontramos informes con esa búsqueda.'),
+        for (final order in _reviewOrders)
+          ListTile(
+            key: ValueKey('sil-review-order-${order['id']}'),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            selected: _reviewOrderId == order['id'],
+            selectedTileColor: ColoresVitalia.verdeSuave,
+            leading: const Icon(Icons.description_outlined),
+            title: Text(_orderLabel(order)),
+            subtitle: order['patientName'] is String || order['siteName'] is String
+                ? Text([order['patientName'], order['siteName']].whereType<String>().join(' · '))
+                : null,
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _busy ? null : () {
+              setState(() {
+                _reviewOrderId = order['id'] as String;
+                _reviewSelectedOrder = order;
+                _reviewPdfDownloaded = false;
+                _reviewConfirmed = false;
+              });
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                final detailContext = _reviewDetailKey.currentContext;
+                if (detailContext != null) {
+                  Scrollable.ensureVisible(detailContext,
+                      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
+                }
+              });
+            },
           ),
-        const SizedBox(height: 10),
-        if (choices.isEmpty && !_busy)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 10),
-            child: Text('No hay informes pendientes en esta página.'),
-          ),
+        const SizedBox(height: 12),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -2886,6 +2902,15 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             ),
           ],
         ),
+      ],
+    );
+    final detail = _section(
+      'Validación y publicación',
+      selected == null
+          ? 'Selecciona un informe de la bandeja para revisar el PDF y su autorización.'
+          : _orderLabel(selected),
+      Icons.fact_check_outlined,
+      [
         if (_reviewOrderId != null) ...[
           const SizedBox(height: 10),
           FilledButton.icon(
@@ -2928,6 +2953,25 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         ],
       ],
     );
+    return SilWorkspaceColumns(
+      primaryFlex: 7,
+      secondaryFlex: 5,
+      primary: queue,
+      secondary: KeyedSubtree(key: _reviewDetailKey, child: detail),
+    );
+  }
+
+  void _searchReviewQueue() {
+    _execute(() async {
+      setState(() {
+        _reviewSearch = _reviewSearchInput.text.trim();
+        _reviewOrderId = null;
+        _reviewSelectedOrder = null;
+        _reviewPdfDownloaded = false;
+        _reviewConfirmed = false;
+      });
+      await _loadReviewPage(offset: 0);
+    }, showNotice: false);
   }
 
   Future<void> _loadPatients({required int offset, String? search}) async {
@@ -3144,16 +3188,18 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                   ),
                   const SizedBox(height: 16),
                   if (_staffLoaded)
-                    Wrap(
-                      spacing: 32,
-                      runSpacing: 10,
-                      children: [
-                        Text('${_labStaff.length} operadores asociados'),
-                        Text(
-                          '${_labStaff.where((member) => member['active'] == true && member['canReviewReports'] == true).length} '
-                          'operadores con permiso de revisión',
-                        ),
-                      ],
+                    SilWorkspaceColumns(
+                      primary: SilWorkspaceSummaryStat(
+                        icon: Icons.groups_outlined,
+                        label: 'Operadores asociados',
+                        value: '${_labStaff.length}',
+                      ),
+                      secondary: SilWorkspaceSummaryStat(
+                        icon: Icons.verified_user_outlined,
+                        label: 'Con permiso de revisión',
+                        value: '${_labStaff.where((member) =>
+                            member['active'] == true && member['canReviewReports'] == true).length}',
+                      ),
                     )
                   else
                     Text(
@@ -3240,8 +3286,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           detail: 'Carga la solicitud médica para iniciar el registro de una orden.',
           action: FilledButton.icon(
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFBEEFE3),
-              foregroundColor: const Color(0xFF102C3F),
+              backgroundColor: const Color(0xFFD8EDCA),
+              foregroundColor: const Color(0xFF18382C),
             ),
             onPressed: _busy ? null : () => _openSection(_StationSection.requests),
             icon: const Icon(Icons.note_add_outlined),
@@ -3391,15 +3437,17 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           primaryFlex: 7,
           secondaryFlex: 4,
           primary: _patientDirectory(),
-          secondary: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+          secondary: _section(
+            'Acceso al portal',
+            'Vincula una cuenta existente o invita a un paciente.',
+            Icons.key_outlined,
+            [
               OutlinedButton.icon(
                 onPressed: _busy ? null : _redeemPatientLink,
                 icon: const Icon(Icons.link),
                 label: const Text('Vincular cuenta paciente'),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               SilWorkspaceDisclosure(
                 title: 'Invitar paciente',
                 icon: Icons.person_add_alt_1_outlined,

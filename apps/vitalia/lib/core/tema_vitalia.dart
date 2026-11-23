@@ -3,18 +3,18 @@ import 'package:flutter/material.dart';
 /// Sistema visual Vitalia: contraste legible y colores reservados para acciones
 /// y estados. Los tonos suaves favorecen el uso prolongado de la aplicación.
 abstract final class ColoresVitalia {
-  static const azul = Color(0xFF155D73);
-  static const azulActivo = Color(0xFF172E40);
-  static const azulSuave = Color(0xFFE5F0F3);
-  static const verde = Color(0xFF1A776D);
-  static const verdeSuave = Color(0xFFE7F3F2);
-  static const fondoAzul = Color(0xFFF5F7F8);
+  static const azul = Color(0xFF245942);
+  static const azulActivo = Color(0xFF19342A);
+  static const azulSuave = Color(0xFFE7EFE8);
+  static const verde = Color(0xFF2A6950);
+  static const verdeSuave = Color(0xFFE8F2EB);
+  static const fondoAzul = Color(0xFFF5F5EE);
   static const blanco = Color(0xFFFFFFFF);
-  static const texto = Color(0xFF172E40);
-  static const textoSecundario = Color(0xFF4A6274);
-  static const borde = Color(0xFFD3DDE4);
-  static const bordeTenue = Color(0xFFE9EEF2);
-  static const advertenciaSuave = Color(0xFFFEF5E8);
+  static const texto = Color(0xFF19342A);
+  static const textoSecundario = Color(0xFF4D6256);
+  static const borde = Color(0xFFD7DED5);
+  static const bordeTenue = Color(0xFFE7EBE3);
+  static const advertenciaSuave = Color(0xFFF6EBD3);
   static const pendienteSuave = Color(0xFFECF0FA);
   static const error = Color(0xFFB54B5D);
   static const errorSuave = Color(0xFFFBECEF);

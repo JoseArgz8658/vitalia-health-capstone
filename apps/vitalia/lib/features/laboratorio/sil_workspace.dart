@@ -254,7 +254,7 @@ class SilWorkspaceSidebar extends StatelessWidget {
         child: SizedBox(
           width: 244,
           child: ColoredBox(
-            color: const Color(0xFF102C3F),
+            color: const Color(0xFF18382C),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
               children: [
@@ -268,11 +268,11 @@ class SilWorkspaceSidebar extends StatelessWidget {
                         style: TextButton.styleFrom(
                           alignment: AlignmentDirectional.centerStart,
                           foregroundColor: tab.selected
-                              ? const Color(0xFF102C3F)
-                              : const Color(0xFFE2EEF3),
-                          disabledForegroundColor: const Color(0xFFB0C5D1),
+                              ? const Color(0xFF18382C)
+                              : const Color(0xFFE8F0E5),
+                          disabledForegroundColor: const Color(0xFFB8CBBF),
                           backgroundColor: tab.selected
-                              ? const Color(0xFFBEEFE3)
+                              ? const Color(0xFFD8EDCA)
                               : Colors.transparent,
                           minimumSize: const Size.fromHeight(52),
                           padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -370,7 +370,11 @@ class SilWorkspaceBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) => DecoratedBox(
         decoration: const BoxDecoration(
-          color: Color(0xFF12384B),
+          gradient: LinearGradient(
+            colors: [Color(0xFF18382C), Color(0xFF2A5A43)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
           borderRadius: BorderRadius.all(Radius.circular(20)),
         ),
         child: Padding(
@@ -391,7 +395,7 @@ class SilWorkspaceBanner extends StatelessWidget {
               const SizedBox(height: 8),
               Text(detail,
                   style:
-                      const TextStyle(color: Color(0xFFD9E9EF), height: 1.45)),
+                      const TextStyle(color: Color(0xFFE6EFE3), height: 1.45)),
               const SizedBox(height: 20),
               action,
             ],
