@@ -14,8 +14,31 @@ const labId=(index:number)=>id('lab:'+index);
 const siteId=(lab:number,index:number)=>id('site:'+lab+':'+index);
 const operatorId=(index:number)=>id('operator:'+index);
 const patientId=(index:number)=>id('patient:'+index);
-const email=(name:string,index?:number)=>name+
-  (index===undefined?'':'-'+String(index).padStart(3,'0'))+'@showcase.example.invalid';
+const labs=['Laboratorio Clínico Alto Canelo','Laboratorio Clínico Bahía Arrayán'];
+const oldLabs=['DEMO - Laboratorio Cordillera','DEMO - Laboratorio Costa'];
+const firstNames=['Francisca','Daniela','Martín','Valentina','Cristóbal','Camila','Javiera','Felipe','Sofía','Tomás','Paula','Antonia'];
+const surnames=['Valenzuela','Araya','Sepúlveda','Contreras','Rojas','Mella','Fuentes','Tapia','Soto','Navarro','Vidal','Salinas','Leiva','Carrasco','Peña','Molina','Parra'];
+const slug=(name:string)=>name.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
+const patientName=(index:number)=>[firstNames[(index-1)%12],surnames[Math.floor((index-1)/12)]];
+function email(role:string,index:number){
+  if(role==='operador'){
+    const domain=index<=7?'altocanelo.example.invalid':'bahiaarrayan.example.invalid';
+    const site=['central','norte','sur'][(index-1)%3];
+    return slug(firstNames[index-1]+'.'+surnames[index-1])+'.'+site+'@'+domain;
+  }
+  const [first,last]=patientName(role==='por-activar'?index+132:index);
+  return slug(first.slice(0,4)+(24+index%60)+last)+'@correo.example.invalid';
+}
+const legacyEmail=(role:string,index:number)=>
+  role+'-'+String(index).padStart(3,'0')+'@showcase.example.invalid';
+const password=()=>['Cordillera','Arrayan','Litoral'][randomBytes(1)[0]%3]+
+  '-'+randomBytes(9).toString('base64url')+'!';
+type Credentials=Map<string,{address:string;password:string}>;
+async function accountPassword(credentials:Credentials,id:string,address:string){
+  const secret=password();
+  credentials.set(id,{address,password:secret});
+  return hashPassword(secret);
+}
 
 function pdf(lines:string[]){
   const stream='BT /F1 15 Tf 50 740 Td '+lines.map(line=>'('+line+') Tj').join(' 0 -28 Td ')+' ET';
@@ -36,9 +59,7 @@ function pdf(lines:string[]){
     'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+output.length+'\n%%EOF\n','ascii');
 }
 
-async function seed(tx:PoolClient,admin:string,credentials:{operator:string;patient:string}){
-  const operatorHash=await hashPassword(credentials.operator);
-  const patientHash=await hashPassword(credentials.patient);
+async function seed(tx:PoolClient,admin:string,credentials:Credentials){
   async function account(accountId:string,address:string,role:string,hash:string){
     await tx.query('INSERT INTO vitalia_accounts(id,email,role_code,password_hash) VALUES ($1,$2,$3,$4)',
       [accountId,address,role,hash]);
@@ -52,12 +73,12 @@ async function seed(tx:PoolClient,admin:string,credentials:{operator:string;pati
   const date=(days:number)=>new Date(anchor-days*day);
   for(let lab=0;lab<2;lab++){
     await tx.query('INSERT INTO vitalia_sil_main_laboratories(id,display_name,created_by,created_at) VALUES ($1,$2,$3,$4)',
-      [labId(lab),['DEMO - Laboratorio Cordillera','DEMO - Laboratorio Costa'][lab],admin,date(740)]);
+      [labId(lab),labs[lab],admin,date(740)]);
     await audit('lab:'+lab,labId(lab),admin,'laboratory_created',null,date(740));
     for(let site=0;site<3;site++){
       await tx.query(`INSERT INTO vitalia_sil_main_sites(id,lab_id,name,address,commune,region)
         VALUES ($1,$2,$3,$4,$5,$6)`,[siteId(lab,site),labId(lab),
-        ['Casa matriz','Sede Norte','Sede Sur'][site],'Vía ficticia '+(100+site),
+        ['Casa matriz','Sede Norte','Sede Sur'][site],['Paseo del Canelo','Pasaje del Mirador','Camino del Arrayán'][site]+' '+(100+site),
         (lab===0?['Providencia','Conchalí','Ñuñoa']:['Valparaíso','Viña del Mar','Quilpué'])[site],
         lab===0?'Metropolitana de Santiago':'Valparaíso']);
       await audit('site:'+lab+':'+site,labId(lab),admin,'site_created',null,date(739));
@@ -65,7 +86,7 @@ async function seed(tx:PoolClient,admin:string,credentials:{operator:string;pati
   }
   for(let index=1;index<=10;index++){
     const lab=index<=7?0:1;
-    await account(operatorId(index),email('operador',index),'operador_laboratorio',operatorHash);
+    await account(operatorId(index),email('operador',index),'operador_laboratorio',await accountPassword(credentials,operatorId(index),email('operador',index)));
     await tx.query(`INSERT INTO vitalia_sil_main_staff
       (lab_id,account_id,kind,granted_by,can_review_reports)
       VALUES ($1,$2,'operator',$3,$4)`,
@@ -74,11 +95,11 @@ async function seed(tx:PoolClient,admin:string,credentials:{operator:string;pati
   }
   for(let index=1;index<=132;index++){
     const lab=index<=120?0:1;
-    await account(patientId(index),email('paciente',index),'paciente',patientHash);
+    await account(patientId(index),email('paciente',index),'paciente',await accountPassword(credentials,patientId(index),email('paciente',index)));
     const person=id('person:'+index);
     await tx.query(`INSERT INTO vitalia_people(id,account_id,first_name,first_surname,birth_date)
       VALUES ($1,$2,$3,$4,$5)`,[person,patientId(index),
-      ['Alex','Cris','Dani','Fran','Martín','Valentina'][index%6],'Simulación '+index,
+      ...patientName(index),
       date(365*(20+index%55))]);
     await tx.query('INSERT INTO vitalia_patient_profiles(person_id) VALUES ($1)',[person]);
     await tx.query(`INSERT INTO vitalia_sil_main_patients
@@ -103,25 +124,25 @@ async function seed(tx:PoolClient,admin:string,credentials:{operator:string;pati
       VALUES ($1,$2,$3,$4,$5,$6,$7)`,[order,labId(lab),patient,site,status,actor,created]);
     await tx.query(`INSERT INTO vitalia_sil_main_order_exams(order_id,exam_code)
       SELECT $1::uuid,unnest($2::text[])`,[order,includesA1c?['glicemia','hba1c']:['glicemia']]);
-    const request=pdf(['Vitalia | Solicitud ficticia '+index,'Observacion: Control de seguimiento simulado','Glicemia',...(includesA1c?['HbA1c']:[])]);
+    const request=pdf(['Vitalia | Solicitud medica '+index,'Observacion: Control de seguimiento','Glicemia',...(includesA1c?['HbA1c']:[])]);
     await tx.query(`INSERT INTO vitalia_sil_main_medical_requests
       (id,order_id,lab_id,patient_id,document_reference,prescriber_name,request_date,file_name,
        pdf_data,pdf_sha256,patient_identity_confirmed,human_review_confirmed,received_by,received_at)
-      VALUES ($1,$2,$3,$4,$5,'Profesional ficticio',$6::timestamptz::date,$7,$8,$9,true,true,$10,$6)`,
+      VALUES ($1,$2,$3,$4,$5,'Dra. Elisa Paredes',$6::timestamptz::date,$7,$8,$9,true,true,$10,$6)`,
       [id('request:'+index),order,labId(lab),patient,'SOL-SIM-'+index,created,
-        'solicitud-simulada-'+index+'.pdf',request,digest(request),actor]);
+        'solicitud-medica-'+index+'.pdf',request,digest(request),actor]);
     await audit('order:'+index,labId(lab),actor,'order_created',order,created);
     if(status==='registered')continue;
-    const report=pdf(['Vitalia | Informe ficticio '+index,'Fecha: '+created.toISOString().slice(0,10),
+    const report=pdf(['Vitalia | Informe de laboratorio '+index,'Fecha: '+created.toISOString().slice(0,10),
       'Glucosa: '+glucose+' mg/dL',...(includesA1c?['HbA1c: '+a1c+' %']:[]),'Documento de simulacion, sin uso clinico']);
     const publication=new Date(created.getTime()+day);
     await tx.query(`INSERT INTO vitalia_sil_main_reports
       (id,order_id,lab_id,patient_id,file_name,pdf_data,pdf_sha256,issuing_laboratory,
        external_authorization_ref,authorized_professional_name,externally_authorized_at,
        patient_match_confirmed,attached_by,attached_at,published_by,published_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Profesional ficticio',$10,true,$11,$10,$12,$13)`,
-      [id('report:'+index),order,labId(lab),patient,'informe-simulado-'+index+'.pdf',report,digest(report),
-        lab===0?'DEMO - Laboratorio Cordillera':'DEMO - Laboratorio Costa','AUT-SIM-'+index,created,
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Dra. Elisa Paredes',$10,true,$11,$10,$12,$13)`,
+      [id('report:'+index),order,labId(lab),patient,'informe-laboratorio-'+index+'.pdf',report,digest(report),
+        labs[lab],'AUT-SIM-'+index,created,
         actor,published?actor:null,published?publication:null]);
     await audit('report:'+index,labId(lab),actor,'report_attached',order,created);
     if(published)await audit('published:'+index,labId(lab),actor,'report_published',order,publication);
@@ -129,13 +150,45 @@ async function seed(tx:PoolClient,admin:string,credentials:{operator:string;pati
   for(let index=1;index<=72;index++){
     const lab=index<=60?0:1;
     const actor=operatorId(lab===0?3:9);
-    const pending=pdf(['Vitalia | Derivacion ficticia '+index,'Glicemia']);
+    const pending=pdf(['Vitalia | Derivacion medica '+index,'Glicemia']);
     await tx.query(`INSERT INTO vitalia_sil_main_pending_requests
       (id,lab_id,site_id,uploaded_by,patient_email,file_name,pdf_data,pdf_sha256,extraction_status,created_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [id('pending:'+index),labId(lab),siteId(lab,index%3),actor,email('por-activar',index),
-        'derivacion-simulada-'+index+'.pdf',pending,digest(pending),index%4?'text_ready':'needs_ocr',date(index%31)]);
+        'derivacion-medica-'+index+'.pdf',pending,digest(pending),index%4?'text_ready':'needs_ocr',date(index%31)]);
     await audit('pending:'+index,labId(lab),actor,'pending_request_saved',null,date(index%31));
+  }
+}
+
+// Actualiza únicamente la identidad de la carga histórica verificada.
+async function refreshExisting(tx:PoolClient,credentials:Credentials){
+  for(let lab=0;lab<2;lab++){
+    await tx.query(`UPDATE public.vitalia_sil_main_laboratories
+      SET display_name=$2 WHERE id=$1 AND display_name=$3`,[labId(lab),labs[lab],oldLabs[lab]]);
+    await tx.query(`UPDATE public.vitalia_sil_main_reports
+      SET issuing_laboratory=$2 WHERE lab_id=$1 AND issuing_laboratory=$3`,[labId(lab),labs[lab],oldLabs[lab]]);
+  }
+  for(const role of ['operador','paciente']){
+    for(let index=1;index<=(role==='operador'?10:132);index++){
+      const accountId=role==='operador'?operatorId(index):patientId(index);
+      const legacy=legacyEmail(role,index);
+      const found=await tx.query('SELECT 1 FROM public.vitalia_accounts WHERE id=$1 AND email=$2 FOR UPDATE',
+        [accountId,legacy]);
+      if(!found.rowCount)continue;
+      const address=email(role,index);
+      const hash=await accountPassword(credentials,accountId,address);
+      await tx.query('UPDATE public.vitalia_accounts SET email=$2,password_hash=$3 WHERE id=$1',
+        [accountId,address,hash]);
+      if(role==='paciente')await tx.query(`UPDATE public.vitalia_people SET first_name=$2,
+        first_surname=$3 WHERE account_id=$1 AND first_surname=$4`,
+        [accountId,...patientName(index),'Simulación '+index]);
+    }
+  }
+  for(let index=1;index<=72;index++){
+    await tx.query(`UPDATE public.vitalia_sil_main_pending_requests SET patient_email=$2,file_name=$3
+      WHERE id=$1 AND status='pending' AND patient_email=$4 AND file_name=$5`,
+      [id('pending:'+index),email('por-activar',index),'derivacion-medica-'+index+'.pdf',
+        legacyEmail('por-activar',index),'derivacion-simulada-'+index+'.pdf']);
   }
 }
 
@@ -164,27 +217,20 @@ async function main(){
         WHERE id=$1 AND lab_id=$2 AND action='laboratory_created'
           AND details @> '{"showcase":true,"origin":"synthetic_seed"}'
       ) AS loaded`,[id('audit:lab:0'),labId(0)]);
-      if(marker.rows[0].loaded){
-        await tx.query('COMMIT');
-        console.info('La demostración ya está cargada. Se conservaron sus datos y credenciales.');
-        return;
-      }
       const administrator=await tx.query<{id:string}>(`SELECT a.id FROM public.vitalia_accounts a
         JOIN public.vitalia_account_roles r ON r.account_id=a.id
         WHERE a.email=$1 AND r.role_code='administrador' AND r.active`,[adminEmail]);
       const admin=administrator.rows[0]?.id;
       if(!admin)throw new Error('El correo debe pertenecer a un administrador activo de Vitalia.');
-      const credentials={
-        operator:randomBytes(32).toString('hex'),
-        patient:randomBytes(32).toString('hex'),
-      };
-      await seed(tx,admin,credentials);
+      const credentials:Credentials=new Map();
+      if(marker.rows[0].loaded)await refreshExisting(tx,credentials);
+      else await seed(tx,admin,credentials);
       await tx.query('COMMIT');
-      console.info('Carga completada: 2 laboratorios DEMO, 132 pacientes, 660 órdenes y 416 informes publicados.');
-      console.info('Operadores DEMO (003 puede publicar): '+[1,2,3].map(index=>email('operador',index)).join(', '));
-      console.info('Contraseña de operador DEMO: '+credentials.operator);
-      console.info('Paciente DEMO: '+email('paciente',1));
-      console.info('Contraseña de paciente DEMO: '+credentials.patient);
+      console.info(credentials.size?'Identidades del escenario disponibles.':'El escenario ya está actualizado.');
+      for(const [index,entry] of [...credentials.values()].entries()){
+        if(index>=20)break;
+        console.info(entry.address+' / '+entry.password);
+      }
     } catch(error){
       await tx.query('ROLLBACK');
       throw error;

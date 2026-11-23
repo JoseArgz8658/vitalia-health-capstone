@@ -710,7 +710,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       color: ColoresVitalia.textoSecundario,
     );
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -964,6 +964,7 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
           maxLength: 150,
           decoration: InputDecoration(
             labelText: 'Buscar por orden, examen o laboratorio',
+            counterText: '',
             prefixIcon: const Icon(Icons.search),
             suffixIcon: query.isEmpty
                 ? null

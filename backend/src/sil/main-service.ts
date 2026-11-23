@@ -678,6 +678,7 @@ export function createSilMainService(db:Pool) {
       const results=await db.query(
         `SELECT o.id,o.order_number AS "orderNumber",o.status,
            o.patient_id AS "patientId",o.created_at AS "createdAt",
+           CASE WHEN $8 THEN NULLIF(concat_ws(' ',p.first_name,p.first_surname),'') END AS "patientName",
            o.site_id AS "siteId",s.name AS "siteName",
            ARRAY(SELECT e.exam_code FROM public.vitalia_sil_main_order_exams e
              WHERE e.order_id=o.id ORDER BY e.exam_code) AS "examCodes"
@@ -685,12 +686,14 @@ export function createSilMainService(db:Pool) {
          JOIN public.vitalia_sil_main_laboratories l ON l.id=o.lab_id AND l.active
          LEFT JOIN public.vitalia_sil_main_sites s ON s.lab_id=o.lab_id AND s.id=o.site_id
          JOIN public.vitalia_accounts a ON a.id=o.patient_id
+         LEFT JOIN public.vitalia_people p ON p.account_id=o.patient_id
          WHERE o.lab_id=$1
-           AND ($4::text IS NULL OR o.order_number::text=$5 OR strpos(lower(a.email),lower($4))>0)
+           AND ($4::text IS NULL OR o.order_number::text=$5 OR strpos(lower(a.email),lower($4))>0
+             OR ($8 AND strpos(lower(concat_ws(' ',p.first_name,p.first_surname)),lower($4))>0))
            AND ($6::text IS NULL OR o.status=$6)
            AND ($7::uuid IS NULL OR o.patient_id=$7)
          ORDER BY o.created_at DESC,o.id LIMIT $2 OFFSET $3`,
-        [labId,limit+1,offset,search,folio,filters.status??null,filters.patientId??null]);
+        [labId,limit+1,offset,search,folio,filters.status??null,filters.patientId??null,role!=='administrador']);
       return {orders:results.rows.slice(0,limit),hasMore:results.rows.length>limit};
     },
 

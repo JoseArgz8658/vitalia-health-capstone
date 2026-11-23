@@ -200,7 +200,7 @@ Finder _field(String label) => find.byWidgetPredicate(
 
 
 Future<void> _selectSavedReferral(WidgetTester tester) async {
-  final stored = _field('Derivación pendiente guardada');
+  final stored = find.text('Buscar derivación pendiente');
   await tester.ensureVisible(stored);
   await tester.tap(stored);
   await tester.pumpAndSettle();
@@ -791,7 +791,7 @@ void main() {
       await tester.ensureVisible(clinicalTab);
       await tester.tap(clinicalTab);
       await tester.pumpAndSettle();
-      expect(_field('Orden para muestras y resultados'), findsOneWidget);
+      expect(find.text('Buscar orden para muestras y resultados'), findsOneWidget);
       expect(tester.takeException(), isNull);
     }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
   }

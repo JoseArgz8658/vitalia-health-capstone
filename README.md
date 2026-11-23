@@ -610,3 +610,23 @@ laboratorios DEMO, 132 pacientes, 10 operadores, 660 órdenes, 416 informes
 publicados y 72 derivaciones pendientes en la base habitual. Se usa el
 administrador existente y la carga imprime las contraseñas ficticias una vez.
 Al repetirla, se conservan los datos y las contraseñas anteriores.
+
+#### Identidades y acceso
+
+Los dos laboratorios se presentan como **Laboratorio Clínico Alto Canelo** y
+**Laboratorio Clínico Bahía Arrayán**. Las cuentas usan nombres y apellidos,
+identificadores de sede en los correos de operadores y dominios reservados
+`.example.invalid`. El identificador de sede en el correo es descriptivo, ya
+que el esquema 046 asigna acceso por laboratorio.
+
+Si ya cargaste el escenario anterior, vuelve a ejecutar el mismo comando
+`--cargar-demostracion` con la imagen API actualizada. Se conservan las órdenes
+y los PDF existentes. El comando cambia los correos y contraseñas de las
+cuentas de la carga anterior que todavía usan el correo original, e imprime
+en la consola el acceso de los diez operadores y los primeros diez pacientes.
+Guarda esas claves localmente. El resto de las cuentas aporta historial de
+prueba. El comando no reimprime contraseñas ya emitidas.
+
+Los selectores de derivaciones y de órdenes clínicas permiten buscar y paginar
+los registros cargados. Si una orden antigua no aparece en el selector de
+muestras, búscala desde **Órdenes** por folio, nombre o correo del paciente.

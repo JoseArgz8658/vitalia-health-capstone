@@ -4,6 +4,7 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
 import '../../core/auth_api.dart';
 import '../../core/tema_vitalia.dart';
+import 'sil_record_picker.dart';
 import 'sil_workspace.dart';
 import 'sil_admin_sites.dart';
 import 'sil_patient_search_dialog.dart';
@@ -1302,7 +1303,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               ),
             ),
           LayoutBuilder(builder: (context, constraints) {
-            final search = _field(_orderSearch, 'Folio o correo del paciente',
+            final search = _field(_orderSearch, 'Folio, nombre o correo del paciente',
               identifier: 'sil-order-search');
             final statusFilter = DropdownButtonFormField<String>(
               key: ValueKey((_labId, _orderStatus)),
@@ -2370,26 +2371,19 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             ),
             if (_pendingRequests.isNotEmpty) ...[
               const SizedBox(height: 9),
-              DropdownButtonFormField<String>(
-                key: ValueKey((_labId, _pendingRequestId, 'pending-referrals')),
-                initialValue: _pendingRequestId,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Derivación pendiente guardada',
-                ),
-                items: [
+              SilRecordPicker(
+                label: 'Buscar derivación pendiente',
+                selectedId: _pendingRequestId,
+                options: [
                   for (final pending in _pendingRequests)
-                    DropdownMenuItem<String>(
-                      value: pending['id'] as String,
-                      child: Text(
-                        '${pending['fileName']} · '
-                        '${pending['patientEmail'] ?? 'Paciente por identificar'}',
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                    (
+                      id: pending['id'] as String,
+                      title: pending['fileName'] as String,
+                      detail: pending['patientEmail'] as String? ??
+                          'Paciente por identificar',
                     ),
                 ],
-                onChanged: _busy ? null : _selectPendingRequest,
+                onSelected: _busy ? null : _selectPendingRequest,
               ),
             ],
           ],
