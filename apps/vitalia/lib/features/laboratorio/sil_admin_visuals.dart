@@ -90,7 +90,7 @@ class SilAdminMetrics extends StatelessWidget {
                                     color: ColoresVitalia.texto,
                                   ),
                                 ),
-                                if (item.detail case final description) ...[
+                                if (item.detail case final String description) ...[
                                   const SizedBox(height: 4),
                                   Text(description,
                                       maxLines: 2,
