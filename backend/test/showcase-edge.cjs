@@ -34,10 +34,10 @@ async function main(){
   const browser=await chromium.launch({channel:'msedge'});
   const roles=[
     {route:'#/administracion',account:'admin',credential:'ADMIN',
-      heading:'Laboratorio Ficticio Cordillera'},
+      heading:'Administración de laboratorios'},
     {route:'#/laboratorio',account:'operador-003',credential:'OPERATOR',
       heading:'Panel del laboratorio'},
-    {route:'',account:'paciente-001',credential:'PATIENT',heading:'Mis informes'},
+    {route:'',account:'paciente-001',credential:'PATIENT'},
   ];
   try{
     for(const role of roles){
@@ -45,14 +45,15 @@ async function main(){
       try{
         for(const width of [390,1440]){
           await page.setViewportSize({width,height:900});
-          await page.getByText(role.heading,{exact:true}).first().waitFor();
+          if(role.heading)await page.getByText(role.heading,{exact:true}).first().waitFor();
           if(role.credential==='PATIENT'){
             const reports=page.getByText('Informes publicados',{exact:true});
             if(!await reports.isVisible()){
-              await page.getByText('Mis informes',{exact:true}).first().click();
+              await page.getByLabel('Navegación del paciente')
+                .getByRole('button',{name:'Mis informes',exact:true}).click();
             }
             await reports.waitFor();
-            await page.getByText('Comparar informes',{exact:true}).waitFor();
+            await page.getByRole('button',{name:'Comparar informes',exact:true}).waitFor();
           }
           console.log('Edge: '+role.credential+' '+width+' px');
         }
