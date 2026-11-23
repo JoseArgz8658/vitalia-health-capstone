@@ -2014,94 +2014,156 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     );
   }
 
-  Widget _staffDirectory() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      SilWorkspaceHeading(
-        title: 'Directorio de operadores',
-        actions: [
-          _labSelector(),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _showAdminHistory(invitations: true),
-            icon: const Icon(Icons.mail_outline),
-            label: const Text('Ver invitaciones'),
-          ),
-          OutlinedButton.icon(
-            onPressed: _busy
-                ? null
-                : () => _execute(_loadStaff, showNotice: false),
-            icon: const Icon(Icons.refresh),
-            label: const Text('Actualizar operadores'),
-          ),
-          FilledButton.icon(
-            onPressed: _busy ? null : () => _manageOperator(),
-            icon: const Icon(Icons.person_add_alt_1_outlined),
-            label: const Text('Agregar operador'),
-          ),
-        ],
-      ),
-      const SizedBox(height: 14),
-      SilWorkspaceSurface(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final wide =
-                constraints.maxWidth >= 810 &&
-                MediaQuery.textScalerOf(context).scale(14) <= 17;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget _staffDirectory() {
+    final active = _labStaff.where((member) => member['active'] == true).length;
+    final reviewers = _labStaff.where((member) =>
+        member['active'] == true && member['canReviewReports'] == true).length;
+    final limited = _labStaff.where((member) =>
+        member['active'] == true && member['siteAccessMode'] == 'selected').length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SilWorkspaceHeading(
+          title: 'Directorio de operadores',
+          description: 'Administra el acceso del personal y sus sedes autorizadas.',
+          actions: [
+            OutlinedButton.icon(
+              onPressed: _busy ? null : () => _showAdminHistory(invitations: true),
+              icon: const Icon(Icons.mail_outline),
+              label: const Text('Ver invitaciones'),
+            ),
+            FilledButton.icon(
+              onPressed: _busy ? null : () => _manageOperator(),
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+              label: const Text('Agregar operador'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SilWorkspaceSurface(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+          child: LayoutBuilder(builder: (context, bounds) {
+            final label = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_labStaff.isEmpty)
+                Text('Laboratorio', style:
+                  Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: ColoresVitalia.textoSecundario)),
+                const SizedBox(height: 4),
+                _labSelector(),
+              ],
+            );
+            final refresh = OutlinedButton.icon(
+              onPressed: _busy ? null :
+                  () => _execute(_loadStaff, showNotice: false),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Actualizar operadores'),
+            );
+            if (bounds.maxWidth < 630) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  label,
+                  const SizedBox(height: 12),
+                  Align(alignment: Alignment.centerLeft, child: refresh),
+                ],
+              );
+            }
+            return Row(children: [
+              Expanded(child: label),
+              const SizedBox(width: 12),
+              refresh,
+            ]);
+          }),
+        ),
+        const SizedBox(height: 16),
+        SilAdminMetrics(metrics: [
+          SilAdminMetric(label: 'Operadores asociados',
+            value: _staffLoaded ? _labStaff.length.toString() : '—',
+            icon: Icons.groups_outlined, detail: 'Cuentas vinculadas'),
+          SilAdminMetric(label: 'Con acceso activo',
+            value: _staffLoaded ? active.toString() : '—',
+            icon: Icons.verified_user_outlined, detail: 'Habilitados para trabajar'),
+          SilAdminMetric(label: 'Asignados a sedes',
+            value: _staffLoaded ? limited.toString() : '—',
+            icon: Icons.hub_outlined, detail: 'Con alcance restringido'),
+        ]),
+        const SizedBox(height: 16),
+        SilWorkspaceSurface(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 840 &&
+                  MediaQuery.textScalerOf(context).scale(14) <= 17;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
                   Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Text(
-                      !_staffLoaded
-                          ? (_busy
-                                ? 'Cargando operadores…'
-                                : 'Actualiza para consultar el personal.')
-                          : 'Todavía no hay operadores vinculados a este laboratorio.',
+                    padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Personal del laboratorio',
+                          style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w800)),
+                        const SizedBox(height: 4),
+                        Text(
+                          _staffLoaded
+                              ? active.toString() + ' activos · ' +
+                                  reviewers.toString() + ' autorizados para revisar'
+                              : 'Consulta el estado del equipo',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: ColoresVitalia.textoSecundario),
+                        ),
+                      ],
                     ),
                   ),
-                if (_labStaff.isNotEmpty && wide)
-                  ColoredBox(
-                    color: ColoresVitalia.fondoAzul,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      child: DefaultTextStyle.merge(
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                        child: const Row(
-                          children: [
-                            Expanded(flex: 4, child: Text('Cuenta')),
-                            Expanded(flex: 2, child: Text('Estado')),
-                            Expanded(
-                              flex: 3,
-                              child: Text('Revisión de informes'),
-                            ),
-                            Expanded(
-                              flex: 4,
-                              child: Align(
-                                alignment: AlignmentDirectional.centerEnd,
-                                child: Text('Permisos'),
+                  if (_labStaff.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text(!_staffLoaded
+                          ? (_busy ? 'Cargando operadores…'
+                              : 'Actualiza para consultar el personal.')
+                          : 'Todavía no hay operadores vinculados a este laboratorio.'),
+                    ),
+                  if (_labStaff.isNotEmpty && wide)
+                    ColoredBox(
+                      color: ColoresVitalia.fondoAzul,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        child: DefaultTextStyle.merge(
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                          child: const Row(
+                            children: [
+                              Expanded(flex: 4, child: Text('Cuenta')),
+                              Expanded(flex: 2, child: Text('Estado')),
+                              Expanded(flex: 3, child: Text('Revisión de informes')),
+                              Expanded(
+                                flex: 4,
+                                child: Align(
+                                  alignment: AlignmentDirectional.centerEnd,
+                                  child: Text('Permisos'),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                for (final (index, member) in _labStaff.indexed) ...[
-                  if (index > 0 || wide) const Divider(height: 1),
-                  _staffRow(member, wide: wide),
+                  for (final (index, member) in _labStaff.indexed) ...[
+                    if (index > 0 || wide) const Divider(height: 1),
+                    _staffRow(member, wide: wide),
+                  ],
                 ],
-              ],
-            );
-          },
+              );
+            },
+          ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 
   Future<void> _redeemPatientLink() async {
     final lab = _labId;
