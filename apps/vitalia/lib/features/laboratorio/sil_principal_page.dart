@@ -7,6 +7,7 @@ import '../../core/tema_vitalia.dart';
 import 'sil_workspace.dart';
 import 'sil_admin_sites.dart';
 import 'sil_admin_operator_dialog.dart';
+import 'sil_admin_visuals.dart';
 import 'sil_patient_search_dialog.dart';
 import 'sil_main_clinical_panel.dart';
 import 'operator_design.dart';
@@ -1554,88 +1555,179 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     if (accepted == true) await _execute(submit);
   }
 
-  Widget _laboratoryDirectory() => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      SilWorkspaceHeading(
-        title: 'Administración de laboratorios',
-        actions: [
-          if (_labId != null)
-            OutlinedButton.icon(
-              onPressed: _busy
-                  ? null
-                  : () =>
-                        setState(() => _adminSection = _AdminSection.operators),
-              icon: const Icon(Icons.people_outline),
-              label: const Text('Gestionar operadores'),
-            ),
-          FilledButton.icon(
-            onPressed: _busy
-                ? null
-                : () => _adminEditor(
-                    title: 'Registrar laboratorio',
-                    label: 'Nombre del laboratorio',
-                    submitLabel: 'Registrar laboratorio',
-                    controller: _name,
-                    submit: _createLab,
+  Widget _laboratoryDirectory() {
+    final active = _labs.where((lab) => lab['active'] == true).length;
+    final selected = _labs.where((lab) => lab['id'] == _labId).firstOrNull;
+    final selectedName = selected?['displayName'] as String? ?? 'Sin laboratorio';
+    final labList = SilWorkspaceSurface(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Laboratorios registrados',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-            icon: const Icon(Icons.add_business_outlined),
-            label: const Text('Registrar laboratorio'),
+                ),
+                Text(
+                  _labs.length.toString() + ' en total',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: ColoresVitalia.textoSecundario,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_labs.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(_busy
+                  ? 'Cargando laboratorios…'
+                  : 'Registra un laboratorio para comenzar.'),
+            ),
+          for (final lab in _labs) ...[
+            const Divider(height: 1),
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20, vertical: 12),
+              leading: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: ColoresVitalia.azulSuave,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Icon(Icons.apartment_outlined,
+                      color: ColoresVitalia.azul),
+                ),
+              ),
+              selected: lab['id'] == _labId,
+              selectedTileColor: ColoresVitalia.azulSuave,
+              title: Text(
+                lab['displayName'] as String,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Text(lab['active'] == true
+                  ? 'Laboratorio activo'
+                  : 'Laboratorio inactivo'),
+              trailing: lab['id'] == _labId
+                  ? const Tooltip(
+                      message: 'Laboratorio seleccionado',
+                      child: Icon(Icons.check_circle,
+                          color: ColoresVitalia.verde),
+                    )
+                  : const Icon(Icons.chevron_right),
+              onTap: _busy || lab['id'] == _labId
+                  ? null
+                  : () => _selectLab(lab['id'] as String),
+            ),
+          ],
+        ],
+      ),
+    );
+    final shortcuts = SilWorkspaceSurface(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Accesos de administración',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 5),
+          Text('Laboratorio seleccionado: ' + selectedName,
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: ColoresVitalia.textoSecundario)),
+          const SizedBox(height: 16),
+          SilAdminQuickAction(
+            icon: Icons.location_on_outlined,
+            title: 'Administrar sedes',
+            description: 'Ubicaciones y datos de contacto',
+            onTap: _labId == null || _busy ? null
+                : () => setState(() => _adminSection = _AdminSection.sites),
+          ),
+          const SizedBox(height: 10),
+          SilAdminQuickAction(
+            icon: Icons.people_alt_outlined,
+            title: 'Gestionar operadores',
+            description: 'Cuentas, permisos y sedes asignadas',
+            onTap: _labId == null || _busy ? null
+                : () => setState(() => _adminSection = _AdminSection.operators),
+          ),
+          const SizedBox(height: 10),
+          SilAdminQuickAction(
+            icon: Icons.insights_outlined,
+            title: 'Revisar actividad',
+            description: 'Monitoreo y auditoría administrativa',
+            onTap: _labId == null || _busy ? null
+                : () => setState(() => _adminSection = _AdminSection.activity),
           ),
         ],
       ),
-      const SizedBox(height: 14),
-      SilWorkspaceSurface(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_labs.isEmpty)
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  _busy
-                      ? 'Cargando laboratorios…'
-                      : 'Registra un laboratorio para comenzar.',
-                ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SilWorkspaceHeading(
+          title: 'Administración de laboratorios',
+          description: 'Selecciona una institución para gestionar sus sedes y personal.',
+          actions: [
+            FilledButton.icon(
+              onPressed: _busy ? null : () => _adminEditor(
+                title: 'Registrar laboratorio',
+                label: 'Nombre del laboratorio',
+                submitLabel: 'Registrar laboratorio',
+                controller: _name,
+                submit: _createLab,
               ),
-            for (final (index, lab) in _labs.indexed) ...[
-              if (index > 0) const Divider(height: 1),
-              ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
-                ),
-                selected: lab['id'] == _labId,
-                selectedTileColor: ColoresVitalia.azulSuave,
-                leading: const Icon(Icons.business_outlined),
-                title: Text(
-                  lab['displayName'] as String,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: Text(switch (lab['active']) {
-                  true => 'Activo',
-                  false => 'Inactivo',
-                  _ => 'Estado sin informar',
-                }),
-                trailing: lab['id'] == _labId
-                    ? const Tooltip(
-                        message: 'Laboratorio seleccionado',
-                        child: Icon(
-                          Icons.check_circle_outline,
-                          color: ColoresVitalia.verde,
-                        ),
-                      )
-                    : const Icon(Icons.chevron_right),
-                onTap: _busy || lab['id'] == _labId
-                    ? null
-                    : () => _selectLab(lab['id'] as String),
-              ),
-            ],
+              icon: const Icon(Icons.add_business_outlined),
+              label: const Text('Registrar laboratorio'),
+            ),
           ],
         ),
-      ),
-    ],
-  );
+        const SizedBox(height: 20),
+        SilAdminMetrics(metrics: [
+          SilAdminMetric(label: 'Laboratorios', value: _labs.length.toString(),
+              icon: Icons.business_outlined, detail: 'Instituciones registradas'),
+          SilAdminMetric(label: 'Activos', value: active.toString(),
+              icon: Icons.verified_outlined, detail: 'Disponibles para operar'),
+          SilAdminMetric(label: 'Operadores activos',
+              value: _labId == null || !_staffLoaded ? '—' :
+                _labStaff.where((member) => member['active'] == true).length.toString(),
+              icon: Icons.badge_outlined, detail: 'En el laboratorio seleccionado'),
+        ]),
+        const SizedBox(height: 18),
+        LayoutBuilder(
+          builder: (context, dimensions) {
+            if (dimensions.maxWidth < 960) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  labList,
+                  const SizedBox(height: 14),
+                  shortcuts,
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: labList),
+                const SizedBox(width: 18),
+                SizedBox(width: 330, child: shortcuts),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
 
   Widget _staffRow(Map<String, dynamic> member, {required bool wide}) {
     final active = member['active'] == true;
