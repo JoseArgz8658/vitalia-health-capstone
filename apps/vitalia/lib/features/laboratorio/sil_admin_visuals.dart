@@ -84,6 +84,7 @@ class SilAdminMetrics extends StatelessWidget {
                                 const SizedBox(height: 5),
                                 Text(
                                   item.value,
+                                  key: ValueKey('sil-admin-metric-' + item.label),
                                   style: Theme.of(context).textTheme.headlineSmall
                                       ?.copyWith(
                                     fontWeight: FontWeight.w800,
