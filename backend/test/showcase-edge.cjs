@@ -40,20 +40,24 @@ async function main(){
     {route:'',account:'paciente-001',credential:'PATIENT',heading:'Mis informes'},
   ];
   try{
-    for(const width of [390,1440]){
-      for(const role of roles){
-        const {context,page}=await signIn(browser,width,role);
-        try{
+    for(const role of roles){
+      const {context,page}=await signIn(browser,390,role);
+      try{
+        for(const width of [390,1440]){
+          await page.setViewportSize({width,height:900});
           await page.getByText(role.heading,{exact:true}).first().waitFor();
           if(role.credential==='PATIENT'){
-            await page.getByText('Mis informes',{exact:true}).first().click();
-            await page.getByText('Informes publicados',{exact:true}).waitFor();
+            const reports=page.getByText('Informes publicados',{exact:true});
+            if(!await reports.isVisible()){
+              await page.getByText('Mis informes',{exact:true}).first().click();
+            }
+            await reports.waitFor();
             await page.getByText('Comparar informes',{exact:true}).waitFor();
           }
           console.log('Edge: '+role.credential+' '+width+' px');
-        }finally{
-          await context.close();
         }
+      }finally{
+        await context.close();
       }
     }
   }finally{
