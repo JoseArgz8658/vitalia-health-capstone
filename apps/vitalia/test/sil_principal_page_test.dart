@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vitalia_health/core/auth_api.dart';
 import 'package:vitalia_health/features/laboratorio/sil_principal_page.dart';
+import 'package:vitalia_health/features/laboratorio/sil_workspace.dart';
 
 class _StationApi extends AuthApi {
   final reviewActions=<Map<String,dynamic>>[];
@@ -657,6 +658,45 @@ void main() {
     expect(tester.takeException(),isNull);
   },variant:TargetPlatformVariant.only(TargetPlatform.windows));
 
+  testWidgets('administración en escritorio prioriza navegación y contenido ancho',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1440, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api = _StationApi();
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home: SilPrincipalPage(
+      api: api, role: 'administrador', onExpired: () {}, onLogout: () {},
+    )));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SilWorkspaceTopNavigation), findsOneWidget);
+    expect(find.byType(SilWorkspaceSidebar), findsNothing);
+    expect(find.text('Administración de laboratorios'), findsOneWidget);
+    expect(find.text('Accesos de administración'), findsOneWidget);
+    expect(find.text('Laboratorios registrados'), findsOneWidget);
+    expect(find.text('Gestionar operadores'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  },variant:TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('actividad reúne métricas, sedes y auditoría visible',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1380, 920));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api = _StationApi();
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home: SilPrincipalPage(
+      api: api, role: 'administrador', onExpired: () {}, onLogout: () {},
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Actividad'));
+    await tester.pumpAndSettle();
+    expect(find.text('Actividad del laboratorio'), findsOneWidget);
+    expect(find.text('Estado administrativo'), findsOneWidget);
+    expect(find.text('Auditoría administrativa'), findsOneWidget);
+    expect(find.text('Permisos de revisión'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  },variant:TargetPlatformVariant.only(TargetPlatform.windows));
+
   testWidgets('administración muestra operadores y autoriza revisión desde un botón', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
     addTearDown(()=>tester.binding.setSurfaceSize(null));
@@ -694,7 +734,7 @@ void main() {
     expect(find.text('Estado administrativo'),findsOneWidget);
     expect(find.text('Ver auditoría administrativa'),findsOneWidget);
     expect(find.text('Gestión de órdenes'),findsNothing);
-    expect(find.text('1 operadores asociados'), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('sil-admin-metric-Operadores asociados'))).data, '1');
 
     final laboratory = _field('Laboratorio');
     await tester.ensureVisible(laboratory);
@@ -702,8 +742,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Laboratorio Sur').last);
     await tester.pumpAndSettle();
-    expect(find.text('0 operadores asociados'), findsOneWidget);
-    expect(find.text('1 operadores asociados'), findsNothing);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('sil-admin-metric-Operadores asociados'))).data, '0');
+    expect(tester.widget<Text>(find.byKey(const ValueKey('sil-admin-metric-Operadores asociados'))).data, '0');
 
     await tester.tap(find.widgetWithText(TextButton, 'Operadores y permisos'));
     await tester.pumpAndSettle();
