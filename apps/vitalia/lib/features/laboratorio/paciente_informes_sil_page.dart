@@ -944,7 +944,18 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
   ) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      const SilWorkspaceHeading(section: true, title: 'Informes publicados'),
+      SilWorkspaceHeading(
+        section: true,
+        title: 'Informes publicados',
+        actions: [
+          if (_reports.length >= 2)
+            OutlinedButton.icon(
+              onPressed: _openOverview,
+              icon: const Icon(Icons.compare_arrows),
+              label: const Text('Comparar informes'),
+            ),
+        ],
+      ),
       const SizedBox(height: 10),
       if ((_reportTotal ?? _reports.length) > 0) ...[
         TextField(
@@ -1031,21 +1042,27 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
       if (_mainSil && (_historyOffset > 0 ||
           (_historyPage == null ? (_reportTotal ?? 0) : _historyTotal) >
               _historyOffset + 50))
-        Wrap(
-          spacing: 12,
-          children: [
-            OutlinedButton(
-              onPressed: _historyLoading || _historyOffset == 0
-                  ? null : () => _loadHistory(_historyOffset - 50),
-              child: const Text('Anteriores'),
-            ),
-            OutlinedButton(
-              onPressed: _historyLoading || (_historyPage == null
-                      ? (_reportTotal ?? 0) : _historyTotal) <= _historyOffset + 50
-                  ? null : () => _loadHistory(_historyOffset + 50),
-              child: const Text('Siguientes'),
-            ),
-          ],
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text('Página ${_historyOffset ~/ 50 + 1}'),
+              OutlinedButton(
+                onPressed: _historyLoading || _historyOffset == 0
+                    ? null : () => _loadHistory(_historyOffset - 50),
+                child: const Text('Anteriores'),
+              ),
+              OutlinedButton(
+                onPressed: _historyLoading || (_historyPage == null
+                        ? (_reportTotal ?? 0) : _historyTotal) <= _historyOffset + 50
+                    ? null : () => _loadHistory(_historyOffset + 50),
+                child: const Text('Siguientes'),
+              ),
+            ],
+          ),
         ),
     ],
   );
@@ -1297,15 +1314,6 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
                 children: [
                   if (_reportsTabSelected) ...[
                     _reportList(theme, query, visibleReports),
-                    if (_reports.length >= 2)
-                      Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: OutlinedButton.icon(
-                          onPressed: _openOverview,
-                          icon: const Icon(Icons.compare_arrows),
-                          label: const Text('Comparar informes'),
-                        ),
-                      ),
                   ] else ...[
                     _patientGreeting(),
                     const SizedBox(height: 24),

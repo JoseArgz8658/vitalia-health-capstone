@@ -1,5 +1,11 @@
+param([string]$FlutterCommand = 'flutter')
+
 $ErrorActionPreference = 'Stop'
 $raiz = Split-Path $PSScriptRoot -Parent
+$flutter = Get-Command $FlutterCommand -CommandType Application -ErrorAction SilentlyContinue
+if (!$flutter) {
+    throw 'Flutter no está disponible. Usa -FlutterCommand con la ruta completa de flutter.bat.'
+}
 
 # Una web en modo SIL requiere una API en modo SIL y el esquema principal 041.
 # Esta verificacion NO migra, no cambia .env y no inicia contenedores.
@@ -7,12 +13,12 @@ $raiz = Split-Path $PSScriptRoot -Parent
 
 Push-Location (Join-Path $raiz 'apps/vitalia')
 try {
-  & flutter pub get
+  & $flutter.Source pub get
   if ($LASTEXITCODE -ne 0) { throw 'No se pudieron instalar las dependencias Flutter.' }
 
   # Un unico origen para web/API: funciona en localhost y Tailscale Serve,
   # sin incluir la direccion localhost del servidor en el navegador remoto.
-  & flutter build web --release --no-web-resources-cdn `
+  & $flutter.Source build web --release --no-web-resources-cdn `
     --dart-define=VITALIA_SIL_MAIN_MODE=true `
     --dart-define=VITALIA_API_SAME_ORIGIN=true
   if ($LASTEXITCODE -ne 0) { throw 'No se pudo compilar la web del SIL principal.' }
