@@ -3515,15 +3515,16 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           section: true,
           title: 'Tareas del laboratorio',
           description: isTotal
-              ? 'Totales actuales del laboratorio seleccionado.'
+              ? 'Tareas y órdenes visibles según tus permisos de sede.'
               : 'Cifras parciales de los registros recientes cargados.',
         ),
         const SizedBox(height: 14),
         LayoutBuilder(builder: (context, constraints) {
           const gap = 16.0;
-          final tileWidth = constraints.maxWidth >= tasks.length * 218
-              ? (constraints.maxWidth - gap * (tasks.length - 1)) / tasks.length
-              : constraints.maxWidth;
+          final columns = constraints.maxWidth >= tasks.length * 218
+              ? tasks.length
+              : constraints.maxWidth >= 500 ? 2 : 1;
+          final tileWidth = (constraints.maxWidth - gap * (columns - 1)) / columns;
           return Wrap(
             spacing: gap,
             runSpacing: gap,

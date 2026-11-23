@@ -9,12 +9,14 @@ on:
       - backend/**
       - apps/vitalia/**
       - deploy/**
+      - compose.showcase.yaml
       - .github/workflows/sil-main-integration.yml
   pull_request:
     paths:
       - backend/**
       - apps/vitalia/**
       - deploy/**
+      - compose.showcase.yaml
       - .github/workflows/sil-main-integration.yml
 jobs:
   deploy-preflight:
@@ -112,6 +114,32 @@ jobs:
           export VITALIA_JOURNEY_SCREENSHOTS="$RUNNER_TEMP/vitalia-sil-visual"
           mkdir -p "$VITALIA_JOURNEY_SCREENSHOTS"
           node test/sil-main-journey.cjs
+      - name: Compilar Flutter para showcase aislado
+        run: >-
+          flutter build web --release --no-web-resources-cdn --output build/showcase
+          --dart-define=VITALIA_SIL_MAIN_MODE=true
+          --dart-define=VITALIA_API_SAME_ORIGIN=true
+          --dart-define=VITALIA_SHOWCASE=true
+      - name: Probar el showcase con PostgreSQL y Edge
+        working-directory: .
+        run: |
+          set -eu
+          umask 077
+          pg_secret=$(openssl rand -hex 32)
+          {
+            echo "POSTGRES_PASSWORD=$pg_secret"
+            echo "PGPASSWORD=$pg_secret"
+            for role in ADMIN OPERATOR PATIENT; do
+              echo "SHOWCASE_${role}_PASSWORD=$(openssl rand -hex 32)"
+            done
+          } > .env.showcase
+          showcase() { docker compose --env-file .env.showcase -p vitalia-showcase -f compose.showcase.yaml "$@"; }
+          trap 'showcase down --volumes; rm -f .env.showcase' EXIT
+          showcase up -d --build --wait
+          showcase exec -T api node dist/database/showcase.js --seed-only
+          node --env-file=.env.showcase backend/test/showcase-journey.cjs
+          VITALIA_JOURNEY_PLAYWRIGHT="$RUNNER_TEMP/vitalia-browser/node_modules/playwright" \
+            node --env-file=.env.showcase backend/test/showcase-edge.cjs
       - name: Validar configuración Nginx para proxy interno de API
         working-directory: .
         run: |

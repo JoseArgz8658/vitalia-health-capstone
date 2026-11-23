@@ -588,3 +588,8 @@ sin guardar contenido del proveedor ni cambiar la dirección ingresada. Las
 coincidencias parciales, correcciones del proveedor y respuestas fuera de la
 comuna requieren revisión manual. Si Google no está configurado, se conserva el
 formulario manual. Aplica cuotas en Google Cloud para controlar el consumo.
+
+### Demostración aislada del SIL
+
+Consulta [Showcase de Vitalia Health](docs/SHOWCASE.md) para iniciar la aplicación
+Flutter y la API SIL con datos ficticios en el puerto 5174.

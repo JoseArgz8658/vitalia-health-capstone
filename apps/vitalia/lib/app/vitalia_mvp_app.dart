@@ -152,6 +152,33 @@ class _VitaliaMvpAppState extends State<VitaliaMvpApp>
     title: 'Vitalia Health',
     debugShowCheckedModeBanner: false,
     theme: temaVitalia(),
+    builder: const bool.fromEnvironment('VITALIA_SHOWCASE')
+        ? (context, child) => Column(
+            children: [
+              Material(
+                color: Theme.of(context).colorScheme.tertiaryContainer,
+                child: SafeArea(
+                  bottom: false,
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(
+                        'Entorno de demostración — Datos ficticios',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onTertiaryContainer,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(child: child ?? const SizedBox.shrink()),
+            ],
+          )
+        : null,
     initialRoute: widget.initialRoute,
     onGenerateRoute: (settings) {
       if (settings.name == '/activar-operador' && _mainSil) {
