@@ -3294,6 +3294,114 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       ),
   ];
 
+  Widget _adminActivity() {
+    final active = _labStaff.where((member) => member['active'] == true).length;
+    final allowed = _labStaff.where((member) =>
+        member['active'] == true && member['canReviewReports'] == true).length;
+    final overview = SilWorkspaceSurface(
+      padding: const EdgeInsets.all(20),
+      child: SilAdministrationOverview(
+        api: widget.api,
+        onExpired: widget.onExpired,
+      ),
+    );
+    final audit = SilWorkspaceSurface(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: ColoresVitalia.azulSuave,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Padding(
+              padding: EdgeInsets.all(12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Icon(Icons.manage_history_outlined,
+                    color: ColoresVitalia.azul, size: 24),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text('Auditoría administrativa',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          Text(
+            'Consulta los cambios de personal, invitaciones y sedes '
+            'con el registro de quién realizó cada acción.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: ColoresVitalia.textoSecundario,
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: _busy
+                ? null
+                : () => _showAdminHistory(invitations: false),
+            icon: const Icon(Icons.history),
+            label: const Text('Ver auditoría administrativa'),
+          ),
+        ],
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SilWorkspaceHeading(
+          section: true,
+          title: 'Estado administrativo',
+          description: 'Resumen actualizado del personal y los permisos del laboratorio.',
+          actions: [
+            OutlinedButton.icon(
+              onPressed: _busy
+                  ? null
+                  : () => _execute(_loadStaff, showNotice: false),
+              icon: const Icon(Icons.refresh),
+              label: const Text('Actualizar estado administrativo'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        SilAdminMetrics(metrics: [
+          SilAdminMetric(label: 'Operadores asociados',
+            value: _staffLoaded ? _labStaff.length.toString() : '—',
+            icon: Icons.people_outline, detail: 'Personal vinculado'),
+          SilAdminMetric(label: 'Operadores activos',
+            value: _staffLoaded ? active.toString() : '—',
+            icon: Icons.check_circle_outline, detail: 'Con acceso habilitado'),
+          SilAdminMetric(label: 'Permisos de revisión',
+            value: _staffLoaded ? allowed.toString() : '—',
+            icon: Icons.fact_check_outlined, detail: 'Operadores autorizados'),
+        ]),
+        const SizedBox(height: 18),
+        LayoutBuilder(builder: (context, dimensions) {
+          if (dimensions.maxWidth < 920) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                overview,
+                const SizedBox(height: 14),
+                audit,
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 7, child: overview),
+              const SizedBox(width: 18),
+              Expanded(flex: 4, child: audit),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
   Widget _adminContent() => switch (_adminSection) {
     _AdminSection.laboratories => _laboratoryDirectory(),
     _AdminSection.sites => Column(
@@ -3328,58 +3436,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               title: 'Selecciona un laboratorio',
               description: 'El estado administrativo corresponde al laboratorio seleccionado.',
             )
-          : SilWorkspaceSurface(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SilWorkspaceHeading(
-                    section: true,
-                    title: 'Estado administrativo',
-                    description: 'Resumen del personal y sus permisos.',
-                    actions: [
-                      OutlinedButton.icon(
-                        onPressed: _busy
-                            ? null
-                            : () => _execute(_loadStaff, showNotice: false),
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Actualizar estado administrativo'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  if (_staffLoaded)
-                    Wrap(
-                      spacing: 32,
-                      runSpacing: 10,
-                      children: [
-                        Text('${_labStaff.length} operadores asociados'),
-                        Text(
-                          '${_labStaff.where((member) => member['active'] == true && member['canReviewReports'] == true).length} '
-                          'operadores con permiso de revisión',
-                        ),
-                      ],
-                    )
-                  else
-                    Text(
-                      _busy
-                          ? 'Cargando personal…'
-                          : 'Datos de personal pendientes de consulta.',
-                    ),
-                  const SizedBox(height: 20),
-                  SilAdministrationOverview(api: widget.api, onExpired: widget.onExpired),
-                  const Divider(height: 28),
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: OutlinedButton.icon(
-                      onPressed: _busy ? null : () => _showAdminHistory(invitations: false),
-                      icon: const Icon(Icons.history),
-                      label: const Text('Ver auditoría administrativa'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+          : _adminActivity(),
   };
 
   Widget _dashboard() {
@@ -3710,7 +3767,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       ),
       body: SafeArea(
         child: LayoutBuilder(builder: (context, viewport) {
-          final sideNavigation = viewport.maxWidth >= 1100;
+          final sideNavigation = viewport.maxWidth >= 1100 && !_admin;
           final tabs = _admin ? _adminTabs() : _operatorTabs();
           final label = _admin
               ? 'Navegación de administración'
@@ -3719,19 +3776,20 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                 return SingleChildScrollView(
                   key: ValueKey((_activeSection, _adminSection)),
                   padding: EdgeInsets.symmetric(
-                    horizontal: constraints.maxWidth < 600 ? 16 : 36,
-                    vertical: constraints.maxWidth < 600 ? 20 : 32,
+                    horizontal: constraints.maxWidth < 600 ? 16 : 28,
+                    vertical: constraints.maxWidth < 600 ? 20 : 26,
                   ),
                   child: Align(
                     alignment: Alignment.topCenter,
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1320),
+                      constraints: const BoxConstraints(maxWidth: 1480),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           if (_admin && _adminSection == _AdminSection.activity) ...[
                             SilWorkspaceHeading(
                               title: 'Actividad del laboratorio',
+                              description: 'Supervisa sedes, personal y operaciones administrativas.',
                               actions: [_labSelector()],
                             ),
                             const SizedBox(height: 18),
