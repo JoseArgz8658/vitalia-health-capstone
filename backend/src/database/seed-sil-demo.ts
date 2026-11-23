@@ -1,25 +1,15 @@
-import {createHash} from 'node:crypto';
-import {readdir,readFile} from 'node:fs/promises';
-import {resolve} from 'node:path';
+import {createHash,randomBytes} from 'node:crypto';
 import type {PoolClient} from 'pg';
-import {createApp} from '../app';
-import {createCredentialAuthenticator} from '../auth/credentials';
-import {createPatientRegistrar} from '../auth/registration';
 import {hashPassword} from '../auth/password';
-import {findSessionAccount,issueSession,revokeSession} from '../auth/sessions';
-import {createSilMainService} from '../sil/main-service';
 import {readDatabaseConfig} from './config';
 import {createDatabasePool} from './pool';
-import {silMainRehearsedPlan} from './sil-migration-policy';
 
-const database='vitalia_showcase';
 const digest=(input:string|Buffer)=>createHash('sha256').update(input).digest('hex');
 function id(key:string){
   const hex=digest('vitalia-showcase-v1:'+key);
   return [hex.slice(0,8),hex.slice(8,12),'4'+hex.slice(13,16),
     '8'+hex.slice(17,20),hex.slice(20,32)].join('-');
 }
-const admin=id('admin');
 const labId=(index:number)=>id('lab:'+index);
 const siteId=(lab:number,index:number)=>id('site:'+lab+':'+index);
 const operatorId=(index:number)=>id('operator:'+index);
@@ -46,30 +36,9 @@ function pdf(lines:string[]){
     'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+output.length+'\n%%EOF\n','ascii');
 }
 
-async function bootstrap(tx:PoolClient){
-  const tables=await tx.query(`SELECT tablename FROM pg_tables WHERE schemaname='public'`);
-  if(tables.rows.length)throw new Error('Showcase exige una base vacía o inicializada por el generador.');
-  const directory=resolve(__dirname,'../../database/migrations');
-  const files=(await readdir(directory)).filter(file=>/^\d{3}_[a-z_]+\.sql$/.test(file)).sort();
-  const plan=[...files.filter(file=>/^0(?:0[1-9]|1[01])_/.test(file)),
-    ...silMainRehearsedPlan(files),...files.filter(file=>/^0(?:3[89]|4[0-7])_/.test(file))];
-  if(plan.length!==42)throw new Error('El conjunto de migraciones showcase cambió.');
-  await tx.query(`CREATE TABLE public.vitalia_schema_migrations (
-    version text PRIMARY KEY,checksum text NOT NULL,applied_at timestamptz NOT NULL DEFAULT now())`);
-  for(const file of plan){
-    const sql=await readFile(resolve(directory,file),'utf8');
-    await tx.query(sql);
-    await tx.query('INSERT INTO public.vitalia_schema_migrations(version,checksum) VALUES ($1,$2)',
-      [file.slice(0,-4),digest(sql.replace(/\r\n/g,'\n'))]);
-  }
-}
-
-async function seed(tx:PoolClient){
-  const passwords=await Promise.all(['ADMIN','OPERATOR','PATIENT'].map(role=>{
-    const password=process.env['SHOWCASE_'+role+'_PASSWORD'];
-    if(!password||password.length<24)throw new Error('Faltan credenciales locales del showcase.');
-    return hashPassword(password);
-  }));
+async function seed(tx:PoolClient,admin:string,credentials:{operator:string;patient:string}){
+  const operatorHash=await hashPassword(credentials.operator);
+  const patientHash=await hashPassword(credentials.patient);
   async function account(accountId:string,address:string,role:string,hash:string){
     await tx.query('INSERT INTO vitalia_accounts(id,email,role_code,password_hash) VALUES ($1,$2,$3,$4)',
       [accountId,address,role,hash]);
@@ -81,10 +50,9 @@ async function seed(tx:PoolClient){
   const day=86400000;
   const anchor=Math.floor(Date.now()/day)*day;
   const date=(days:number)=>new Date(anchor-days*day);
-  await account(admin,email('admin'),'administrador',passwords[0]);
   for(let lab=0;lab<2;lab++){
     await tx.query('INSERT INTO vitalia_sil_main_laboratories(id,display_name,created_by,created_at) VALUES ($1,$2,$3,$4)',
-      [labId(lab),['Laboratorio Ficticio Cordillera','Laboratorio Ficticio Costa'][lab],admin,date(740)]);
+      [labId(lab),['DEMO - Laboratorio Cordillera','DEMO - Laboratorio Costa'][lab],admin,date(740)]);
     await audit('lab:'+lab,labId(lab),admin,'laboratory_created',null,date(740));
     for(let site=0;site<3;site++){
       await tx.query(`INSERT INTO vitalia_sil_main_sites(id,lab_id,name,address,commune,region)
@@ -98,7 +66,7 @@ async function seed(tx:PoolClient){
   for(let index=1;index<=10;index++){
     const lab=index<=7?0:1;
     const scope=index%3;
-    await account(operatorId(index),email('operador',index),'operador_laboratorio',passwords[1]);
+    await account(operatorId(index),email('operador',index),'operador_laboratorio',operatorHash);
     await tx.query(`INSERT INTO vitalia_sil_main_staff
       (lab_id,account_id,kind,granted_by,can_review_reports,site_access_mode)
       VALUES ($1,$2,'operator',$3,$4,$5)`,
@@ -111,7 +79,7 @@ async function seed(tx:PoolClient){
   }
   for(let index=1;index<=132;index++){
     const lab=index<=120?0:1;
-    await account(patientId(index),email('paciente',index),'paciente',passwords[2]);
+    await account(patientId(index),email('paciente',index),'paciente',patientHash);
     const person=id('person:'+index);
     await tx.query(`INSERT INTO vitalia_people(id,account_id,first_name,first_surname,birth_date)
       VALUES ($1,$2,$3,$4,$5)`,[person,patientId(index),
@@ -158,7 +126,7 @@ async function seed(tx:PoolClient){
        patient_match_confirmed,attached_by,attached_at,published_by,published_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Profesional ficticio',$10,true,$11,$10,$12,$13)`,
       [id('report:'+index),order,labId(lab),patient,'informe-simulado-'+index+'.pdf',report,digest(report),
-        lab===0?'Laboratorio Ficticio Cordillera':'Laboratorio Ficticio Costa','AUT-SIM-'+index,created,
+        lab===0?'DEMO - Laboratorio Cordillera':'DEMO - Laboratorio Costa','AUT-SIM-'+index,created,
         actor,published?actor:null,published?publication:null]);
     await audit('report:'+index,labId(lab),actor,'report_attached',order,created);
     if(published)await audit('published:'+index,labId(lab),actor,'report_published',order,publication);
@@ -177,53 +145,64 @@ async function seed(tx:PoolClient){
 }
 
 async function main(){
+  const [confirmation,rawEmail]=process.argv.slice(2);
+  const adminEmail=rawEmail?.trim().toLowerCase();
   const config=readDatabaseConfig(process.env);
-  if(process.env.VITALIA_SHOWCASE!=='YES'||config.database!==database||config.user!==database||
-    process.env.VITALIA_SIL_MAIN_MODE!=='YES')throw new Error('Conexión showcase requerida.');
+  if(confirmation!=='--cargar-demostracion' || !adminEmail || config.database!=='vitalia' ||
+    process.env.VITALIA_SIL_MAIN_MODE!=='YES'){
+    throw new Error('Uso en el SIL principal: --cargar-demostracion correo-del-administrador-existente');
+  }
   const pool=createDatabasePool(config);
   try{
     const tx=await pool.connect();
     try{
       await tx.query('BEGIN');
-      const identity=await tx.query('SELECT current_database() AS database, current_user AS actor');
-      if(identity.rows[0].database!==database||identity.rows[0].actor!==database)
-        throw new Error('La conexión PostgreSQL no corresponde al showcase.');
-      await tx.query("SELECT pg_advisory_xact_lock(hashtext('vitalia-showcase-init'))");
-      const marker=await tx.query("SELECT to_regclass('public.vitalia_showcase_initialized') IS NOT NULL AS ready");
-      if(!marker.rows[0].ready){
-        await bootstrap(tx);
-        await seed(tx);
-        await tx.query('CREATE TABLE public.vitalia_showcase_initialized (created_at timestamptz DEFAULT now())');
-        await tx.query('INSERT INTO public.vitalia_showcase_initialized DEFAULT VALUES');
+      const identity=await tx.query('SELECT current_database() AS database');
+      if(identity.rows[0].database!=='vitalia')throw new Error('La base de destino debe ser vitalia.');
+      await tx.query("SELECT pg_advisory_xact_lock(hashtext('vitalia-sil-demo-seed'))");
+      const schema=await tx.query(`SELECT EXISTS(
+        SELECT 1 FROM public.vitalia_schema_migrations WHERE version='047_sil_main_staff_sites'
+      ) AS ready`);
+      if(!schema.rows[0].ready)throw new Error('La carga requiere el esquema SIL 047.');
+      const marker=await tx.query(`SELECT EXISTS(
+        SELECT 1 FROM public.vitalia_sil_main_audit
+        WHERE id=$1 AND lab_id=$2 AND action='laboratory_created'
+          AND details @> '{"showcase":true,"origin":"synthetic_seed"}'
+      ) AS loaded`,[id('audit:lab:0'),labId(0)]);
+      if(marker.rows[0].loaded){
+        await tx.query('COMMIT');
+        console.info('La demostración ya está cargada. Se conservaron sus datos y credenciales.');
+        return;
       }
+      const administrator=await tx.query<{id:string}>(`SELECT a.id FROM public.vitalia_accounts a
+        JOIN public.vitalia_account_roles r ON r.account_id=a.id
+        WHERE a.email=$1 AND r.role_code='administrador' AND r.active`,[adminEmail]);
+      const admin=administrator.rows[0]?.id;
+      if(!admin)throw new Error('El correo debe pertenecer a un administrador activo de Vitalia.');
+      const credentials={
+        operator:randomBytes(32).toString('hex'),
+        patient:randomBytes(32).toString('hex'),
+      };
+      await seed(tx,admin,credentials);
       await tx.query('COMMIT');
+      console.info('Carga completada: 2 laboratorios DEMO, 132 pacientes, 660 órdenes y 416 informes publicados.');
+      console.info('Operadores DEMO: '+[1,2,3].map(index=>email('operador',index)).join(', '));
+      console.info('Contraseña de operador DEMO: '+credentials.operator);
+      console.info('Paciente DEMO: '+email('paciente',1));
+      console.info('Contraseña de paciente DEMO: '+credentials.patient);
     } catch(error){
       await tx.query('ROLLBACK');
       throw error;
     } finally {
       tx.release();
     }
-    if(process.argv[2]==='--seed-only'){
-      await pool.end();
-      return;
-    }
-    const authenticate=await createCredentialAuthenticator(pool,{guardPatientSession:true});
-    createApp({
-      authenticate,
-      issue:(account,mode,hash)=>issueSession(pool,account,mode,hash),
-      find:token=>findSessionAccount(pool,token),
-      revoke:token=>revokeSession(pool,token),
-    },createPatientRegistrar(pool,{demoOnly:true}),undefined,undefined,undefined,undefined,undefined,undefined,undefined,
-    undefined,undefined,undefined,undefined,undefined,undefined,undefined,undefined,
-    undefined,undefined,createSilMainService(pool)).listen(Number(process.env.PORT??3000),
-      process.env.VITALIA_RUNTIME==='container'?'0.0.0.0':'127.0.0.1');
-  } catch(error){
+  } finally {
     await pool.end();
-    throw error;
   }
 }
 
 void main().catch(error=>{
-  console.error('Showcase:',error instanceof Error ? error.message : 'error de inicialización');
+  const message=error instanceof Error?error.message:'error de inicialización';
+  console.error('Carga DEMO:',message);
   process.exitCode=1;
 });

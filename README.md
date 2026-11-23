@@ -589,7 +589,24 @@ coincidencias parciales, correcciones del proveedor y respuestas fuera de la
 comuna requieren revisión manual. Si Google no está configurado, se conserva el
 formulario manual. Aplica cuotas en Google Cloud para controlar el consumo.
 
-### Demostración aislada del SIL
+### Datos ficticios en Vitalia principal
 
-Consulta [Showcase de Vitalia Health](docs/SHOWCASE.md) para iniciar la aplicación
-Flutter y la API SIL con datos ficticios en el puerto 5174.
+La carga de demostración usa la aplicación habitual en el puerto 5173. Requiere
+el SIL principal en esquema 047 y un administrador activo. Agrega dos
+laboratorios marcados DEMO y sus cuentas, órdenes e informes sintéticos, en una
+transacción y sin actualizar registros preexistentes. Una segunda ejecución
+detecta la carga y no agrega duplicados. Úsala en la instalación de evaluación
+de Vitalia.
+
+Con la imagen `api` actualizada y PostgreSQL de Vitalia en marcha:
+
+```powershell
+$adminEmail = Read-Host 'Correo de tu administrador existente'
+docker compose run --rm --no-deps -T --entrypoint node api dist/database/seed-sil-demo.js --cargar-demostracion $adminEmail
+```
+
+La carga imprime una vez las credenciales ficticias de operador y paciente.
+Entra con tu administrador habitual para ver ambos laboratorios y sus sedes.
+Las cuentas de operador DEMO reciben permisos exclusivamente en sus laboratorios
+y sedes ficticios. Cuando Flutter no está en el PATH, compila la web habitual
+con `.\deploy\crear-web.ps1 -FlutterCommand 'C:\ruta\flutter\bin\flutter.bat'`.
