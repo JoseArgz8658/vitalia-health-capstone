@@ -734,7 +734,7 @@ void main() {
     expect(find.text('Estado administrativo'),findsOneWidget);
     expect(find.text('Ver auditoría administrativa'),findsOneWidget);
     expect(find.text('Gestión de órdenes'),findsNothing);
-    expect(find.text('1 operadores asociados'), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('sil-admin-metric-Operadores asociados'))).data, '1');
 
     final laboratory = _field('Laboratorio');
     await tester.ensureVisible(laboratory);
@@ -742,8 +742,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Laboratorio Sur').last);
     await tester.pumpAndSettle();
-    expect(find.text('0 operadores asociados'), findsOneWidget);
-    expect(find.text('1 operadores asociados'), findsNothing);
+    expect(tester.widget<Text>(find.byKey(const ValueKey('sil-admin-metric-Operadores asociados'))).data, '0');
+    expect(tester.widget<Text>(find.byKey(const ValueKey('sil-admin-metric-Operadores asociados'))).data, '0');
 
     await tester.tap(find.widgetWithText(TextButton, 'Operadores y permisos'));
     await tester.pumpAndSettle();
