@@ -579,15 +579,33 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     await _loadStaff();
   }
 
-  Future<void> _setReviewPermission(String rawAccountId,bool enabled) async {
+  Future<void> _setReviewPermission(String rawAccountId, String email, bool enabled) async {
     final lab=_labId,accountId=_requireUuid(rawAccountId);
     if(lab==null||accountId==null){
-      throw const AuthFailure('Selecciona laboratorio y escribe el UUID del operador.');
+      throw const AuthFailure('Selecciona un laboratorio y un operador.');
     }
-    await widget.api.silMainRequest('/labs/$lab/staff/review-permission',body:{
-      'accountId':accountId,'enabled':enabled,
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        title: Text(enabled ? 'Autorizar revisión de informes' : 'Retirar permiso de revisión'),
+        content: Text(
+          '$email · ${_labs.firstWhere((item) => item['id'] == lab)['displayName']}\n'
+          '${enabled ? 'Podrá revisar y publicar informes ya autorizados.' : 'Conservará el acceso al laboratorio y dejará de revisar y publicar informes.'}',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, true), child: const Text('Confirmar permiso')),
+        ],
+      ),
+    );
+    if (accepted != true || !mounted || _labId != lab) return;
+    await _execute(() async {
+      await widget.api.silMainRequest('/labs/$lab/staff/review-permission', body: {
+        'accountId': accountId,
+        'enabled': enabled,
+      });
+      await _loadStaff();
     });
-    await _loadStaff();
   }
 
   // Control exclusivo de la membresía del laboratorio seleccionado.
@@ -1623,11 +1641,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     final action = OutlinedButton.icon(
       onPressed: _busy || !active
           ? null
-          : () => _execute(
-              () => _setReviewPermission(
-                member['accountId'] as String,
-                !canReview,
-              ),
+          : () => _setReviewPermission(
+              member['accountId'] as String,
+              member['email'] as String,
+              !canReview,
             ),
       icon: Icon(
         canReview
@@ -3297,6 +3314,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         const SizedBox(height: 28),
         SilWorkspaceHeading(
           section: true,
+          key: ValueKey(isTotal ? 'sil-summary-full' : 'sil-summary-recent'),
           title: 'Tareas del laboratorio',
           description: isTotal
               ? 'Totales actuales del laboratorio seleccionado.'
@@ -3552,8 +3570,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
         ],
       ),
       body: SafeArea(
-        child: LayoutBuilder(builder: (context, viewport) {
-          final sideNavigation = viewport.maxWidth >= 1100;
+        child: LayoutBuilder(builder: (context, _) {
           final tabs = _admin ? _adminTabs() : _operatorTabs();
           final label = _admin
               ? 'Navegación de administración'
@@ -3615,15 +3632,6 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
                   ),
                 );
           });
-          if (sideNavigation) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SilWorkspaceSidebar(label: label, tabs: tabs),
-                Expanded(child: content),
-              ],
-            );
-          }
           return Column(
             children: [
               SilWorkspaceTopNavigation(label: label, tabs: tabs),

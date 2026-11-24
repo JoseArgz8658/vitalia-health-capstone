@@ -589,44 +589,6 @@ coincidencias parciales, correcciones del proveedor y respuestas fuera de la
 comuna requieren revisión manual. Si Google no está configurado, se conserva el
 formulario manual. Aplica cuotas en Google Cloud para controlar el consumo.
 
-### Carga de demostración para Vitalia SIL 046
+### Evaluación de usabilidad
 
-Esta rama ejecuta la Vitalia habitual en el puerto 5173. Trabaja con el esquema
-046 ya instalado. Las sedes se registran en órdenes y solicitudes. El acceso
-del operador sigue definido por laboratorio.
-
-```powershell
-docker compose build api
-docker compose run --rm --no-deps -T --entrypoint node api dist/database/migrate-all.js
-.\deploy\crear-web.ps1 -FlutterCommand 'C:\ruta\flutter\bin\flutter.bat'
-$adminEmail = Read-Host 'Correo de tu administrador de Vitalia'
-docker compose run --rm --no-deps -T --entrypoint node api dist/database/seed-sil-demo.js --cargar-demostracion $adminEmail
-docker compose --profile web up -d api worker
-docker compose --profile web up -d --force-recreate --no-deps web
-```
-
-Continúa tras cada comando solo si termina correctamente. La carga crea dos
-laboratorios DEMO, 132 pacientes, 10 operadores, 660 órdenes, 416 informes
-publicados y 72 derivaciones pendientes en la base habitual. Se usa el
-administrador existente y la carga imprime las contraseñas ficticias una vez.
-Al repetirla, se conservan los datos y las contraseñas anteriores.
-
-#### Identidades y acceso
-
-Los dos laboratorios se presentan como **Laboratorio Clínico Alto Canelo** y
-**Laboratorio Clínico Bahía Arrayán**. Las cuentas usan nombres y apellidos,
-identificadores de sede en los correos de operadores y dominios reservados
-`.example.invalid`. El identificador de sede en el correo es descriptivo, ya
-que el esquema 046 asigna acceso por laboratorio.
-
-Si ya cargaste el escenario anterior, vuelve a ejecutar el mismo comando
-`--cargar-demostracion` con la imagen API actualizada. Se conservan las órdenes
-y los PDF existentes. El comando cambia los correos y contraseñas de las
-cuentas de la carga anterior que todavía usan el correo original, e imprime
-en la consola el acceso de los diez operadores y los primeros diez pacientes.
-Guarda esas claves localmente. El resto de las cuentas aporta historial de
-prueba. El comando no reimprime contraseñas ya emitidas.
-
-Los selectores de derivaciones y de órdenes clínicas permiten buscar y paginar
-los registros cargados. Si una orden antigua no aparece en el selector de
-muestras, búscala desde **Órdenes** por folio, nombre o correo del paciente.
+Consulta [el entorno aislado y el recorrido para moderadores](docs/USABILIDAD_SIL.md).

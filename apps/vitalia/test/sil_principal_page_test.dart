@@ -488,8 +488,7 @@ void main() {
     expect(find.text('14'),findsWidgets);
     expect(find.text('Total de órdenes'), findsOneWidget);
     expect(find.text('Accesos rápidos'), findsNothing);
-    expect(find.text('Totales actuales del laboratorio seleccionado.'),
-      findsOneWidget);
+    expect(find.byKey(const ValueKey('sil-summary-full')), findsOneWidget);
     expect(find.text('Revisión interna (14)'),findsOneWidget);
 
     final lab=_field('Laboratorio');
@@ -515,7 +514,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Cifras parciales de los registros recientes cargados.'),
       findsOneWidget);
-    expect(find.text('Totales actuales del laboratorio seleccionado.'), findsNothing);
+    expect(find.byKey(const ValueKey('sil-summary-full')), findsNothing);
+    expect(find.byKey(const ValueKey('sil-summary-recent')), findsOneWidget);
     expect(tester.takeException(),isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
@@ -627,6 +627,9 @@ void main() {
     await tester.ensureVisible(authorize);
     await tester.tap(authorize);
     await tester.pumpAndSettle();
+    expect(api.reviewActions, isEmpty);
+    await tester.tap(find.widgetWithText(FilledButton, 'Confirmar permiso'));
+    await tester.pumpAndSettle();
     expect(api.reviewActions,[
       {
         'accountId':'55555555-5555-4555-8555-555555555555',
@@ -713,7 +716,7 @@ void main() {
     expect(tester.takeException(),isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
-  for (final width in [390.0, 1280.0]) {
+  for (final width in [320.0, 390.0, 1366.0, 1920.0]) {
     testWidgets('revisión incluye los informes propios del laboratorio a ${width.toInt()} px', (
       tester,
     ) async {

@@ -1,8 +1,5 @@
-import {createHash,randomBytes} from 'node:crypto';
+import {createHash} from 'node:crypto';
 import type {PoolClient} from 'pg';
-import {hashPassword} from '../auth/password';
-import {readDatabaseConfig} from './config';
-import {createDatabasePool} from './pool';
 
 const digest=(input:string|Buffer)=>createHash('sha256').update(input).digest('hex');
 function id(key:string){
@@ -14,8 +11,7 @@ const labId=(index:number)=>id('lab:'+index);
 const siteId=(lab:number,index:number)=>id('site:'+lab+':'+index);
 const operatorId=(index:number)=>id('operator:'+index);
 const patientId=(index:number)=>id('patient:'+index);
-const labs=['Laboratorio Clínico Alto Canelo','Laboratorio Clínico Bahía Arrayán'];
-const oldLabs=['DEMO - Laboratorio Cordillera','DEMO - Laboratorio Costa'];
+const labs=['DEMO · Laboratorio Clínico Alto Canelo','DEMO · Laboratorio Clínico Bahía Arrayán'];
 const firstNames=['Francisca','Daniela','Martín','Valentina','Cristóbal','Camila','Javiera','Felipe','Sofía','Tomás','Paula','Antonia'];
 const surnames=['Valenzuela','Araya','Sepúlveda','Contreras','Rojas','Mella','Fuentes','Tapia','Soto','Navarro','Vidal','Salinas','Leiva','Carrasco','Peña','Molina','Parra'];
 const slug=(name:string)=>name.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase();
@@ -29,17 +25,6 @@ function email(role:string,index:number){
   const [first,last]=patientName(role==='por-activar'?index+132:index);
   return slug(first.slice(0,4)+(24+index%60)+last)+'@correo.example.invalid';
 }
-const legacyEmail=(role:string,index:number)=>
-  role+'-'+String(index).padStart(3,'0')+'@showcase.example.invalid';
-const password=()=>['Cordillera','Arrayan','Litoral'][randomBytes(1)[0]%3]+
-  '-'+randomBytes(9).toString('base64url')+'!';
-type Credentials=Map<string,{address:string;password:string}>;
-async function accountPassword(credentials:Credentials,id:string,address:string){
-  const secret=password();
-  credentials.set(id,{address,password:secret});
-  return hashPassword(secret);
-}
-
 function pdf(lines:string[]){
   const stream='BT /F1 15 Tf 50 740 Td '+lines.map(line=>'('+line+') Tj').join(' 0 -28 Td ')+' ET';
   const objects=[
@@ -59,7 +44,7 @@ function pdf(lines:string[]){
     'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+output.length+'\n%%EOF\n','ascii');
 }
 
-async function seed(tx:PoolClient,admin:string,credentials:Credentials){
+export async function seedUsability(tx:PoolClient,admin:string,hashes:{operator:string;patient:string}){
   async function account(accountId:string,address:string,role:string,hash:string){
     await tx.query('INSERT INTO vitalia_accounts(id,email,role_code,password_hash) VALUES ($1,$2,$3,$4)',
       [accountId,address,role,hash]);
@@ -86,7 +71,7 @@ async function seed(tx:PoolClient,admin:string,credentials:Credentials){
   }
   for(let index=1;index<=10;index++){
     const lab=index<=7?0:1;
-    await account(operatorId(index),email('operador',index),'operador_laboratorio',await accountPassword(credentials,operatorId(index),email('operador',index)));
+    await account(operatorId(index),email('operador',index),'operador_laboratorio',hashes.operator);
     await tx.query(`INSERT INTO vitalia_sil_main_staff
       (lab_id,account_id,kind,granted_by,can_review_reports)
       VALUES ($1,$2,'operator',$3,$4)`,
@@ -95,7 +80,7 @@ async function seed(tx:PoolClient,admin:string,credentials:Credentials){
   }
   for(let index=1;index<=132;index++){
     const lab=index<=120?0:1;
-    await account(patientId(index),email('paciente',index),'paciente',await accountPassword(credentials,patientId(index),email('paciente',index)));
+    await account(patientId(index),email('paciente',index),'paciente',hashes.patient);
     const person=id('person:'+index);
     await tx.query(`INSERT INTO vitalia_people(id,account_id,first_name,first_surname,birth_date)
       VALUES ($1,$2,$3,$4,$5)`,[person,patientId(index),
@@ -159,91 +144,3 @@ async function seed(tx:PoolClient,admin:string,credentials:Credentials){
     await audit('pending:'+index,labId(lab),actor,'pending_request_saved',null,date(index%31));
   }
 }
-
-// Actualiza únicamente la identidad de la carga histórica verificada.
-async function refreshExisting(tx:PoolClient,credentials:Credentials){
-  for(let lab=0;lab<2;lab++){
-    await tx.query(`UPDATE public.vitalia_sil_main_laboratories
-      SET display_name=$2 WHERE id=$1 AND display_name=$3`,[labId(lab),labs[lab],oldLabs[lab]]);
-    await tx.query(`UPDATE public.vitalia_sil_main_reports
-      SET issuing_laboratory=$2 WHERE lab_id=$1 AND issuing_laboratory=$3`,[labId(lab),labs[lab],oldLabs[lab]]);
-  }
-  for(const role of ['operador','paciente']){
-    for(let index=1;index<=(role==='operador'?10:132);index++){
-      const accountId=role==='operador'?operatorId(index):patientId(index);
-      const legacy=legacyEmail(role,index);
-      const found=await tx.query('SELECT 1 FROM public.vitalia_accounts WHERE id=$1 AND email=$2 FOR UPDATE',
-        [accountId,legacy]);
-      if(!found.rowCount)continue;
-      const address=email(role,index);
-      const hash=await accountPassword(credentials,accountId,address);
-      await tx.query('UPDATE public.vitalia_accounts SET email=$2,password_hash=$3 WHERE id=$1',
-        [accountId,address,hash]);
-      if(role==='paciente')await tx.query(`UPDATE public.vitalia_people SET first_name=$2,
-        first_surname=$3 WHERE account_id=$1 AND first_surname=$4`,
-        [accountId,...patientName(index),'Simulación '+index]);
-    }
-  }
-  for(let index=1;index<=72;index++){
-    await tx.query(`UPDATE public.vitalia_sil_main_pending_requests SET patient_email=$2,file_name=$3
-      WHERE id=$1 AND status='pending' AND patient_email=$4 AND file_name=$5`,
-      [id('pending:'+index),email('por-activar',index),'derivacion-medica-'+index+'.pdf',
-        legacyEmail('por-activar',index),'derivacion-simulada-'+index+'.pdf']);
-  }
-}
-
-async function main(){
-  const [confirmation,rawEmail]=process.argv.slice(2);
-  const adminEmail=rawEmail?.trim().toLowerCase();
-  const config=readDatabaseConfig(process.env);
-  if(confirmation!=='--cargar-demostracion' || !adminEmail || config.database!=='vitalia' ||
-    process.env.VITALIA_SIL_MAIN_MODE!=='YES'){
-    throw new Error('Uso en el SIL principal: --cargar-demostracion correo-del-administrador-existente');
-  }
-  const pool=createDatabasePool(config);
-  try{
-    const tx=await pool.connect();
-    try{
-      await tx.query('BEGIN');
-      const identity=await tx.query('SELECT current_database() AS database');
-      if(identity.rows[0].database!=='vitalia')throw new Error('La base de destino debe ser vitalia.');
-      await tx.query("SELECT pg_advisory_xact_lock(hashtext('vitalia-sil-demo-seed'))");
-      const schema=await tx.query(`SELECT EXISTS(
-        SELECT 1 FROM public.vitalia_schema_migrations WHERE version='046_sil_main_laboratory_sites'
-      ) AS ready`);
-      if(!schema.rows[0].ready)throw new Error('La carga requiere el esquema SIL 046.');
-      const marker=await tx.query(`SELECT EXISTS(
-        SELECT 1 FROM public.vitalia_sil_main_audit
-        WHERE id=$1 AND lab_id=$2 AND action='laboratory_created'
-          AND details @> '{"showcase":true,"origin":"synthetic_seed"}'
-      ) AS loaded`,[id('audit:lab:0'),labId(0)]);
-      const administrator=await tx.query<{id:string}>(`SELECT a.id FROM public.vitalia_accounts a
-        JOIN public.vitalia_account_roles r ON r.account_id=a.id
-        WHERE a.email=$1 AND r.role_code='administrador' AND r.active`,[adminEmail]);
-      const admin=administrator.rows[0]?.id;
-      if(!admin)throw new Error('El correo debe pertenecer a un administrador activo de Vitalia.');
-      const credentials:Credentials=new Map();
-      if(marker.rows[0].loaded)await refreshExisting(tx,credentials);
-      else await seed(tx,admin,credentials);
-      await tx.query('COMMIT');
-      console.info(credentials.size?'Identidades del escenario disponibles.':'El escenario ya está actualizado.');
-      for(const [index,entry] of [...credentials.values()].entries()){
-        if(index>=20)break;
-        console.info(entry.address+' / '+entry.password);
-      }
-    } catch(error){
-      await tx.query('ROLLBACK');
-      throw error;
-    } finally {
-      tx.release();
-    }
-  } finally {
-    await pool.end();
-  }
-}
-
-void main().catch(error=>{
-  const message=error instanceof Error?error.message:'error de inicialización';
-  console.error('Carga DEMO:',message);
-  process.exitCode=1;
-});
