@@ -2849,33 +2849,37 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               ? 'No hay informes pendientes.'
               : 'No encontramos informes con esa búsqueda.'),
         for (final order in _reviewOrders)
-          ListTile(
-            key: ValueKey('sil-review-order-${order['id']}'),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            selected: _reviewOrderId == order['id'],
-            selectedTileColor: ColoresVitalia.verdeSuave,
-            leading: const Icon(Icons.description_outlined),
-            title: Text(_orderLabel(order)),
-            subtitle: order['patientName'] is String || order['siteName'] is String
-                ? Text([order['patientName'], order['siteName']].whereType<String>().join(' · '))
-                : null,
-            trailing: const Icon(Icons.chevron_right),
-            onTap: _busy ? null : () {
-              setState(() {
-                _reviewOrderId = order['id'] as String;
-                _reviewSelectedOrder = order;
-                _reviewPdfDownloaded = false;
-                _reviewConfirmed = false;
-              });
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                final detailContext = _reviewDetailKey.currentContext;
-                if (detailContext != null) {
-                  Scrollable.ensureVisible(detailContext,
-                      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
-                }
-              });
-            },
+          Semantics(
+            identifier: 'sil-review-order-${order['id']}',
+            button: true,
+            child: ListTile(
+              key: ValueKey('sil-review-order-${order['id']}'),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              selected: _reviewOrderId == order['id'],
+              selectedTileColor: ColoresVitalia.verdeSuave,
+              leading: const Icon(Icons.description_outlined),
+              title: Text(_orderLabel(order)),
+              subtitle: order['patientName'] is String || order['siteName'] is String
+                  ? Text([order['patientName'], order['siteName']].whereType<String>().join(' · '))
+                  : null,
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _busy ? null : () {
+                setState(() {
+                  _reviewOrderId = order['id'] as String;
+                  _reviewSelectedOrder = order;
+                  _reviewPdfDownloaded = false;
+                  _reviewConfirmed = false;
+                });
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  final detailContext = _reviewDetailKey.currentContext;
+                  if (detailContext != null) {
+                    Scrollable.ensureVisible(detailContext,
+                        alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd);
+                  }
+                });
+              },
+            ),
           ),
         const SizedBox(height: 12),
         Wrap(

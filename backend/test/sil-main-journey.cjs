@@ -312,7 +312,7 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
     console.log('Microsoft Edge: se adjuntó el PDF desde la estación del operador.');
 
     await page.getByRole('button',{name:/^Revisión interna/}).click();
-    await click(page.getByText(name+' · PDF en revisión',{exact:true}), 'Elegir informe pendiente');
+    await click(id('sil-review-order-'+order.id), 'Elegir informe pendiente '+name);
     const publication=button('Publicar informe');
     assert.equal(await publication.count(),0,'Se exige revisar antes de publicar');
     const download=page.waitForEvent('download');
