@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show SemanticsRole;
 
 import '../../core/tema_vitalia.dart';
 
@@ -316,6 +317,8 @@ class SilWorkspaceBottomNavigation extends StatelessWidget {
     child: SafeArea(
       top: false,
       child: Semantics(
+        container: true,
+        role: SemanticsRole.navigation,
         label: label,
         child: Padding(
           padding: const EdgeInsets.all(6),
@@ -474,7 +477,9 @@ class _SilWorkspaceTopNavigationState
     if (target == null) return;
     Scrollable.ensureVisible(
       target,
-      duration: const Duration(milliseconds: 220),
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
       curve: Curves.easeOutCubic,
       alignment: 0.08,
       // En un cambio de pestaña debe servir en ambas direcciones del scroll.
@@ -517,6 +522,10 @@ class _SilWorkspaceTopNavigationState
     final step = position.viewportDimension * 0.75;
     final target = (position.pixels + direction * step)
         .clamp(position.minScrollExtent, position.maxScrollExtent);
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller.jumpTo(target.toDouble());
+      return;
+    }
     _controller.animateTo(
       target.toDouble(),
       duration: const Duration(milliseconds: 220),
@@ -544,6 +553,8 @@ class _SilWorkspaceTopNavigationState
           _refreshOverflow(constraints.maxWidth);
         });
         return Semantics(
+          container: true,
+          role: SemanticsRole.navigation,
           label: widget.label,
           child: Row(
             children: [

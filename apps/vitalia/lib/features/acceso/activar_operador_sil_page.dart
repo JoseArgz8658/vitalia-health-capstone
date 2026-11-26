@@ -159,11 +159,14 @@ class _ActivarOperadorSilPageState extends State<ActivarOperadorSilPage>{
                       ],
                       if(_error!=null)...[
                         const SizedBox(height:12),
-                        Text(_error!,textAlign:TextAlign.center,
-                          style:TextStyle(color:Theme.of(context).colorScheme.error)),
+                        Semantics(
+                          liveRegion: true,
+                          child: Text(_error!,textAlign:TextAlign.center,
+                            style:TextStyle(color:Theme.of(context).colorScheme.error)),
+                        ),
                       ],
                       const SizedBox(height:20),
-                      if(_busy)const LinearProgressIndicator(),
+                      if(_busy)const LinearProgressIndicator(semanticsLabel: 'Activando cuenta'),
                       FilledButton.icon(
                         onPressed:_busy?null:_activated
                             ?_returnToLogin

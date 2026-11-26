@@ -107,9 +107,7 @@ async function api(method, path, status, {token, json, bytes, headers={}} = {}) 
 
 async function signIn(page, account, route='') {
   await page.goto('http://localhost:5173/'+route,{waitUntil:'domcontentloaded'});
-  // En escritorio el control de accesibilidad está fuera del área visible.
-  await page.locator('flt-semantics-placeholder').evaluate(button=>button.click(),
-    undefined,{timeout:30000});
+  // Los campos de entrada deben estar disponibles en el árbol accesible desde el inicio.
   if(route==='' || route==='#/laboratorio' || route==='#/administracion'){
     const oldLink=page.getByRole('button',{name:'Cambiar a modo profesional',exact:true});
     assert.equal(await oldLink.count(),0);
@@ -202,7 +200,7 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
 
   return stage('uploader',async ({page,id,button,click,select,confirm})=>{
     const captures=process.env.VITALIA_JOURNEY_SCREENSHOTS;
-    const operatorNav=page.getByLabel('Navegación del operador');
+    const operatorNav=page.getByRole('navigation',{name:'Navegación del operador'});
     const receive=operatorNav.getByRole('button',{name:'Recibir solicitud',exact:true});
     await receive.waitFor();
     const desktop=await receive.boundingBox();
@@ -463,7 +461,7 @@ async function browserJourney(order, base, sampleOrder, samplePdf) {
     const page=await browser.newPage({viewport:{width:390,height:844}});
     try {
       await signIn(page,'patient');
-      const patientNav=page.getByLabel('Navegación del paciente');
+      const patientNav=page.getByRole('navigation',{name:'Navegación del paciente'});
       await patientNav.getByRole('button',
         {name:'Mis informes',exact:true}).waitFor();
       assert.equal(await page.getByRole('button',
