@@ -1156,6 +1156,11 @@ async function main() {
       assert.deepEqual((await queryOrders('reviewer',otherLab,{search:folio})).orders,[]);
       await queryOrders('uploader',otherLab,{search:folio},403);
       await queryOrders('admin',base,{search:credentials.patient.email},403);
+      const bySite=await queryOrders('uploader',base,{siteId:northSite.id});
+      assert.ok(bySite.orders.length>0,'La sede propia tiene órdenes registradas.');
+      assert.ok(bySite.orders.every(order=>order.siteId===northSite.id));
+      assert.deepEqual((await queryOrders('uploader',base,{siteId:southSite.id})).orders,[]);
+      await queryOrders('uploader',base,{siteId:'invalid'},400);
       await queryOrders('uploader',base,{status:'missing'},400);
       console.log('API: búsqueda, filtros y paginación de órdenes verificados.');
       const samplePath=base+'/orders/'+sampleOrder.id;
