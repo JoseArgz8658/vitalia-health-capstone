@@ -202,11 +202,12 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
 
   return stage('uploader',async ({page,id,button,click,select,confirm})=>{
     const captures=process.env.VITALIA_JOURNEY_SCREENSHOTS;
-    const receive=button('Recibir solicitud');
+    const operatorNav=page.getByLabel('Navegación del operador');
+    const receive=operatorNav.getByRole('button',{name:'Recibir solicitud',exact:true});
     await receive.waitFor();
     const desktop=await receive.boundingBox();
-    assert.ok(desktop && desktop.x < 100 && desktop.y < 340 && desktop.width > 0,
-      'Navegación lateral visible en escritorio');
+    assert.ok(desktop && desktop.y>=0 && desktop.y+desktop.height<=140 && desktop.width>0,
+      'Recibir solicitud debe estar en la navegación superior de escritorio.');
     if(captures)await page.screenshot({path:resolve(captures,'operador-escritorio.png')});
 
     // Una sesión sirve para ambos tamaños y mantiene disponible el cupo
@@ -311,7 +312,7 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
     console.log('Microsoft Edge: se adjuntó el PDF desde la estación del operador.');
 
     await page.getByRole('button',{name:/^Revisión interna/}).click();
-    await select('sil-review-order');
+    await click(id('sil-review-order-'+order.id), 'Elegir informe pendiente '+name);
     const publication=button('Publicar informe');
     assert.equal(await publication.count(),0,'Se exige revisar antes de publicar');
     const download=page.waitForEvent('download');
@@ -416,18 +417,20 @@ async function adminJourney(browser, base) {
     const permissionResponse=()=>page.waitForResponse(r=>
       new URL(r.url()).pathname===permissionPath &&
       r.request().method()==='POST');
+    const confirmPermission=()=>Promise.all([
+      permissionResponse(),
+      nav('Confirmar permiso').click(),
+    ]).then(([response])=>response);
     const revoke=nav('Retirar permiso de revisión').first();
-    const revoked=permissionResponse();
     await (await reach(page,revoke,'Revocar revisión')).click();
-    const revokedResult=await revoked;
+    const revokedResult=await confirmPermission();
     assert.equal(revokedResult.status(),200);
     const revokedInput=revokedResult.request().postDataJSON();
     assert.equal(revokedInput.enabled,false);
     const grant=nav('Autorizar revisión');
     await (await reach(page,grant,'Restituir revisión')).waitFor();
-    const granted=permissionResponse();
     await grant.click();
-    const grantedResult=await granted;
+    const grantedResult=await confirmPermission();
     assert.equal(grantedResult.status(),200);
     assert.deepEqual(grantedResult.request().postDataJSON(),{
       accountId:revokedInput.accountId,enabled:true,

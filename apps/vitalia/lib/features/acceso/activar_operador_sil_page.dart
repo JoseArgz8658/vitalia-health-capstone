@@ -105,7 +105,8 @@ class _ActivarOperadorSilPageState extends State<ActivarOperadorSilPage>{
                            'con tu correo y la contraseña configurada.'
                           :'Ingresa el correo y el código personal que '
                            'recibiste por un canal oficial del laboratorio. '
-                           'El código solo puede utilizarse una vez.',
+                           'Crea una contraseña y confirma la activación. '
+                           'Después podrás iniciar sesión con ese correo y contraseña.',
                         textAlign:TextAlign.center,
                         style:const TextStyle(
                           color:ColoresVitalia.textoSecundario,height:1.5,

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 
 import '../../core/auth_api.dart';
+import 'sil_record_picker.dart';
 
 class SilMainClinicalPanel extends StatefulWidget {
   const SilMainClinicalPanel({
@@ -298,33 +299,28 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
       children: [
         Semantics(
           identifier: 'sil-clinical-order',
-          child: DropdownButtonFormField<String>(
-            key: ValueKey(widget.labId),
-            initialValue: _orderId,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Orden para muestras y resultados',
-            ),
-            items: [
+          child: SilRecordPicker(
+            label: 'Buscar orden para muestras y resultados',
+            selectedId: _orderId,
+            options: [
               for (final order in widget.orders)
-                DropdownMenuItem(
-                  value: order['id'] as String,
-                  child: Text(_folio(order)),
+                (
+                  id: order['id'] as String,
+                  title: _folio(order),
+                  detail: [order['siteName'], order['patientName']]
+                      .whereType<String>().join(' · '),
                 ),
             ],
-            onChanged: _busy
-                ? null
-                : (orderId) {
-                    if (orderId == null) return;
-                    widget.onOrderChanged(orderId);
-                    setState(() {
-                      _orderId = orderId;
-                      _details = null;
-                      _previewMessage = null;
-                      _suggestions.clear();
-                    });
-                    _run(_load);
-                  },
+            onSelected: _busy ? null : (orderId) {
+              widget.onOrderChanged(orderId);
+              setState(() {
+                _orderId = orderId;
+                _details = null;
+                _previewMessage = null;
+                _suggestions.clear();
+              });
+              _run(_load);
+            },
           ),
         ),
         if (_busy) const LinearProgressIndicator(),

@@ -588,3 +588,7 @@ sin guardar contenido del proveedor ni cambiar la dirección ingresada. Las
 coincidencias parciales, correcciones del proveedor y respuestas fuera de la
 comuna requieren revisión manual. Si Google no está configurado, se conserva el
 formulario manual. Aplica cuotas en Google Cloud para controlar el consumo.
+
+### Evaluación de usabilidad
+
+Consulta [el entorno aislado y el recorrido para moderadores](docs/USABILIDAD_SIL.md).

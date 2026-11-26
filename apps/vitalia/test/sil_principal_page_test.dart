@@ -1,3 +1,4 @@
+import 'package:vitalia_health/features/laboratorio/sil_workspace.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vitalia_health/core/auth_api.dart';
@@ -200,7 +201,7 @@ Finder _field(String label) => find.byWidgetPredicate(
 
 
 Future<void> _selectSavedReferral(WidgetTester tester) async {
-  final stored = _field('Derivación pendiente guardada');
+  final stored = find.text('Buscar derivación pendiente');
   await tester.ensureVisible(stored);
   await tester.tap(stored);
   await tester.pumpAndSettle();
@@ -487,8 +488,7 @@ void main() {
     expect(find.text('14'),findsWidgets);
     expect(find.text('Total de órdenes'), findsOneWidget);
     expect(find.text('Accesos rápidos'), findsNothing);
-    expect(find.text('Totales actuales del laboratorio seleccionado.'),
-      findsOneWidget);
+    expect(find.byKey(const ValueKey('sil-summary-full')), findsOneWidget);
     expect(find.text('Revisión interna (14)'),findsOneWidget);
 
     final lab=_field('Laboratorio');
@@ -514,7 +514,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Cifras parciales de los registros recientes cargados.'),
       findsOneWidget);
-    expect(find.text('Totales actuales del laboratorio seleccionado.'), findsNothing);
+    expect(find.byKey(const ValueKey('sil-summary-full')), findsNothing);
+    expect(find.byKey(const ValueKey('sil-summary-recent')), findsOneWidget);
     expect(tester.takeException(),isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
@@ -626,6 +627,9 @@ void main() {
     await tester.ensureVisible(authorize);
     await tester.tap(authorize);
     await tester.pumpAndSettle();
+    expect(api.reviewActions, isEmpty);
+    await tester.tap(find.widgetWithText(FilledButton, 'Confirmar permiso'));
+    await tester.pumpAndSettle();
     expect(api.reviewActions,[
       {
         'accountId':'55555555-5555-4555-8555-555555555555',
@@ -637,7 +641,7 @@ void main() {
     expect(find.text('Estado administrativo'),findsOneWidget);
     expect(find.text('Ver auditoría administrativa'),findsOneWidget);
     expect(find.text('Gestión de órdenes'),findsNothing);
-    expect(find.text('1 operadores asociados'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is SilWorkspaceSummaryStat && w.label == 'Operadores asociados' && w.value == '1'), findsOneWidget);
 
     final laboratory = _field('Laboratorio');
     await tester.ensureVisible(laboratory);
@@ -645,8 +649,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Laboratorio Sur').last);
     await tester.pumpAndSettle();
-    expect(find.text('0 operadores asociados'), findsOneWidget);
-    expect(find.text('1 operadores asociados'), findsNothing);
+    expect(find.byWidgetPredicate((w) => w is SilWorkspaceSummaryStat && w.label == 'Operadores asociados' && w.value == '0'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is SilWorkspaceSummaryStat && w.label == 'Operadores asociados' && w.value == '1'), findsNothing);
 
     await tester.tap(find.widgetWithText(TextButton, 'Operadores y permisos'));
     await tester.pumpAndSettle();
@@ -680,11 +684,9 @@ void main() {
     await tester.tap(reviewTab);
     await tester.pumpAndSettle();
 
-    final review=_field('Informe pendiente de revisión');
-    DropdownButton<String> reviewDropdown()=>tester.widget<DropdownButton<String>>(
-      find.ancestor(of:review, matching:find.byType(DropdownButton<String>)));
-    expect(reviewDropdown().items?.map((item)=>item.value),
-      [_StationApi.ownOrder,_StationApi.otherOrder]);
+    Finder row(String id) => find.byKey(ValueKey('sil-review-order-$id'));
+    expect(row(_StationApi.ownOrder), findsOneWidget);
+    expect(row(_StationApi.otherOrder), findsOneWidget);
     expect(find.text('Página 1'),findsOneWidget);
     final publish=find.widgetWithText(FilledButton,'Publicar informe');
     expect(publish, findsNothing);
@@ -694,13 +696,10 @@ void main() {
     await tester.tap(next);
     await tester.pumpAndSettle();
     expect(find.text('Página 2'),findsOneWidget);
-    expect(reviewDropdown().items?.map((item)=>item.value),
-      [_StationApi.olderReviewOrder]);
-
-    await tester.ensureVisible(review);
-    await tester.tap(review);
-    await tester.pumpAndSettle();
-    await tester.tap(find.textContaining('VH-000080').last);
+    final older = row(_StationApi.olderReviewOrder);
+    expect(older, findsOneWidget);
+    await tester.ensureVisible(older);
+    await tester.tap(older);
     await tester.pumpAndSettle();
     expect(find.text('Descargar PDF para revisión'), findsOneWidget);
     expect(publish, findsNothing, reason: 'Se requiere descargar el original.');
@@ -711,13 +710,13 @@ void main() {
     await tester.tap(previous);
     await tester.pumpAndSettle();
     expect(find.text('Página 1'),findsOneWidget);
-    expect(reviewDropdown().value,isNull,
-      reason:'El informe seleccionado no debe persistir al cambiar de página.');
+    expect(find.text('Descargar PDF para revisión'), findsNothing,
+      reason: 'El informe seleccionado no debe persistir al cambiar de página.');
     expect(publish, findsNothing);
     expect(tester.takeException(),isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
-  for (final width in [390.0, 1280.0]) {
+  for (final width in [320.0, 390.0, 1366.0, 1920.0]) {
     testWidgets('revisión incluye los informes propios del laboratorio a ${width.toInt()} px', (
       tester,
     ) async {
@@ -742,18 +741,10 @@ void main() {
       await tester.ensureVisible(reviewTab);
       await tester.tap(reviewTab);
       await tester.pumpAndSettle();
-      final review = _field('Informe pendiente de revisión');
+      Finder row(String id) => find.byKey(ValueKey('sil-review-order-$id'));
+      final review = row(_StationApi.ownOrder);
       expect(review, findsOneWidget);
-      final dropdown = tester.widget<DropdownButton<String>>(
-        find.ancestor(
-          of: review,
-          matching: find.byType(DropdownButton<String>),
-        ),
-      );
-      expect(dropdown.items?.map((item) => item.value), [
-        _StationApi.ownOrder,
-        _StationApi.otherOrder,
-      ]);
+      expect(row(_StationApi.otherOrder), findsOneWidget);
       final reviewButton = find.widgetWithText(FilledButton, 'Publicar informe');
       expect(reviewButton, findsNothing);
 
@@ -791,7 +782,7 @@ void main() {
       await tester.ensureVisible(clinicalTab);
       await tester.tap(clinicalTab);
       await tester.pumpAndSettle();
-      expect(_field('Orden para muestras y resultados'), findsOneWidget);
+      expect(find.text('Buscar orden para muestras y resultados'), findsOneWidget);
       expect(tester.takeException(), isNull);
     }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
   }

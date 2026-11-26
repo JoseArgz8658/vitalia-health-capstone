@@ -302,7 +302,7 @@ void main() {
     expect(find.text('Ir a mis informes'), findsNothing);
     expect(find.text('Informes publicados'), findsNothing);
     expect(find.textContaining('Último informe:'), findsOneWidget);
-    expect(find.text('Historial y orientación'), findsOneWidget);
+    expect(find.text('Historial de resultados'), findsOneWidget);
     expect(find.text('Sobre Vitalia'), findsOneWidget);
     expect(find.text('Privacidad y uso responsable'), findsOneWidget);
     expect(find.byIcon(Icons.family_restroom), findsNothing);
