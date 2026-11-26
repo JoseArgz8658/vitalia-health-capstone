@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'sil_operator_workbench.dart';
+
 typedef SilRecordOption = ({String id, String title, String detail});
 
 class SilRecordPicker extends StatelessWidget {
@@ -10,6 +12,7 @@ class SilRecordPicker extends StatelessWidget {
     required this.selectedId,
     required this.onSelected,
     this.searchLabel = 'Buscar en esta lista',
+    this.sitesById = const {},
   });
 
   final String label;
@@ -17,6 +20,7 @@ class SilRecordPicker extends StatelessWidget {
   final String? selectedId;
   final ValueChanged<String>? onSelected;
   final String searchLabel;
+  final Map<String, String> sitesById;
 
   @override
   Widget build(BuildContext context) {
@@ -31,6 +35,7 @@ class SilRecordPicker extends StatelessWidget {
                   label: label,
                   options: options,
                   searchLabel: searchLabel,
+                  sitesById: sitesById,
                 ),
               );
               if (context.mounted && id != null) onSelected?.call(id);
@@ -46,25 +51,30 @@ class _RecordDialog extends StatefulWidget {
     required this.label,
     required this.options,
     required this.searchLabel,
+    required this.sitesById,
   });
 
   final String label;
   final List<SilRecordOption> options;
   final String searchLabel;
+  final Map<String, String> sitesById;
 
   @override
   State<_RecordDialog> createState() => _RecordDialogState();
 }
 
 class _RecordDialogState extends State<_RecordDialog> {
-  static const _pageSize = 10;
+  static const _pageSize = 6;
   String _query = '';
+  String _site = '';
   int _offset = 0;
 
   @override
   Widget build(BuildContext context) {
     final tokens = _query.trim().toLowerCase().split(RegExp(r'\s+'));
+    final sites = widget.sitesById.values.toSet().toList()..sort();
     final matches = widget.options.where((row) {
+      if (_site.isNotEmpty && widget.sitesById[row.id] != _site) return false;
       final text = '${row.title} ${row.detail}'.toLowerCase();
       return tokens.every(text.contains);
     }).toList();
@@ -90,6 +100,23 @@ class _RecordDialogState extends State<_RecordDialog> {
               }),
             ),
             const SizedBox(height: 12),
+            if (sites.length > 1) ...[
+              DropdownButtonFormField<String>(
+                initialValue: _site,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Filtrar por sede'),
+                items: [
+                  const DropdownMenuItem(value: '', child: Text('Todas las sedes')),
+                  for (final site in sites)
+                    DropdownMenuItem(value: site, child: Text(site)),
+                ],
+                onChanged: (site) => setState(() {
+                  _site = site ?? '';
+                  _offset = 0;
+                }),
+              ),
+              const SizedBox(height: 10),
+            ],
             Semantics(
               liveRegion: true,
               child: Text(
@@ -103,11 +130,11 @@ class _RecordDialogState extends State<_RecordDialog> {
               MergeSemantics(
                 child: Semantics(
                   button: true,
-                  child: ListTile(
-                    title: Text(row.title),
-                    subtitle: row.detail.isEmpty ? null : Text(row.detail),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.of(context).pop(row.id),
+                  child: SilWorkbenchRow(
+                    icon: Icons.description_outlined,
+                    primary: Text(row.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    secondary: row.detail.isEmpty ? null : Text(row.detail),
+                    onOpen: () => Navigator.of(context).pop(row.id),
                   ),
                 ),
               ),
