@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'sil_operator_workbench.dart';
+import '../../core/tema_vitalia.dart';
 
 typedef SilRecordOption = ({String id, String title, String detail});
 
@@ -130,11 +130,13 @@ class _RecordDialogState extends State<_RecordDialog> {
               MergeSemantics(
                 child: Semantics(
                   button: true,
-                  child: SilWorkbenchRow(
-                    icon: Icons.description_outlined,
-                    primary: Text(row.title, style: const TextStyle(fontWeight: FontWeight.w700)),
-                    secondary: row.detail.isEmpty ? null : Text(row.detail),
-                    onOpen: () => Navigator.of(context).pop(row.id),
+                  child: ListTile(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    leading: const Icon(Icons.description_outlined, color: ColoresVitalia.azul),
+                    title: Text(row.title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                    subtitle: row.detail.isEmpty ? null : Text(row.detail),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).pop(row.id),
                   ),
                 ),
               ),
