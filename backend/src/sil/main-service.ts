@@ -671,7 +671,7 @@ export function createSilMainService(db:Pool) {
     },
 
     async listOrders(labId:string,accountId:string,role:string,
-      limit:number,offset:number,filters:{search?:string;status?:string;patientId?:string}={}){
+      limit:number,offset:number,filters:{search?:string;status?:string;patientId?:string;siteId?:string}={}){
       const search=filters.search??null;
       const folio=search?.match(/^(?:VH-)?0*(\d+)$/i)?.[1]??null;
       if(role!=='administrador')await operator(labId,accountId);
@@ -692,8 +692,9 @@ export function createSilMainService(db:Pool) {
              OR ($8 AND strpos(lower(concat_ws(' ',p.first_name,p.first_surname)),lower($4))>0))
            AND ($6::text IS NULL OR o.status=$6)
            AND ($7::uuid IS NULL OR o.patient_id=$7)
+           AND ($9::uuid IS NULL OR o.site_id=$9)
          ORDER BY o.created_at DESC,o.id LIMIT $2 OFFSET $3`,
-        [labId,limit+1,offset,search,folio,filters.status??null,filters.patientId??null,role!=='administrador']);
+        [labId,limit+1,offset,search,folio,filters.status??null,filters.patientId??null,role!=='administrador',filters.siteId??null]);
       return {orders:results.rows.slice(0,limit),hasMore:results.rows.length>limit};
     },
 
