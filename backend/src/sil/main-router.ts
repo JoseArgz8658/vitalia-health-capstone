@@ -346,6 +346,7 @@ export function createSilMainRouter(auth:Pick<AuthServices,'find'>,
       search:z.string().trim().min(1).max(254).optional(),
       status:z.enum(['registered','report_attached','report_published']).optional(),
       patientId:uuid.optional(),
+      siteId:uuid.optional(),
     }).strict().safeParse(req.query);
     if(!data.success){res.status(400).json({error:{code:'INVALID_PAGE'}});return;}
     if(res.locals.account.role!=='operador_laboratorio'&&(data.data.search||data.data.patientId)){
