@@ -3387,7 +3387,11 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             for (final (title, count) in totals)
               Row(
                 mainAxisSize: MainAxisSize.min,
-                children: [Text(title), const SizedBox(width: 8), Text('$count')],
+                children: [
+                  Flexible(child: Text(title)),
+                  const SizedBox(width: 8),
+                  Text('$count'),
+                ],
               ),
           ],
         ),
