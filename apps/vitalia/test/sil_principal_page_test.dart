@@ -12,6 +12,7 @@ class _StationApi extends AuthApi {
   final pendingCompletions=<Map<String,dynamic>>[];
   final pendingClosures=<Map<String,dynamic>>[];
   final requestPaths=<String>[];
+  final orderQueries=<Map<String,String>>[];
   final patientQueries=<Map<String,String>>[];
   bool manyPatients=false;
   bool showPending=false;
@@ -19,6 +20,8 @@ class _StationApi extends AuthApi {
   bool expandedSummary=false;
   bool unavailableSummary=false;
   bool reviewPages=false;
+  bool withSites=false;
+  static const northSite = '44444444-4444-4444-8444-444444444444';
   static const allowedLab = '11111111-1111-4111-8111-111111111111';
   static const restrictedLab = '22222222-2222-4222-8222-222222222222';
   static const ownOrder = '33333333-3333-4333-8333-333333333333';
@@ -33,6 +36,7 @@ class _StationApi extends AuthApi {
     final requestUri=Uri.parse(path);
     final requestPath=requestUri.path;
     requestPaths.add(requestPath);
+    if (requestPath.endsWith('/orders')) orderQueries.add(requestUri.queryParameters);
     if (requestPath=='/labs/$allowedLab/summary') {
       if (unavailableSummary) throw StateError('Sin resumen de prueba');
       return {'summary': expandedSummary
@@ -141,7 +145,9 @@ class _StationApi extends AuthApi {
       reviewActions.add(body);
       return {'membership':{'canReviewReports':body['enabled']}};
     }
-    if (requestPath.endsWith('/sites')) return {'sites': []};
+    if (requestPath.endsWith('/sites')) return {
+      'sites': withSites ? [{'id': northSite, 'name': 'Sede Norte'}] : [],
+    };
     return switch (requestPath) {
       '/labs' => {
         'laboratories': [
@@ -714,6 +720,37 @@ void main() {
       reason: 'El informe seleccionado no debe persistir al cambiar de página.');
     expect(publish, findsNothing);
     expect(tester.takeException(),isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+
+  testWidgets('órdenes y revisión filtran por sede sobre los datos del laboratorio', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1366, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final api = _StationApi()..withSites = true;
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(home: SilPrincipalPage(
+      api: api,
+      role: 'operador_laboratorio',
+      onExpired: () {},
+      onLogout: () {},
+    )));
+    await tester.pumpAndSettle();
+    for (final (tab, limit) in [('Órdenes', '10'), ('Revisión interna (2)', '8')]) {
+      final destination = find.widgetWithText(TextButton, tab);
+      await tester.ensureVisible(destination);
+      await tester.tap(destination);
+      await tester.pumpAndSettle();
+      final site = _field('Sede');
+      await tester.ensureVisible(site);
+      await tester.tap(site);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sede Norte').last);
+      await tester.pumpAndSettle();
+      final query = api.orderQueries.last;
+      expect(query['siteId'], _StationApi.northSite);
+      expect(query['limit'], limit);
+      expect(query['offset'], '0');
+    }
+    expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   for (final width in [320.0, 390.0, 1366.0, 1920.0]) {
