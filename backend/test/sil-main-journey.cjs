@@ -416,18 +416,20 @@ async function adminJourney(browser, base) {
     const permissionResponse=()=>page.waitForResponse(r=>
       new URL(r.url()).pathname===permissionPath &&
       r.request().method()==='POST');
+    const confirmPermission=()=>Promise.all([
+      permissionResponse(),
+      nav('Confirmar permiso').click(),
+    ]).then(([response])=>response);
     const revoke=nav('Retirar permiso de revisión').first();
-    const revoked=permissionResponse();
     await (await reach(page,revoke,'Revocar revisión')).click();
-    const revokedResult=await revoked;
+    const revokedResult=await confirmPermission();
     assert.equal(revokedResult.status(),200);
     const revokedInput=revokedResult.request().postDataJSON();
     assert.equal(revokedInput.enabled,false);
     const grant=nav('Autorizar revisión');
     await (await reach(page,grant,'Restituir revisión')).waitFor();
-    const granted=permissionResponse();
     await grant.click();
-    const grantedResult=await granted;
+    const grantedResult=await confirmPermission();
     assert.equal(grantedResult.status(),200);
     assert.deepEqual(grantedResult.request().postDataJSON(),{
       accountId:revokedInput.accountId,enabled:true,
