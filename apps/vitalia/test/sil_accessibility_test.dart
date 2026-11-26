@@ -35,8 +35,6 @@ void main() {
   testWidgets('selector legible a 320 px y texto al 200 %', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final semantics = tester.ensureSemantics();
-    addTearDown(semantics.dispose);
     String? chosen;
     await tester.pumpWidget(MaterialApp(
       theme: temaVitalia(),
@@ -58,9 +56,7 @@ void main() {
         ),
       ),
     ));
-    final open = find.widgetWithText(OutlinedButton, 'Buscar orden');
-    final button = tester.widget<OutlinedButton>(open);
-    button.onPressed!();
+    await tester.tap(find.text('Buscar orden'));
     await tester.pumpAndSettle();
     final field = find.byType(TextField);
     expect(tester.widget<TextField>(field).decoration!.labelText,

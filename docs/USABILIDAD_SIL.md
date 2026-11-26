@@ -65,3 +65,21 @@ El moderador describe el objetivo de la tarea y observa sin señalar controles.
 Registra si se completó, intentos, ayuda, errores, observaciones y resolución
 de pantalla. Las verificaciones automatizadas no representan resultados de
 participantes.
+
+## Comprobación manual de accesibilidad web
+
+Realiza un recorrido con Edge y NVDA usando las cuentas de evaluación.
+Registra el commit, ancho, zoom, resultado y control donde aparece cada incidencia.
+
+- **Acceso.** Con Tab y Mayús+Tab, visita los campos y la ayuda. Comprueba el
+  nombre de cada campo, el foco visible y el anuncio de un error de acceso.
+- **Administración.** Cambia de laboratorio y abre una confirmación de permiso.
+  Verifica que se anuncie el diálogo y que Escape devuelva el foco al control.
+- **Operación.** Busca por folio con Enter, selecciona una orden desde el
+  selector y comprueba que se anuncien los resultados y el cambio de página.
+- **Portal paciente.** Recorre Inicio, Mis informes y Ayuda. Comprueba el anuncio
+  de una búsqueda sin coincidencias y el acceso al botón de descarga.
+
+Repite las tareas críticas con zoom al 200 % y en una ventana estrecha.
+Registra por separado la accesibilidad del PDF descargado, ya que depende
+del documento que entrega el laboratorio.
