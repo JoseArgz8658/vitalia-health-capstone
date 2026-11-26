@@ -1233,7 +1233,10 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
             ),
             const SizedBox(width:11),
             Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-              Text(title,style:const TextStyle(fontSize:18,fontWeight:FontWeight.w800)),
+              Semantics(
+                header: true,
+                child: Text(title,style:const TextStyle(fontSize:18,fontWeight:FontWeight.w800)),
+              ),
               if (detail.isNotEmpty) ...[
                 const SizedBox(height:5),
                 Text(detail,style:const TextStyle(
@@ -1250,7 +1253,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
   }
 
   Widget _field(TextEditingController ctrl,String label,{
-    String? hint,int lines=1,String? identifier,ValueChanged<String>? onChanged
+    String? hint,int lines=1,String? identifier,ValueChanged<String>? onChanged,
+    VoidCallback? onSearch,
   })=>Padding(
     padding:const EdgeInsets.only(bottom:11),
     child:Semantics(
@@ -1258,6 +1262,8 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
       child:TextField(
         controller:ctrl,
         onChanged:onChanged,
+        textInputAction:onSearch == null ? null : TextInputAction.search,
+        onSubmitted:onSearch == null ? null : (_) => onSearch(),
         maxLines:lines,
         enabled:!_busy,
         decoration:InputDecoration(
@@ -1327,8 +1333,12 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               ),
             ),
           LayoutBuilder(builder: (context, constraints) {
+            void runSearch() => _execute(
+              () => _loadOrderPage(offset: 0, search: _orderSearch.text.trim()),
+              showNotice: false,
+            );
             final search = _field(_orderSearch, 'Folio, nombre o correo del paciente',
-              identifier: 'sil-order-search');
+              identifier: 'sil-order-search', onSearch: runSearch);
             final statusFilter = DropdownButtonFormField<String>(
               key: ValueKey((_labId, _orderStatus)),
               initialValue: _orderStatus,
@@ -1345,10 +1355,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               ),
             );
             final submit = OutlinedButton.icon(
-              onPressed: _busy ? null : () => _execute(
-                () => _loadOrderPage(offset: 0, search: _orderSearch.text.trim()),
-                showNotice: false,
-              ),
+              onPressed: _busy ? null : runSearch,
               icon: const Icon(Icons.search),
               label: const Text('Buscar órdenes'),
             );
@@ -2396,6 +2403,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
               const SizedBox(height: 9),
               SilRecordPicker(
                 label: 'Buscar derivación pendiente',
+                searchLabel: 'Buscar por archivo o correo del paciente',
                 selectedId: _pendingRequestId,
                 options: [
                   for (final pending in _pendingRequests)
@@ -2844,14 +2852,20 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           ],
         ),
         const SizedBox(height: 12),
-        if (_reviewOrders.isEmpty && !_busy)
-          Text(_reviewSearch.isEmpty
-              ? 'No hay informes pendientes.'
-              : 'No encontramos informes con esa búsqueda.'),
+        if (!_busy)
+          Semantics(
+            liveRegion: true,
+            child: Text(_reviewOrders.isEmpty
+                ? (_reviewSearch.isEmpty
+                    ? 'No hay informes pendientes.'
+                    : 'No encontramos informes con esa búsqueda.')
+                : '${_reviewOrders.length} informes en esta página'),
+          ),
         for (final order in _reviewOrders)
           Semantics(
             identifier: 'sil-review-order-${order['id']}',
             button: true,
+            enabled: !_busy,
             child: ListTile(
               key: ValueKey('sil-review-order-${order['id']}'),
               contentPadding: const EdgeInsets.symmetric(horizontal: 10),
@@ -3043,12 +3057,23 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
     return name.isEmpty ? patient['email'] as String : name;
   }
 
+  Future<void> _searchPatients() =>
+      _loadPatients(offset: 0, search: _patientSearch.text.trim());
+
   Widget _patientDirectory() => _section(
     'Directorio de pacientes', '',
     Icons.badge_outlined, [
-      _field(_patientSearch, 'Buscar por nombre o correo'),
-      _action('Buscar pacientes', Icons.search,
-        () => _loadPatients(offset: 0, search: _patientSearch.text.trim())),
+      _field(_patientSearch, 'Buscar por nombre o correo',
+        onSearch: () => _execute(_searchPatients, showNotice: false)),
+      _action('Buscar pacientes', Icons.search, _searchPatients, showNotice: false),
+      if (!_busy)
+        Semantics(
+          liveRegion: true,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text('Página ${_patientOffset ~/ 20 + 1} · ${_patients.length} pacientes en esta página'),
+          ),
+        ),
       if (_patients.isEmpty)
         const Padding(
           padding: EdgeInsets.symmetric(vertical: 12),
@@ -3065,7 +3090,7 @@ class _SilPrincipalPageState extends State<SilPrincipalPage> {
           subtitle: _patientName(patient) == patient['email']
               ? null : Text(patient['email'] as String),
           trailing: PopupMenuButton<_StationSection>(
-            tooltip: 'Acciones del paciente',
+            tooltip: 'Acciones del paciente: ${_patientName(patient)} (${patient['email']})',
             enabled: !_busy,
             onSelected: (section) {
               if (section == _StationSection.patients) {

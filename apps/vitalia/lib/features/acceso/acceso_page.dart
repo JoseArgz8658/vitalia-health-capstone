@@ -156,16 +156,19 @@ class _AccesoPageState extends State<AccesoPage> {
                                     Theme.of(context).textTheme.headlineMedium,
                               ),
                               const SizedBox(height: 12),
-                              Text(
-                                widget.laboratoryMode
-                                    ? 'Acceso del laboratorio'
-                                    : widget.adminMode
-                                        ? 'Acceso de administración'
-                                        : _professionalMode
-                                            ? 'Acceso de profesionales'
-                                            : 'Acceso de pacientes',
-                                textAlign: TextAlign.center,
-                                style: Theme.of(context).textTheme.titleLarge,
+                              Semantics(
+                                header: true,
+                                child: Text(
+                                  widget.laboratoryMode
+                                      ? 'Acceso del laboratorio'
+                                      : widget.adminMode
+                                          ? 'Acceso de administración'
+                                          : _professionalMode
+                                              ? 'Acceso de profesionales'
+                                              : 'Acceso de pacientes',
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context).textTheme.titleLarge,
+                                ),
                               ),
                               const SizedBox(height: 6),
                               Text(
@@ -180,7 +183,8 @@ class _AccesoPageState extends State<AccesoPage> {
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                               const SizedBox(height: 24),
-                              if (widget.notice != null) Text(widget.notice!),
+                              if (widget.notice != null)
+                                Semantics(liveRegion: true, child: Text(widget.notice!)),
                               TextFormField(
                                 controller: _correo,
                                 enabled: !_busy,

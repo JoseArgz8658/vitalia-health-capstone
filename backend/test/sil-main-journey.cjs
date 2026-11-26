@@ -107,9 +107,7 @@ async function api(method, path, status, {token, json, bytes, headers={}} = {}) 
 
 async function signIn(page, account, route='') {
   await page.goto('http://localhost:5173/'+route,{waitUntil:'domcontentloaded'});
-  // En escritorio el control de accesibilidad está fuera del área visible.
-  await page.locator('flt-semantics-placeholder').evaluate(button=>button.click(),
-    undefined,{timeout:30000});
+  // Los campos de entrada deben estar disponibles en el árbol accesible desde el inicio.
   if(route==='' || route==='#/laboratorio' || route==='#/administracion'){
     const oldLink=page.getByRole('button',{name:'Cambiar a modo profesional',exact:true});
     assert.equal(await oldLink.count(),0);

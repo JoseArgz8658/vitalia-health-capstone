@@ -301,6 +301,7 @@ class _SilMainClinicalPanelState extends State<SilMainClinicalPanel> {
           identifier: 'sil-clinical-order',
           child: SilRecordPicker(
             label: 'Buscar orden para muestras y resultados',
+            searchLabel: 'Buscar por folio, paciente o sede',
             selectedId: _orderId,
             options: [
               for (final order in widget.orders)

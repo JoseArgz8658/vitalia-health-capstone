@@ -1018,14 +1018,20 @@ class _PacienteInformesSilPageState extends State<PacienteInformesSilPage> {
         const SizedBox(height: 12),
       ],
       if (_historyError case final String error)
-        Text(error, style: TextStyle(color: theme.colorScheme.error)),
+        Semantics(
+          liveRegion: true,
+          child: Text(error, style: TextStyle(color: theme.colorScheme.error)),
+        ),
       if (!_loading && !_historyLoading && visibleReports.isEmpty && _error == null && _historyError == null)
         SilWorkspaceSurface(
           padding: const EdgeInsets.all(16),
-          child: Text(
-            query.isEmpty && _laboratoryFilter == null
-                ? 'Aún no tienes informes publicados. Aparecerán aquí cuando el laboratorio los publique.'
-                : 'No encontramos informes que coincidan con tu búsqueda.',
+          child: Semantics(
+            liveRegion: true,
+            child: Text(
+              query.isEmpty && _laboratoryFilter == null
+                  ? 'Aún no tienes informes publicados. Aparecerán aquí cuando el laboratorio los publique.'
+                  : 'No encontramos informes que coincidan con tu búsqueda.',
+            ),
           ),
         ),
       if (visibleReports.isNotEmpty && !_historyLoading && _historyError == null)
