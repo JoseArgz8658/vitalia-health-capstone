@@ -202,11 +202,12 @@ async function operatorJourney(browser, order, base, sampleOrder, samplePdf) {
 
   return stage('uploader',async ({page,id,button,click,select,confirm})=>{
     const captures=process.env.VITALIA_JOURNEY_SCREENSHOTS;
-    const receive=button('Recibir solicitud');
+    const operatorNav=page.getByLabel('Navegación del operador');
+    const receive=operatorNav.getByRole('button',{name:'Recibir solicitud',exact:true});
     await receive.waitFor();
     const desktop=await receive.boundingBox();
-    assert.ok(desktop && desktop.x < 100 && desktop.y < 340 && desktop.width > 0,
-      'Navegación lateral visible en escritorio');
+    assert.ok(desktop && desktop.y>=0 && desktop.y+desktop.height<=140 && desktop.width>0,
+      'Recibir solicitud debe estar en la navegación superior de escritorio.');
     if(captures)await page.screenshot({path:resolve(captures,'operador-escritorio.png')});
 
     // Una sesión sirve para ambos tamaños y mantiene disponible el cupo
